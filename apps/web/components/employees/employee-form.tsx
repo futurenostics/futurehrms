@@ -474,7 +474,7 @@ export function EmployeeForm({ mode, employee }: EmployeeFormProps) {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-fn-lg border-fn-border bg-fn-bg-panel shadow-fn-sm border p-6">
+    <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm border p-6">
       <h2 className="text-fn-fg mb-4 text-[14px] font-semibold tracking-tight">{title}</h2>
       {children}
     </div>

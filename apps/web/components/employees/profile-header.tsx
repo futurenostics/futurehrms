@@ -57,7 +57,7 @@ export function ProfileHeader({
   }
 
   return (
-    <div className="rounded-fn-lg border-fn-border bg-fn-bg-panel shadow-fn-sm border p-6">
+    <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm border p-6">
       <div className="flex flex-wrap items-start gap-5">
         <div className="relative">
           <EmployeeAvatar fullName={employee.fullName} photoUrl={employee.photoUrl} size="xl" />

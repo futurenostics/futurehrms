@@ -197,7 +197,7 @@ export default function EmployeesListPage() {
           <KpiStrip />
 
           {/* Table card */}
-          <div className="rounded-fn-lg border-fn-border bg-fn-bg-panel shadow-fn-sm overflow-hidden border">
+          <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm overflow-hidden border">
             {/* Toolbar */}
             <div className="border-fn-divider flex flex-wrap items-center gap-2.5 border-b px-5 py-3.5">
               <div className="relative w-full max-w-[340px] flex-1">
@@ -884,7 +884,7 @@ function BulkActionBar({
     <div
       role="region"
       aria-label={`${count} employees selected`}
-      className="rounded-fn-lg border-fn-accent/30 bg-fn-bg-panel shadow-fn-lg animate-in fade-in-0 slide-in-from-bottom-2 fixed bottom-6 left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 border px-4 py-2.5"
+      className="rounded-fn-md border-fn-accent/30 bg-fn-bg-panel shadow-fn-lg animate-in fade-in-0 slide-in-from-bottom-2 fixed bottom-6 left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 border px-4 py-2.5"
       style={{ background: 'color-mix(in oklch, var(--fn-accent-soft) 60%, var(--fn-bg-panel))' }}
     >
       <span className="text-fn-fg text-[13px] font-semibold">

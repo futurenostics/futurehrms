@@ -97,7 +97,7 @@ interface KpiCardProps {
 
 function KpiCard({ icon: Icon, label, value, info, delta }: KpiCardProps) {
   return (
-    <div className="rounded-fn-lg border-fn-border bg-fn-bg-panel shadow-fn-sm border p-5">
+    <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm border p-5">
       <div className="flex items-start justify-between gap-2">
         <div
           className="rounded-fn-md flex h-10 w-10 items-center justify-center"
@@ -176,7 +176,7 @@ function Pill({ tone, children }: { tone: DeltaTone; children: React.ReactNode }
 
 function KpiSkeleton() {
   return (
-    <div className="rounded-fn-lg border-fn-border bg-fn-bg-panel shadow-fn-sm border p-5">
+    <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm border p-5">
       <div className="flex items-start justify-between gap-2">
         <Skeleton className="rounded-fn-md h-10 w-10" />
         <Skeleton className="h-6 w-6 rounded-full" />

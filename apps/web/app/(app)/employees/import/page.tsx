@@ -213,7 +213,7 @@ function PreviewStep({
         <Summary label="Errors" value={preview.errors} tone="danger" />
       </div>
 
-      <div className="rounded-fn-lg border-fn-border bg-fn-bg-panel shadow-fn-sm overflow-hidden border">
+      <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm overflow-hidden border">
         <table className="w-full text-[12.5px]">
           <thead className="bg-fn-bg-subtle text-fn-fg-faint text-[11px] font-semibold uppercase tracking-wider">
             <tr>
@@ -296,7 +296,7 @@ function ResultStep({
   onView: () => void;
 }) {
   return (
-    <div className="rounded-fn-lg border-fn-border bg-fn-bg-panel shadow-fn-sm flex flex-col items-center gap-4 border p-10 text-center">
+    <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm flex flex-col items-center gap-4 border p-10 text-center">
       <div
         className="rounded-fn-lg flex h-12 w-12 items-center justify-center"
         style={{ background: 'var(--fn-icon-tile)', color: 'var(--fn-icon-tile-fg)' }}

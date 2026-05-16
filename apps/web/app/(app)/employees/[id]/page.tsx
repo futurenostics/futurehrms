@@ -453,7 +453,7 @@ function Section({
   return (
     <div
       className={cn(
-        'rounded-fn-lg border-fn-border bg-fn-bg-panel shadow-fn-sm border p-6',
+        'rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm border p-6',
         subdued && 'bg-fn-bg-subtle mt-4',
       )}
     >
@@ -493,7 +493,7 @@ function Field({
 
 function ProfileHeaderSkeleton() {
   return (
-    <div className="rounded-fn-lg border-fn-border bg-fn-bg-panel shadow-fn-sm border p-6">
+    <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm border p-6">
       <div className="flex items-start gap-5">
         <Skeleton className="h-20 w-20 rounded-full" />
         <div className="flex flex-1 flex-col gap-2">
@@ -508,7 +508,7 @@ function ProfileHeaderSkeleton() {
 
 function SectionSkeleton() {
   return (
-    <div className="rounded-fn-lg border-fn-border bg-fn-bg-panel shadow-fn-sm border p-6">
+    <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm border p-6">
       <Skeleton className="mb-4 h-4 w-32" />
       <div className="grid grid-cols-3 gap-3">
         <Skeleton className="h-10 w-full" />

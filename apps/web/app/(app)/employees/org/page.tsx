@@ -27,7 +27,7 @@ export default function OrgChartPage() {
           </div>
         </div>
 
-        <div className="rounded-fn-lg border-fn-border bg-fn-bg-panel shadow-fn-sm border p-6">
+        <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm border p-6">
           {isLoading && <Skeleton className="h-72 w-full" />}
           {isError && (
             <div className="rounded-fn-md border-fn-danger-soft bg-fn-danger-soft/40 text-fn-danger-soft-fg flex items-center justify-between border px-3 py-2 text-[12.5px]">
