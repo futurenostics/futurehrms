@@ -55,7 +55,7 @@ export const legacySkipList = [
   'components/ui/dropdown-menu.tsx',
   'components/ui/form.tsx',
   'components/ui/input.tsx',
-  'components/ui/label.tsx',
+  // 'components/ui/label.tsx' — remediated in Sub-phase B Tier 1.
   'components/ui/popover.tsx',
   'components/ui/select.tsx',
   'components/ui/separator.tsx',
