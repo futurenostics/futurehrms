@@ -49,5 +49,15 @@ export default tseslint.config(
       'no-console': 'off',
     },
   },
+  {
+    // NestJS DI uses reflect-metadata, which requires injected service
+    // types to remain as value imports — `import type` strips them and
+    // breaks DI silently. Disable the consistent-type-imports rule for
+    // the API workspace so auto-fix doesn't sabotage @Injectable() classes.
+    files: ['apps/api/**/*.ts'],
+    rules: {
+      '@typescript-eslint/consistent-type-imports': 'off',
+    },
+  },
   prettier,
 );

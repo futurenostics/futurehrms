@@ -5,4 +5,4 @@
  * adds its own entity schemas (employee, project, commission-rule, ...)
  * under sibling files as it lands.
  */
-export * from './auth.ts';
+export * from './auth';

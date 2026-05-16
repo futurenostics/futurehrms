@@ -1,0 +1,272 @@
+// Futurenostics HRMS — HR Core schema (Phase 0).
+//
+// This is the minimal schema every domain module composes on top of:
+// identity (User, Role, Permission), org structure (Department,
+// Designation, EmployeeStatus, Employee), and history (SalaryHistory,
+// TimelineEntry, AuditLog). Module-specific tables (projects,
+// commission rules, payroll runs, hr rules, ...) land in their own
+// phase via Prisma's multi-file schema or additive migrations.
+//
+// Conventions enforced here:
+//   - cuid() ids
+//   - createdAt / updatedAt on every model
+//   - deletedAt for soft delete on anything with HR/financial weight
+//   - Decimal(14, 2) for money
+//   - Indexes on the foreign keys used by list pages
+
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Identity & access ----------
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  employeeId   String?   @unique
+  employee     Employee? @relation(fields: [employeeId], references: [id])
+
+  roles         UserRole[]
+  refreshTokens RefreshToken[]
+
+  isActive            Boolean   @default(true)
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+  lastLoginAt         DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([deletedAt])
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  ipAddress String?
+  userAgent String?
+
+  @@index([userId, expiresAt])
+  @@index([tokenHash])
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  isSystem    Boolean  @default(false)
+
+  permissions RolePermission[]
+  users       UserRole[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Permission {
+  id          String  @id @default(cuid())
+  key         String  @unique
+  module      String
+  action      String
+  description String?
+
+  roles RolePermission[]
+
+  createdAt DateTime @default(now())
+
+  @@index([module])
+}
+
+model UserRole {
+  userId          String
+  roleId          String
+  departmentScope String?
+  assignedAt      DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+}
+
+// ---------- Org structure ----------
+
+model Department {
+  id       String  @id @default(cuid())
+  name     String  @unique
+  slug     String  @unique
+  isActive Boolean @default(true)
+
+  employees    Employee[]
+  designations Designation[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+model Designation {
+  id           String     @id @default(cuid())
+  name         String
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id])
+  isActive     Boolean    @default(true)
+
+  employees Employee[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, departmentId])
+  @@index([departmentId])
+}
+
+model EmployeeStatus {
+  id         String  @id @default(cuid())
+  name       String  @unique
+  slug       String  @unique
+  isTerminal Boolean @default(false)
+
+  employees Employee[]
+}
+
+// ---------- Employee + lifecycle ----------
+
+model Employee {
+  id          String    @id @default(cuid())
+  eid         String    @unique
+  fullName    String
+  email       String    @unique
+  phone       String?
+  dateOfBirth DateTime?
+  gender      String?
+  cnic        String?   @unique
+  joinDate    DateTime
+
+  departmentId  String
+  department    Department     @relation(fields: [departmentId], references: [id])
+  designationId String
+  designation   Designation    @relation(fields: [designationId], references: [id])
+  statusId      String
+  status        EmployeeStatus @relation(fields: [statusId], references: [id])
+
+  contractType String
+
+  managerId String?
+  manager   Employee?  @relation("EmployeeManager", fields: [managerId], references: [id])
+  reports   Employee[] @relation("EmployeeManager")
+
+  user User?
+
+  salaryPkr                 Decimal? @db.Decimal(14, 2)
+  salaryProcessedExternally Boolean  @default(false)
+  hasPayoneer               Boolean  @default(false)
+  payoneerAccountId         String?
+
+  internshipEndDate     DateTime?
+  probationEndDate      DateTime?
+  biannualReviewEnabled Boolean   @default(false)
+  annualReviewEnabled   Boolean   @default(true)
+  lastIncrementDate     DateTime?
+
+  emergencyContact Json?
+
+  documents     EmployeeDocument[]
+  salaryHistory SalaryHistory[]
+  timeline      TimelineEntry[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([departmentId, statusId])
+  @@index([managerId])
+  @@index([deletedAt])
+}
+
+model EmployeeDocument {
+  id         String   @id @default(cuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  kind       String
+  fileUrl    String
+  uploadedAt DateTime @default(now())
+
+  @@index([employeeId, kind])
+}
+
+model SalaryHistory {
+  id            String   @id @default(cuid())
+  employeeId    String
+  employee      Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  oldSalaryPkr  Decimal? @db.Decimal(14, 2)
+  newSalaryPkr  Decimal  @db.Decimal(14, 2)
+  effectiveDate DateTime
+  remarks       String?
+  changedBy     String
+  createdAt     DateTime @default(now())
+
+  @@index([employeeId, effectiveDate])
+}
+
+model TimelineEntry {
+  id          String   @id @default(cuid())
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  eventType   String
+  module      String
+  title       String
+  details     Json?
+  occurredAt  DateTime
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([employeeId, occurredAt])
+  @@index([eventType])
+}
+
+// ---------- Audit ----------
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  module    String
+  entity    String
+  entityId  String
+  action    String
+  before    Json?
+  after     Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([actorId, createdAt])
+  @@index([module, createdAt])
+}

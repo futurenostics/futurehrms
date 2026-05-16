@@ -11,6 +11,7 @@ pnpm-lock.yaml
 # Generated Prisma client
 apps/api/prisma/migrations/
 
-# Design reference files — keep author's formatting
-docs/design/**/*.jsx
-docs/design/**/*.html
+# Reference docs — keep authors' formatting
+docs/design/**
+docs/prompts/**
+docs/tdds/**

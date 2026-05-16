@@ -1,2 +1,2 @@
-export { createStorageClient, type StorageClientConfig } from './client.ts';
-export type { StorageClient } from './types.ts';
+export { createStorageClient, type StorageClientConfig } from './client';
+export type { StorageClient } from './types';

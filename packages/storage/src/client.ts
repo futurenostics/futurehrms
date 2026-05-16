@@ -8,7 +8,7 @@
  * and listing objects.
  */
 import { S3Client } from '@aws-sdk/client-s3';
-import type { StorageClient } from './types.ts';
+import type { StorageClient } from './types';
 
 export interface StorageClientConfig {
   endpoint?: string;
