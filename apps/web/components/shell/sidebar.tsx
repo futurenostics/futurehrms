@@ -60,7 +60,7 @@ export function Sidebar() {
   );
 
   return (
-    <TooltipProvider delayDuration={250}>
+    <TooltipProvider delayDuration={200} skipDelayDuration={150}>
       <aside
         aria-label="Primary navigation"
         className="border-fn-border bg-fn-bg-subtle relative flex shrink-0 flex-col border-r"
@@ -92,7 +92,7 @@ function CollapseToggle({ collapsed, onClick }: { collapsed: boolean; onClick: (
           aria-label={label}
           aria-expanded={!collapsed}
           className={cn(
-            'absolute z-[2] inline-flex h-6 w-6 items-center justify-center rounded-full',
+            'absolute z-[2] inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-full',
             'border-fn-border-strong bg-fn-bg-panel text-fn-fg-muted shadow-fn-sm border',
             'hover:bg-fn-bg-subtle hover:text-fn-fg transition-colors',
             'focus-visible:ring-fn-accent focus-visible:ring-offset-fn-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
@@ -102,7 +102,9 @@ function CollapseToggle({ collapsed, onClick }: { collapsed: boolean; onClick: (
           <Icon className="h-[13px] w-[13px]" strokeWidth={2.25} />
         </button>
       </TooltipTrigger>
-      <TooltipContent side="right">{label}</TooltipContent>
+      <TooltipContent side="right" sideOffset={8}>
+        {label}
+      </TooltipContent>
     </Tooltip>
   );
 }
@@ -164,12 +166,19 @@ function NavRow({
   collapsed: boolean;
 }) {
   if (collapsed) {
+    // The Tooltip's asChild merges Radix props (event handlers, refs,
+    // aria-describedby) into the immediate child — that child must be a
+    // forwardRef component for the wiring to land on the actual DOM
+    // node. RailLink is one (see below); a plain function component
+    // would silently drop the handlers and the tooltip would never fire.
     return (
       <Tooltip>
         <TooltipTrigger asChild>
           <RailLink item={item} active={active} />
         </TooltipTrigger>
-        <TooltipContent side="right">{item.label}</TooltipContent>
+        <TooltipContent side="right" sideOffset={8}>
+          {item.label}
+        </TooltipContent>
       </Tooltip>
     );
   }
@@ -214,38 +223,50 @@ function ExpandedLink({ item, active }: { item: NavItem; active: boolean }) {
   );
 }
 
-function RailLink({ item, active }: { item: NavItem; active: boolean }) {
-  const Icon: LucideIcon = item.icon;
-  return (
-    <Link
-      href={item.href}
-      aria-current={active ? 'page' : undefined}
-      aria-label={item.label}
-      className={cn(
-        'relative flex h-10 items-center justify-center transition-colors duration-100',
-        active
-          ? 'bg-fn-accent-soft text-fn-accent-soft-fg'
-          : 'text-fn-fg-muted hover:bg-fn-bg-inset hover:text-fn-fg',
-      )}
-    >
-      {active && <ActiveBar />}
-      <Icon className="h-[18px] w-[18px]" />
-      {item.badge && (
-        <span
-          aria-hidden
-          className="bg-fn-accent absolute rounded-full"
-          style={{
-            top: 6,
-            right: 12,
-            width: 7,
-            height: 7,
-            border: '1.5px solid var(--fn-bg-subtle)',
-          }}
-        />
-      )}
-    </Link>
-  );
-}
+type RailLinkProps = { item: NavItem; active: boolean } & Omit<
+  React.AnchorHTMLAttributes<HTMLAnchorElement>,
+  'href'
+>;
+
+const RailLink = React.forwardRef<HTMLAnchorElement, RailLinkProps>(
+  ({ item, active, className, ...rest }, ref) => {
+    const Icon: LucideIcon = item.icon;
+    return (
+      <Link
+        ref={ref}
+        href={item.href}
+        aria-current={active ? 'page' : undefined}
+        aria-label={item.label}
+        className={cn(
+          'relative flex h-10 cursor-pointer items-center justify-center transition-colors duration-100',
+          'focus-visible:ring-fn-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset',
+          active
+            ? 'bg-fn-accent-soft text-fn-accent-soft-fg'
+            : 'text-fn-fg-muted hover:bg-fn-bg-inset hover:text-fn-fg',
+          className,
+        )}
+        {...rest}
+      >
+        {active && <ActiveBar />}
+        <Icon className="h-[18px] w-[18px]" />
+        {item.badge && (
+          <span
+            aria-hidden
+            className="bg-fn-accent absolute rounded-full"
+            style={{
+              top: 6,
+              right: 12,
+              width: 7,
+              height: 7,
+              border: '1.5px solid var(--fn-bg-subtle)',
+            }}
+          />
+        )}
+      </Link>
+    );
+  },
+);
+RailLink.displayName = 'RailLink';
 
 function ActiveBar() {
   return (
@@ -278,11 +299,26 @@ function UserBlock({
       )}
       style={{ gap: 10 }}
     >
-      <Avatar className="h-8 w-8 shrink-0">
-        <AvatarFallback className="text-[12px] font-semibold">{initials}</AvatarFallback>
-      </Avatar>
-      {!collapsed && (
+      {collapsed ? (
+        // In rail mode the name + role aren't visible, so the avatar
+        // gets a tooltip carrying both pieces of identity on hover or
+        // keyboard focus.
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <UserAvatarTrigger initials={initials} ariaLabel={`${displayName} · ${displayRole}`} />
+          </TooltipTrigger>
+          <TooltipContent side="right" sideOffset={8}>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[12px] font-semibold leading-tight">{displayName}</span>
+              <span className="text-[11px] opacity-80">{displayRole}</span>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      ) : (
         <>
+          <Avatar className="h-8 w-8 shrink-0">
+            <AvatarFallback className="text-[12px] font-semibold">{initials}</AvatarFallback>
+          </Avatar>
           <div className="min-w-0 flex-1">
             <div className="text-fn-fg truncate whitespace-nowrap text-[13px] font-semibold">
               {displayName}
@@ -296,18 +332,42 @@ function UserBlock({
               <Link
                 href="/settings"
                 aria-label="Account settings"
-                className="text-fn-fg-faint hover:text-fn-fg transition-colors"
+                className="text-fn-fg-faint hover:text-fn-fg rounded-fn-xs focus-visible:ring-fn-accent cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2"
               >
                 <SettingsIcon className="h-3.5 w-3.5" />
               </Link>
             </TooltipTrigger>
-            <TooltipContent side="top">Settings</TooltipContent>
+            <TooltipContent side="top" sideOffset={6}>
+              Settings
+            </TooltipContent>
           </Tooltip>
         </>
       )}
     </div>
   );
 }
+
+const UserAvatarTrigger = React.forwardRef<
+  HTMLButtonElement,
+  { initials: string; ariaLabel: string } & React.ButtonHTMLAttributes<HTMLButtonElement>
+>(({ initials, ariaLabel, className, ...rest }, ref) => (
+  <button
+    ref={ref}
+    type="button"
+    aria-label={ariaLabel}
+    className={cn(
+      'rounded-fn-full inline-flex h-8 w-8 cursor-pointer items-center justify-center',
+      'focus-visible:ring-fn-accent focus-visible:ring-offset-fn-bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
+      className,
+    )}
+    {...rest}
+  >
+    <Avatar className="h-8 w-8 shrink-0">
+      <AvatarFallback className="text-[12px] font-semibold">{initials}</AvatarFallback>
+    </Avatar>
+  </button>
+));
+UserAvatarTrigger.displayName = 'UserAvatarTrigger';
 
 function computeInitials(user: ReturnType<typeof useUser>['data']): string {
   if (user?.fullName) {
