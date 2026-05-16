@@ -11,6 +11,7 @@ import type {
   EmployeeListQuery,
   EmployeeListResponse,
   EmployeePublic,
+  EmployeeStats,
   EmployeeUpdateInput,
   OrgChartNode,
   ReferencesResponse,
@@ -27,6 +28,7 @@ const KEY = {
   timeline: (id: string) => ['employees', id, 'timeline'] as const,
   orgChart: () => ['employees', 'org-chart'] as const,
   total: () => ['employees', 'total'] as const,
+  stats: () => ['employees', 'stats'] as const,
 };
 
 function buildQs(query: Partial<EmployeeListQuery>): string {
@@ -94,6 +96,14 @@ export function useEmployeeTotal() {
   }>({
     queryKey: KEY.total(),
     queryFn: () => apiFetch('/api/employees/total'),
+  });
+}
+
+export function useEmployeeStats() {
+  return useQuery<EmployeeStats>({
+    queryKey: KEY.stats(),
+    queryFn: () => apiFetch<EmployeeStats>('/api/employees/stats'),
+    staleTime: 60_000,
   });
 }
 
@@ -213,6 +223,7 @@ export function useImportCommit() {
 function invalidateEmployeeQueries(qc: QueryClient, id?: string): void {
   qc.invalidateQueries({ queryKey: ['employees', 'list'] });
   qc.invalidateQueries({ queryKey: ['employees', 'total'] });
+  qc.invalidateQueries({ queryKey: ['employees', 'stats'] });
   qc.invalidateQueries({ queryKey: ['employees', 'org-chart'] });
   if (id) {
     qc.invalidateQueries({ queryKey: KEY.one(id) });
