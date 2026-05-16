@@ -71,3 +71,29 @@ lets the `dark:` modifier work against either attribute. Default is `system`.
 with `forcePathStyle: true`; in production the same interface targets AWS S3
 with virtual-hosted URLs. The decision keeps the production choice open while
 the dev experience is fully local.
+
+## 2026-05-16 — Sidebar rebuild deviations
+
+Rebuilt the sidebar to match `docs/design/shared/chrome.jsx`. Three deviations
+from the spec, all minor:
+
+1. **File case kept lowercase** (`sidebar.tsx`, not `Sidebar.tsx`). The rest of
+   the shell directory uses lowercase-kebab (`topbar.tsx`, `app-shell.tsx`,
+   `user-menu.tsx`); breaking that convention for one file would force a rename
+   on Linux CI even though macOS would silently accept the existing import path.
+   Consistency with the directory wins.
+2. **Collapse persistence uses localStorage only**, not a cookie. The spec
+   explicitly allowed accepting a brief layout shift for users with a persisted
+   collapsed state; we took that option. If the shift becomes annoying we'll
+   move to a cookie hydrated by middleware so the SSR shell matches.
+3. **Group labels are not rendered** in this iteration. The spec said groups
+   are flattened (matching `chrome.jsx`'s `navGroups.flatMap(...)`); the group
+   structure is preserved in `nav-config.ts` for future use.
+
+Active-item detection is prefix-aware: `/employees/123` highlights "Employees"
+because `pathname.startsWith('/employees/')` matches. `/dashboard` uses an
+exact-match guard so it doesn't capture other roots.
+
+Nav counts (84, 23) and badges (2, 4) are placeholder values copied from the
+design mockup — flagged with a TODO in `nav-config.ts` to wire to real counts
+when the relevant module endpoints land.
