@@ -3,12 +3,21 @@
  *
  * Holds the access token in memory (no localStorage — XSS-safe by default)
  * and lets the HttpOnly refresh cookie do the persistence work. On a 401,
- * the client transparently calls /auth/refresh once before retrying.
+ * the client transparently calls /auth/refresh once before retrying. The
+ * refresh path also fires when there's no in-memory token at all — that
+ * covers the hard-reload case where the access token vanishes but the
+ * refresh cookie is still valid.
  */
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
 let accessToken: string | null = null;
 let refreshing: Promise<string | null> | null = null;
+/** Skip the refresh-on-401 dance for the refresh endpoint itself. */
+const AUTH_PATHS_NO_REFRESH = new Set<string>([
+  '/api/auth/refresh',
+  '/api/auth/logout',
+  '/api/auth/login',
+]);
 
 export function getAccessToken(): string | null {
   return accessToken;
@@ -46,6 +55,17 @@ async function refreshToken(): Promise<string | null> {
       });
       if (!res.ok) {
         accessToken = null;
+        // If the cookie is present but the refresh token is revoked or
+        // expired on the server, the middleware will keep bouncing
+        // /login → /dashboard because it only checks for cookie
+        // presence. Tell the server to clear the cookie so the loop
+        // ends and the user lands on /login as expected.
+        if (res.status === 401) {
+          await fetch(`${API_URL}/api/auth/logout`, {
+            method: 'POST',
+            credentials: 'include',
+          }).catch(() => undefined);
+        }
         return null;
       }
       const data = (await res.json()) as { accessToken: string };
@@ -79,7 +99,12 @@ export async function apiFetch<T = unknown>(path: string, init: RequestInit = {}
   };
 
   let res = await exec(accessToken);
-  if (res.status === 401 && accessToken) {
+  // Refresh on 401 regardless of whether we had a token — this covers
+  // the hard-reload case where accessToken is null but the refresh
+  // cookie is still valid. The auth endpoints opt out of the retry to
+  // avoid infinite recursion (refresh failing → refresh again → …).
+  const isAuthEndpoint = AUTH_PATHS_NO_REFRESH.has(path);
+  if (res.status === 401 && !isAuthEndpoint) {
     const newToken = await refreshToken();
     if (newToken) {
       res = await exec(newToken);
