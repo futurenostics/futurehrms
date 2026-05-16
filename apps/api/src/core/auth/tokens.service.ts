@@ -38,15 +38,21 @@ export class TokensService {
 
   async signRefreshToken(input: {
     userId: string;
+    /** Override the default refresh TTL (e.g. for remember-me sessions). */
+    ttlSeconds?: number;
   }): Promise<{ token: string; jti: string; expiresAt: Date }> {
     const jti = randomUUID();
+    const expirationTime =
+      input.ttlSeconds !== undefined
+        ? Math.floor(Date.now() / 1000) + input.ttlSeconds
+        : this.refreshExpiry;
     const token = await new SignJWT({ type: 'refresh' })
       .setProtectedHeader({ alg: 'HS256' })
       .setSubject(input.userId)
       .setJti(jti)
       .setIssuer(this.issuer)
       .setIssuedAt()
-      .setExpirationTime(this.refreshExpiry)
+      .setExpirationTime(expirationTime)
       .sign(this.refreshSecret);
 
     const payload = await this.verifyRefreshToken(token);

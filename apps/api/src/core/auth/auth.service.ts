@@ -7,6 +7,9 @@ import type { AuthenticatedUser } from './types';
 
 const MAX_FAILED_ATTEMPTS = 10;
 const LOCKOUT_MS = 30 * 60 * 1000;
+const DEFAULT_REFRESH_TTL_DAYS = 7;
+const REMEMBER_ME_REFRESH_TTL_DAYS = 30;
+const SECONDS_PER_DAY = 24 * 60 * 60;
 
 export interface LoginResult {
   accessToken: string;
@@ -28,6 +31,7 @@ export class AuthService {
   async login(
     email: string,
     password: string,
+    rememberMe: boolean,
     meta: { ipAddress?: string; userAgent?: string },
   ): Promise<LoginResult> {
     const user = await prisma.user.findUnique({
@@ -36,19 +40,27 @@ export class AuthService {
     });
 
     if (!user || !user.isActive || user.deletedAt) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException({
+        code: 'INVALID_CREDENTIALS',
+        message: 'Email or password is incorrect',
+      });
     }
 
     if (user.lockedUntil && user.lockedUntil > new Date()) {
-      throw new ForbiddenException(
-        'Account temporarily locked due to failed login attempts. Try again later.',
-      );
+      throw new ForbiddenException({
+        code: 'ACCOUNT_LOCKED',
+        message: 'Account temporarily locked due to failed login attempts.',
+        retryAt: user.lockedUntil.toISOString(),
+      });
     }
 
     const matches = await this.passwords.verify(user.passwordHash, password);
     if (!matches) {
       await this.registerFailedAttempt(user.id, user.failedLoginAttempts);
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException({
+        code: 'INVALID_CREDENTIALS',
+        message: 'Email or password is incorrect',
+      });
     }
 
     await prisma.user.update({
@@ -56,8 +68,12 @@ export class AuthService {
       data: { failedLoginAttempts: 0, lockedUntil: null, lastLoginAt: new Date() },
     });
 
+    const ttlDays = rememberMe ? REMEMBER_ME_REFRESH_TTL_DAYS : DEFAULT_REFRESH_TTL_DAYS;
     const accessToken = await this.tokens.signAccessToken({ userId: user.id, email: user.email });
-    const refresh = await this.tokens.signRefreshToken({ userId: user.id });
+    const refresh = await this.tokens.signRefreshToken({
+      userId: user.id,
+      ttlSeconds: ttlDays * SECONDS_PER_DAY,
+    });
 
     await prisma.refreshToken.create({
       data: {

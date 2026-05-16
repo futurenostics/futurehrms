@@ -21,13 +21,19 @@ export function setAccessToken(token: string | null): void {
 export interface ApiError extends Error {
   status: number;
   body: unknown;
+  headers: Headers;
 }
 
-function makeError(status: number, body: unknown, message: string): ApiError {
+function makeError(status: number, body: unknown, message: string, headers: Headers): ApiError {
   const err = new Error(message) as ApiError;
   err.status = status;
   err.body = body;
+  err.headers = headers;
   return err;
+}
+
+export function isApiError(err: unknown): err is ApiError {
+  return err instanceof Error && typeof (err as ApiError).status === 'number';
 }
 
 async function refreshToken(): Promise<string | null> {
@@ -90,7 +96,7 @@ export async function apiFetch<T = unknown>(path: string, init: RequestInit = {}
       typeof body === 'object' && body && 'message' in body
         ? String((body as { message?: unknown }).message ?? `Request failed (${res.status})`)
         : `Request failed (${res.status})`;
-    throw makeError(res.status, body, message);
+    throw makeError(res.status, body, message, res.headers);
   }
   return body as T;
 }

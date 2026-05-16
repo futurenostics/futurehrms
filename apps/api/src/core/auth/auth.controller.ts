@@ -40,7 +40,7 @@ export class AuthController {
   ): Promise<{ accessToken: string; user: AuthenticatedUser }> {
     const parsed = loginInputSchema.parse(body);
     const ctx = this.context.get();
-    const result = await this.auth.login(parsed.email, parsed.password, {
+    const result = await this.auth.login(parsed.email, parsed.password, parsed.rememberMe, {
       ipAddress: ctx?.ipAddress ?? req.ip,
       userAgent: ctx?.userAgent ?? req.headers['user-agent'],
     });
