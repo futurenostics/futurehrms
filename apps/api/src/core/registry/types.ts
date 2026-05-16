@@ -75,6 +75,13 @@ export interface SettingsPageDefinition {
   order?: number;
 }
 
+export interface DefaultRoleAttachment {
+  /** System role slug — e.g. 'hr_admin', 'department_manager'. */
+  roleSlug: string;
+  /** Actions on this module to grant the role on first boot. */
+  actions: string[];
+}
+
 export interface ModuleManifest {
   /** Lowercase identifier — matches the folder name and the prefix on permission keys. */
   key: string;
@@ -89,6 +96,12 @@ export interface ModuleManifest {
   settingsPages?: SettingsPageDefinition[];
   /** Prisma model names whose writes generate audit-log entries. */
   auditedEntities?: string[];
+  /**
+   * Default attachments applied to system roles on boot. Idempotent —
+   * re-running upserts. Custom roles created via the admin UI are
+   * never touched here.
+   */
+  defaultRolePermissions?: DefaultRoleAttachment[];
 }
 
 /** Helper: derive the full permission key (`<module>:<action>`). */

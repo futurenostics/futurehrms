@@ -41,7 +41,7 @@ describe('RegistryService', () => {
 
   it('upserts every declared permission on init', async () => {
     registry.register(fakeManifest);
-    await registry.onModuleInit();
+    await registry.syncPermissionsNow();
 
     const rows = await prisma.permission.findMany({
       where: { module: TEST_MODULE_KEY },
@@ -57,8 +57,8 @@ describe('RegistryService', () => {
 
   it('is idempotent across repeated init calls', async () => {
     registry.register(fakeManifest);
-    await registry.onModuleInit();
-    await registry.onModuleInit();
+    await registry.syncPermissionsNow();
+    await registry.syncPermissionsNow();
 
     const count = await prisma.permission.count({ where: { module: TEST_MODULE_KEY } });
     expect(count).toBe(2);
@@ -66,7 +66,7 @@ describe('RegistryService', () => {
 
   it('updates description without creating duplicates', async () => {
     registry.register(fakeManifest);
-    await registry.onModuleInit();
+    await registry.syncPermissionsNow();
 
     // Simulate a second boot where the description has been edited.
     const next = new RegistryService();
@@ -74,7 +74,7 @@ describe('RegistryService', () => {
       ...fakeManifest,
       permissions: [{ action: 'view', description: 'Updated copy' }],
     });
-    await next.onModuleInit();
+    await next.syncPermissionsNow();
 
     const row = await prisma.permission.findUnique({
       where: { key: `${TEST_MODULE_KEY}:view` },

@@ -1,4 +1,4 @@
-import { Global, Module, type OnModuleInit } from '@nestjs/common';
+import { Global, Module, type OnApplicationBootstrap } from '@nestjs/common';
 import { AuditService } from './audit.service';
 import { RegistryService } from '../registry/registry.service';
 import { RequestContextService } from '../request-context/request-context.service';
@@ -23,13 +23,19 @@ const PHASE_0_AUDITED_MODELS = new Set([
   providers: [AuditService],
   exports: [AuditService],
 })
-export class AuditModule implements OnModuleInit {
+export class AuditModule implements OnApplicationBootstrap {
   constructor(
     private readonly registry: RegistryService,
     private readonly context: RequestContextService,
   ) {}
 
-  onModuleInit(): void {
+  /**
+   * Install the audit middleware after every module has registered its
+   * manifest (which happens in module-level `onModuleInit`). Fires on
+   * `onApplicationBootstrap`, which Nest runs strictly after the init
+   * pass — guarantees the audited-entities set is complete.
+   */
+  onApplicationBootstrap(): void {
     const audited = new Set(PHASE_0_AUDITED_MODELS);
     for (const manifest of this.registry.list()) {
       for (const entity of manifest.auditedEntities ?? []) {

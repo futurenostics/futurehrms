@@ -1,4 +1,4 @@
-import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common';
 import { prisma } from '@futurenostics/db';
 import { permissionKey, type ModuleManifest } from './types';
 
@@ -10,8 +10,15 @@ import { permissionKey, type ModuleManifest } from './types';
  * The plumbing has to work so that registering a fake manifest in a test
  * surfaces its permissions in the DB.
  */
+/**
+ * Registration timing note: domain modules call `register()` from their
+ * own `onModuleInit`. RegistryService waits until `onApplicationBootstrap`
+ * to sync to the DB — Nest fires that hook after every module's
+ * `onModuleInit` has resolved, so the registry sees the full manifest
+ * list rather than a partial slice ordered by import position.
+ */
 @Injectable()
-export class RegistryService implements OnModuleInit {
+export class RegistryService implements OnApplicationBootstrap {
   private readonly logger = new Logger(RegistryService.name);
   private readonly manifests = new Map<string, ModuleManifest>();
 
@@ -30,7 +37,12 @@ export class RegistryService implements OnModuleInit {
     return this.manifests.get(key);
   }
 
-  async onModuleInit(): Promise<void> {
+  async onApplicationBootstrap(): Promise<void> {
+    await this.syncPermissions();
+  }
+
+  /** Public for tests that want to verify the upsert happens. */
+  async syncPermissionsNow(): Promise<void> {
     await this.syncPermissions();
   }
 
@@ -65,6 +77,67 @@ export class RegistryService implements OnModuleInit {
         });
       }
     }
+
+    await this.applyDefaultRolePermissions(manifests);
+    await this.grantAllToSuperAdmin();
+
     this.logger.log(`Synced permissions for ${manifests.length} module(s).`);
+  }
+
+  /**
+   * Apply each manifest's declared defaultRolePermissions to the matching
+   * system roles. Idempotent — uses upsert on the join row. Missing
+   * roles or permissions are skipped silently.
+   */
+  private async applyDefaultRolePermissions(manifests: ModuleManifest[]): Promise<void> {
+    const attachments = manifests.flatMap((m) =>
+      (m.defaultRolePermissions ?? []).flatMap((attachment) =>
+        attachment.actions.map((action) => ({
+          roleSlug: attachment.roleSlug,
+          permKey: permissionKey(m.key, action),
+        })),
+      ),
+    );
+    if (attachments.length === 0) return;
+
+    const [roles, perms] = await Promise.all([
+      prisma.role.findMany({
+        where: { slug: { in: [...new Set(attachments.map((a) => a.roleSlug))] } },
+      }),
+      prisma.permission.findMany({
+        where: { key: { in: [...new Set(attachments.map((a) => a.permKey))] } },
+      }),
+    ]);
+    const roleBySlug = new Map(roles.map((r) => [r.slug, r]));
+    const permByKey = new Map(perms.map((p) => [p.key, p]));
+
+    for (const attachment of attachments) {
+      const role = roleBySlug.get(attachment.roleSlug);
+      const perm = permByKey.get(attachment.permKey);
+      if (!role || !perm) continue;
+      await prisma.rolePermission.upsert({
+        where: { roleId_permissionId: { roleId: role.id, permissionId: perm.id } },
+        create: { roleId: role.id, permissionId: perm.id },
+        update: {},
+      });
+    }
+  }
+
+  /**
+   * Super-admin is privileged-by-definition: it gets every permission
+   * the system has, automatically. Re-runs each boot so newly-registered
+   * permissions land immediately rather than waiting for a manual grant.
+   */
+  private async grantAllToSuperAdmin(): Promise<void> {
+    const role = await prisma.role.findUnique({ where: { slug: 'super_admin' } });
+    if (!role) return;
+    const perms = await prisma.permission.findMany({ select: { id: true } });
+    for (const perm of perms) {
+      await prisma.rolePermission.upsert({
+        where: { roleId_permissionId: { roleId: role.id, permissionId: perm.id } },
+        create: { roleId: role.id, permissionId: perm.id },
+        update: {},
+      });
+    }
   }
 }
