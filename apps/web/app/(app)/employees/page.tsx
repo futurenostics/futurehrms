@@ -333,7 +333,7 @@ export default function EmployeesListPage() {
                           </colgroup>
                           <tbody>
                             <tr>
-                              <td className="py-3 pl-[18px] pr-0">
+                              <td className="py-3 pl-[18px] pr-0 align-middle">
                                 <Checkbox
                                   checked={
                                     allOnPageSelected
@@ -469,10 +469,15 @@ interface ThProps {
 }
 
 function Th({ children, align = 'left', sortable, active, dir, onSort }: ThProps) {
+  // Header spec from docs/design/shared/primitives.jsx InsetTable +
+  // screens/employees.jsx ThCol: 11px / weight 500 / uppercase /
+  // tracking 0.08em / muted color / 12px x 12px padding. First and
+  // last header cells get edge-inset 18px / 14px padding via row-level
+  // overrides; standard cells use 12px both sides.
   return (
     <td
       className={cn(
-        'text-fn-fg-muted px-3 py-3 text-[11px] font-semibold uppercase tracking-[0.08em]',
+        'text-fn-fg-muted px-3 py-3 text-[11px] font-medium uppercase tracking-[0.08em]',
         align === 'right' ? 'text-right' : 'text-left',
       )}
     >
@@ -481,7 +486,7 @@ function Th({ children, align = 'left', sortable, active, dir, onSort }: ThProps
         onClick={sortable ? onSort : undefined}
         disabled={!sortable}
         className={cn(
-          'inline-flex items-center gap-1.5 transition-colors',
+          'inline-flex items-center gap-[5px] transition-colors',
           align === 'right' && 'flex-row-reverse',
           sortable && 'hover:text-fn-fg cursor-pointer',
           active && 'text-fn-fg',
@@ -490,7 +495,11 @@ function Th({ children, align = 'left', sortable, active, dir, onSort }: ThProps
         <span>{children}</span>
         {sortable &&
           active &&
-          (dir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+          (dir === 'asc' ? (
+            <ArrowUp className="h-3 w-3 opacity-60" />
+          ) : (
+            <ArrowDown className="h-3 w-3 opacity-60" />
+          ))}
       </button>
     </td>
   );
@@ -517,6 +526,15 @@ function EmployeeRow({
   onToggle,
   onOpen,
 }: EmployeeRowProps) {
+  // Cell padding spec (docs/design/screens/employees.jsx Td function):
+  //   first cell  → 12px 0 12px 18px
+  //   last cell   → 12px 14px 12px 4px
+  //   default     → 12px 12px (px-3 py-3)
+  //
+  // The Employee cell additionally renders the 36px avatar + name +
+  // email block which pushes the row to ~70px tall — that's the row
+  // rhythm the design intends. Other cells inherit that height
+  // automatically through align-middle.
   const cellBorder = bordered ? 'border-b border-fn-divider' : '';
   return (
     <tr
@@ -538,44 +556,51 @@ function EmployeeRow({
           aria-label={`Select ${employee.fullName}`}
         />
       </td>
-      <td className={cn('px-3 py-3 align-middle', cellBorder)}>
-        <div className="flex items-center gap-3">
+      <td className={cn('px-3 align-middle', cellBorder)}>
+        {/* Inner wrapper holds the row-rhythm pad (12px top/bottom) so
+            the cell border tracks the row, not the avatar block. */}
+        <div className="flex items-center gap-3 py-3">
           <EmployeeAvatar fullName={employee.fullName} photoUrl={employee.photoUrl} size="md" />
           <div className="min-w-0">
             <div
               className={cn(
-                'text-fn-fg truncate text-[14px] font-semibold',
+                'text-fn-fg truncate text-[14px] font-semibold leading-tight',
                 employee.isArchived && 'line-through',
               )}
             >
               {employee.fullName}
             </div>
-            <div className="text-fn-fg-faint truncate font-mono text-[11.5px]">
+            <div className="text-fn-fg-faint mt-0.5 truncate font-mono text-[11.5px] leading-tight">
               {employee.email}
             </div>
           </div>
         </div>
       </td>
       <td className={cn('px-3 py-3 align-middle', cellBorder)}>
-        <span className="font-tabular text-fn-fg-muted font-mono text-[12px]">{employee.eid}</span>
+        <span className="text-fn-fg-muted font-mono text-[12px] tabular-nums">{employee.eid}</span>
       </td>
-      <td className={cn('text-fn-fg-muted px-3 py-3 align-middle', cellBorder)}>
+      <td className={cn('text-fn-fg-muted px-3 py-3 align-middle text-[13px]', cellBorder)}>
         {employee.department.name}
       </td>
-      <td className={cn('text-fn-fg-muted px-3 py-3 align-middle', cellBorder)}>
+      <td className={cn('text-fn-fg-muted px-3 py-3 align-middle text-[13px]', cellBorder)}>
         {employee.designation.name}
       </td>
       <td className={cn('px-3 py-3 align-middle', cellBorder)}>
         <StatusPill status={employee.status} dot />
       </td>
-      <td className={cn('font-tabular text-fn-fg-muted px-3 py-3 align-middle', cellBorder)}>
+      <td
+        className={cn(
+          'text-fn-fg-muted px-3 py-3 align-middle text-[13px] tabular-nums',
+          cellBorder,
+        )}
+      >
         {formatJoinDate(employee.joinDate)}
       </td>
       {canViewSalary && (
         <td className={cn('px-3 py-3 text-right align-middle', cellBorder)}>
           {employee.salaryPkr != null ? (
             <>
-              <div className="font-tabular text-fn-fg font-mono text-[13px] font-medium">
+              <div className="text-fn-fg text-[13px] font-semibold tabular-nums">
                 {formatSalary(employee.salaryPkr)}
               </div>
               {employee.hasPayoneer && (
@@ -590,7 +615,7 @@ function EmployeeRow({
         </td>
       )}
       <td
-        className={cn('py-3 pr-3 text-right align-middle', cellBorder)}
+        className={cn('py-3 pl-1 pr-[14px] text-right align-middle', cellBorder)}
         onClick={(e) => e.stopPropagation()}
       >
         <RowKebabMenu employee={employee} canArchive={canArchive} />
@@ -607,7 +632,7 @@ function RowKebabMenu({ employee, canArchive }: { employee: EmployeePublic; canA
         <button
           type="button"
           aria-label={`Actions for ${employee.fullName}`}
-          className="rounded-fn-xs text-fn-fg-faint hover:bg-fn-bg-inset hover:text-fn-fg-muted focus-visible:ring-fn-accent inline-flex h-8 w-8 cursor-pointer items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2"
+          className="rounded-fn-xs text-fn-fg-faint hover:bg-fn-bg-inset hover:text-fn-fg-muted focus-visible:ring-fn-accent inline-flex h-7 w-7 cursor-pointer items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2"
         >
           <MoreHorizontal className="h-4 w-4" />
         </button>
