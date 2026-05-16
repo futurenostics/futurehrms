@@ -97,3 +97,33 @@ exact-match guard so it doesn't capture other roots.
 Nav counts (84, 23) and badges (2, 4) are placeholder values copied from the
 design mockup — flagged with a TODO in `nav-config.ts` to wire to real counts
 when the relevant module endpoints land.
+
+## 2026-05-16 — Login polish + Remember Me
+
+- **Remember me cookie duration: 30 days** when checked, 7 days when not.
+  30 days is the standard "stay signed in" duration (matches Google, GitHub,
+  Linear) — long enough to be useful, short enough that a forgotten laptop
+  doesn't stay signed in indefinitely. The refresh token row's `expiresAt`
+  column stores the actual chosen TTL so server-side revocation tracks the
+  correct lifetime.
+- **Email pre-fill via localStorage** under key `fn:login:lastEmail`. Only
+  the email is persisted client-side, never the password. When Remember Me
+  is unchecked on a subsequent login, the stored email is cleared.
+- **Open-redirect defence**: the `?from=` query param is validated to start
+  with `/`, not contain `//`, not contain `://`, and not start with `/\`
+  (Windows path-escape attempts). Anything else falls back to `/dashboard`.
+- **User-enumeration defence**: `/auth/login` returns the same
+  `INVALID_CREDENTIALS` message for unknown email and wrong password. We do
+  not surface which field is wrong.
+- **Structured error payload**: `/auth/login` returns `{code, message,
+retryAt?}` for INVALID_CREDENTIALS, ACCOUNT_LOCKED, and RATE_LIMITED so
+  the client can show countdown UI without parsing free-form text.
+- **Cursor + disabled discipline on Button primitive**: replaced
+  `disabled:pointer-events-none` with `cursor-pointer` +
+  `disabled:cursor-not-allowed disabled:opacity-60`. The native `disabled`
+  attribute on `<button>` blocks clicks; removing `pointer-events: none`
+  lets the cursor change reflect intent on hover.
+- **Throttle limit 20/15min** (was 5) — see prior entry; surfaced here too
+  because the login UI reads `Retry-After` to drive the cooldown banner.
+- **`force-dynamic` on `/login`** since `useSearchParams()` reads `from`
+  during render. Avoids the Suspense-around-search-params boilerplate.

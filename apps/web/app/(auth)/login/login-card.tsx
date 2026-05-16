@@ -1,25 +1,28 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
-  Calendar,
-  Mail,
-  MessageCircle,
-  CreditCard,
-  Briefcase,
-  Users,
+  AlertCircle,
   ArrowRight,
-  Lock,
+  Briefcase,
+  Calendar,
+  CreditCard,
   Eye,
   EyeOff,
+  Loader2,
+  Lock,
   LogIn,
+  Mail,
+  MessageCircle,
+  Users,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { loginInputSchema, type LoginInput } from '@futurenostics/types';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import {
   Form,
@@ -30,8 +33,26 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Logo } from '@/components/brand/logo';
-import { login } from '@/lib/auth';
+import { classifyLoginError, login, type LoginError } from '@/lib/auth';
 import { cn } from '@/lib/utils';
+import { ForgotPasswordDialog } from './forgot-password-dialog';
+
+const LAST_EMAIL_STORAGE_KEY = 'fn:login:lastEmail';
+const DEFAULT_REDIRECT = '/dashboard';
+
+/**
+ * Internal-only redirect target. Defends against open-redirect via the
+ * ?from query param — anything that isn't a relative path rooted at "/"
+ * falls back to the dashboard.
+ */
+function safeReturnTo(value: string | null | undefined): string {
+  if (!value) return DEFAULT_REDIRECT;
+  if (!value.startsWith('/')) return DEFAULT_REDIRECT;
+  if (value.startsWith('//')) return DEFAULT_REDIRECT;
+  if (value.includes('://')) return DEFAULT_REDIRECT;
+  if (value.startsWith('/\\')) return DEFAULT_REDIRECT;
+  return value;
+}
 
 export function LoginCard() {
   return (
@@ -47,24 +68,90 @@ export function LoginCard() {
 
 function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const rememberCheckboxId = useId();
+
   const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState<LoginError | null>(null);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  const [forgotOpen, setForgotOpen] = useState(false);
+
+  // Refs for programmatic focus after pre-fill hydrates from localStorage.
+  const emailInputRef = useRef<HTMLInputElement>(null);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
+  const hydratedRef = useRef(false);
+
   const form = useForm<LoginInput>({
     resolver: zodResolver(loginInputSchema),
-    defaultValues: { email: '', password: '' },
+    mode: 'onBlur',
+    defaultValues: { email: '', password: '', rememberMe: false },
   });
   const { isSubmitting } = form.formState;
 
-  async function onSubmit(values: LoginInput) {
+  // Hydrate the email pre-fill + remember-me checkbox from localStorage
+  // once on mount, then focus the right field. Wrapped in a ref guard so
+  // strict-mode double-effects don't double-focus.
+  useEffect(() => {
+    if (hydratedRef.current) return;
+    hydratedRef.current = true;
+    let stored: string | null = null;
     try {
-      const user = await login(values);
-      toast.success(`Welcome back${user.fullName ? `, ${user.fullName.split(' ')[0]}` : ''}.`);
-      router.replace('/dashboard');
-      router.refresh();
-    } catch (err) {
-      const message = (err as Error)?.message ?? 'Login failed';
-      toast.error(message);
+      stored = window.localStorage.getItem(LAST_EMAIL_STORAGE_KEY);
+    } catch {
+      // localStorage can throw under quota/privacy modes — ignore.
     }
-  }
+    if (stored) {
+      form.reset({ email: stored, password: '', rememberMe: true });
+      passwordInputRef.current?.focus();
+    } else {
+      emailInputRef.current?.focus();
+    }
+  }, [form]);
+
+  // Drive a 1s tick while the form is in a cooldown so the countdown
+  // re-renders. Stops itself when the cooldown clears.
+  useEffect(() => {
+    if (!error?.retryAt) return;
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [error?.retryAt]);
+
+  const cooldownActive = Boolean(error?.retryAt && error.retryAt.getTime() > nowMs);
+  const submitDisabled = isSubmitting || cooldownActive;
+
+  const onSubmit = useCallback(
+    async (values: LoginInput) => {
+      setError(null);
+      try {
+        const user = await login(values);
+
+        try {
+          if (values.rememberMe) {
+            window.localStorage.setItem(LAST_EMAIL_STORAGE_KEY, values.email);
+          } else {
+            window.localStorage.removeItem(LAST_EMAIL_STORAGE_KEY);
+          }
+        } catch {
+          // ignore — see above
+        }
+
+        toast.success(`Welcome back${user.fullName ? `, ${user.fullName.split(' ')[0]}` : ''}.`);
+
+        const target = safeReturnTo(searchParams.get('from'));
+        router.replace(target);
+        router.refresh();
+      } catch (err) {
+        const classified = classifyLoginError(err);
+        setError(classified);
+        setNowMs(Date.now());
+        // Clear the password so the user retypes — never the email, so
+        // remember-me'd users don't have to type it again on a typo.
+        form.setValue('password', '');
+        passwordInputRef.current?.focus();
+      }
+    },
+    [form, router, searchParams],
+  );
 
   return (
     <div className="bg-fn-bg-panel flex flex-col px-8 py-10 md:px-16 md:py-12">
@@ -79,12 +166,22 @@ function LoginForm() {
           Enter your registered email address and password to login.
         </p>
 
+        {/* aria-live region is always rendered so the role is announced
+            consistently when an error appears or updates. */}
+        <div aria-live="polite" aria-atomic="true" className="mt-6 empty:hidden">
+          {error && <ErrorBanner error={error} nowMs={nowMs} />}
+        </div>
+
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="mt-8 flex flex-col gap-4">
+          <form
+            noValidate
+            onSubmit={form.handleSubmit(onSubmit)}
+            className={cn('mt-4 flex flex-col gap-4', error ? 'mt-3' : 'mt-8')}
+          >
             <FormField
               control={form.control}
               name="email"
-              render={({ field }) => (
+              render={({ field: { ref, ...field } }) => (
                 <FormItem>
                   <FormLabel>Email</FormLabel>
                   <FormControl>
@@ -92,9 +189,12 @@ function LoginForm() {
                       icon={<Mail className="text-fn-fg-faint h-4 w-4" />}
                       type="email"
                       autoComplete="email"
-                      autoFocus
                       placeholder="eg. asma.ali@futurenostics.com"
                       disabled={isSubmitting}
+                      ref={(node) => {
+                        ref(node);
+                        emailInputRef.current = node;
+                      }}
                       {...field}
                     />
                   </FormControl>
@@ -106,7 +206,7 @@ function LoginForm() {
             <FormField
               control={form.control}
               name="password"
-              render={({ field }) => (
+              render={({ field: { ref, ...field } }) => (
                 <FormItem>
                   <FormLabel>Password</FormLabel>
                   <FormControl>
@@ -116,12 +216,17 @@ function LoginForm() {
                       autoComplete="current-password"
                       placeholder="••••••••••••"
                       disabled={isSubmitting}
+                      ref={(node) => {
+                        ref(node);
+                        passwordInputRef.current = node;
+                      }}
                       suffix={
                         <button
                           type="button"
+                          tabIndex={-1}
                           onClick={() => setShowPassword((v) => !v)}
                           aria-label={showPassword ? 'Hide password' : 'Show password'}
-                          className="text-fn-fg-faint hover:text-fn-fg-muted"
+                          className="text-fn-fg-faint hover:text-fn-fg-muted cursor-pointer"
                         >
                           {showPassword ? (
                             <EyeOff className="h-3.5 w-3.5" />
@@ -139,13 +244,28 @@ function LoginForm() {
             />
 
             <div className="mt-0.5 flex items-center justify-between">
-              <label className="text-fn-fg-muted inline-flex cursor-pointer items-center gap-2 text-[13px]">
-                <span className="border-fn-border-strong bg-fn-bg-panel inline-block h-[18px] w-[18px] rounded-[4px] border-[1.5px]" />
-                Remember me
-              </label>
+              <FormField
+                control={form.control}
+                name="rememberMe"
+                render={({ field }) => (
+                  <label
+                    htmlFor={rememberCheckboxId}
+                    className="text-fn-fg-muted inline-flex cursor-pointer select-none items-center gap-2 text-[13px]"
+                  >
+                    <Checkbox
+                      id={rememberCheckboxId}
+                      checked={field.value}
+                      onCheckedChange={(v) => field.onChange(v === true)}
+                      disabled={isSubmitting}
+                    />
+                    Remember me
+                  </label>
+                )}
+              />
               <button
                 type="button"
-                className="text-fn-accent-soft-fg text-[13px] font-semibold hover:underline"
+                onClick={() => setForgotOpen(true)}
+                className="text-fn-accent-soft-fg focus-visible:ring-fn-accent rounded-fn-xs cursor-pointer text-[13px] font-semibold hover:underline focus-visible:outline-none focus-visible:ring-2"
               >
                 Forgot Password?
               </button>
@@ -154,14 +274,23 @@ function LoginForm() {
             <Button
               type="submit"
               size="lg"
-              disabled={isSubmitting}
+              disabled={submitDisabled}
               className="rounded-fn-sm mt-1.5 h-[46px] text-[14px] font-semibold tracking-tight"
               style={{
                 boxShadow: '0 4px 10px -2px color-mix(in oklch, var(--fn-accent) 45%, transparent)',
               }}
             >
-              {isSubmitting ? 'Signing in…' : 'Login'}
-              {!isSubmitting && <ArrowRight className="h-4 w-4" />}
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Signing in…
+                </>
+              ) : (
+                <>
+                  Login
+                  <ArrowRight className="h-4 w-4" />
+                </>
+              )}
             </Button>
 
             <div className="text-fn-fg-faint mt-1.5 flex items-center gap-3 text-[12px]">
@@ -182,17 +311,47 @@ function LoginForm() {
       <div className="text-fn-fg-faint flex justify-between text-[11.5px]">
         <span>© 2026 Futurenostics</span>
         <span className="flex gap-3.5">
-          <button type="button" className="hover:text-fn-fg-muted">
+          <button type="button" className="hover:text-fn-fg-muted cursor-pointer">
             Privacy
           </button>
-          <button type="button" className="hover:text-fn-fg-muted">
+          <button type="button" className="hover:text-fn-fg-muted cursor-pointer">
             Status
           </button>
           <span className="font-mono">v0.7.2-beta</span>
         </span>
       </div>
+
+      <ForgotPasswordDialog open={forgotOpen} onOpenChange={setForgotOpen} />
     </div>
   );
+}
+
+/* ---------- Error banner ---------- */
+
+function ErrorBanner({ error, nowMs }: { error: LoginError; nowMs: number }) {
+  const detail = formatCooldownSuffix(error.retryAt, nowMs);
+  const message = detail ? `${error.message} ${detail}` : error.message;
+  return (
+    <div
+      role="alert"
+      className="bg-fn-danger-soft text-fn-danger-soft-fg rounded-fn-sm flex items-start gap-2 px-3 py-2.5 text-[12px] leading-snug"
+    >
+      <AlertCircle className="mt-px h-3.5 w-3.5 shrink-0" />
+      <span>{message}</span>
+    </div>
+  );
+}
+
+function formatCooldownSuffix(retryAt: Date | undefined, nowMs: number): string | null {
+  if (!retryAt) return null;
+  const msLeft = retryAt.getTime() - nowMs;
+  if (msLeft <= 0) return null;
+  if (msLeft > 60_000) {
+    const time = retryAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return `Try again at ${time}.`;
+  }
+  const seconds = Math.ceil(msLeft / 1000);
+  return `Try again in ${seconds}s.`;
 }
 
 function HeroIcon() {
@@ -245,7 +404,7 @@ function SocialStub({ kind }: { kind: 'google' | 'apple' | 'microsoft' }) {
     <button
       type="button"
       onClick={() => toast.info('Single sign-on integrations coming soon.')}
-      className="rounded-fn-sm border-fn-border-strong bg-fn-bg-panel hover:bg-fn-bg-subtle focus-visible:ring-fn-accent inline-flex h-[50px] items-center justify-center border transition-colors focus-visible:outline-none focus-visible:ring-2"
+      className="rounded-fn-sm border-fn-border-strong bg-fn-bg-panel hover:bg-fn-bg-subtle focus-visible:ring-fn-accent inline-flex h-[50px] cursor-pointer items-center justify-center border transition-colors focus-visible:outline-none focus-visible:ring-2"
       aria-label={`Sign in with ${kind}`}
     >
       {kind === 'google' && <GoogleGlyph />}
