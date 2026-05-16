@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Futurenostics HRMS — Print</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; padding: 0; background: #ffffff; font-family: 'Poppins', system-ui, sans-serif; -webkit-font-smoothing: antialiased; font-feature-settings: 'cv11'; }
+  #root { background: #ffffff; }
+
+  /* Hide the design canvas chrome (zoom toolbar, section nav, etc.) */
+  [data-dc-toolbar],
+  [data-dc-minimap],
+  [data-dc-section-nav],
+  .dc-toolbar,
+  .dc-minimap,
+  .dc-section-nav,
+  .dc-grip,
+  .dc-btns,
+  .dc-expand,
+  .dc-kebab,
+  .dc-menu { display: none !important; }
+
+  /* Hide the Tweaks panel button + panel */
+  [data-tweaks-toggle],
+  .tweaks-panel,
+  [class*="tweaks"] { display: none !important; }
+
+  /* Force the canvas to be a normal block layout in screen too (for verification) */
+  .design-canvas,
+  [class*="dc-canvas"],
+  [class*="design-canvas"] {
+    transform: none !important;
+    position: static !important;
+    overflow: visible !important;
+    width: auto !important;
+    height: auto !important;
+    background: #ffffff !important;
+  }
+
+  /* Stack artboards vertically with breathing room */
+  [data-dc-slot] {
+    position: static !important;
+    transform: none !important;
+    display: block !important;
+    margin: 0 auto 48px !important;
+    left: auto !important;
+    top: auto !important;
+  }
+
+  /* Section labels */
+  .dc-section {
+    margin: 24px auto 16px !important;
+    page-break-before: auto;
+  }
+
+  /* Card around each artboard */
+  .dc-card {
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.06) !important;
+    margin: 0 auto !important;
+  }
+
+  @page {
+    size: 1480px 1280px;
+    margin: 20px;
+  }
+
+  @media print {
+    html, body { background: #ffffff !important; }
+
+    /* Each artboard on its own page */
+    [data-dc-slot] {
+      page-break-before: always;
+      page-break-inside: avoid;
+      break-before: page;
+      break-inside: avoid;
+      margin: 0 auto !important;
+    }
+    [data-dc-slot]:first-of-type {
+      page-break-before: auto;
+      break-before: auto;
+    }
+
+    /* Hide section headings/subtitles to reduce noise (optional) */
+    .dc-section-title,
+    .dc-section-subtitle {
+      page-break-after: avoid;
+      break-after: avoid;
+    }
+
+    /* Disable hover/animations for stable rendering */
+    *, *::before, *::after {
+      transition: none !important;
+      animation: none !important;
+    }
+
+    /* Force colors to print */
+    * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+
+<script type="text/babel" src="shared/tokens.jsx"></script>
+<script type="text/babel" src="shared/primitives.jsx"></script>
+<script type="text/babel" src="shared/chrome.jsx"></script>
+<script type="text/babel" src="shared/flow-chart.jsx"></script>
+
+<script type="text/babel" src="screens/login.jsx"></script>
+<script type="text/babel" src="screens/hr-dashboard.jsx"></script>
+<script type="text/babel" src="screens/mgmt-dashboard.jsx"></script>
+<script type="text/babel" src="screens/employees.jsx"></script>
+<script type="text/babel" src="screens/employee-profile.jsx"></script>
+<script type="text/babel" src="screens/employee-profile-header.jsx"></script>
+<script type="text/babel" src="screens/employee-profile-timeline.jsx"></script>
+<script type="text/babel" src="screens/employee-profile-compensation.jsx"></script>
+<script type="text/babel" src="screens/projects.jsx"></script>
+<script type="text/babel" src="screens/commissions.jsx"></script>
+<script type="text/babel" src="screens/commission-rule-form.jsx"></script>
+<script type="text/babel" src="screens/hr-rules.jsx"></script>
+<script type="text/babel" src="screens/portal.jsx"></script>
+<script type="text/babel" src="screens/roles.jsx"></script>
+
+<script type="text/babel" src="main.jsx"></script>
+
+<script type="text/babel">
+  // Wait for fonts + Babel transforms + a small settle delay, then print.
+  (async () => {
+    try { if (document.fonts && document.fonts.ready) await document.fonts.ready; } catch (e) {}
+    // Wait until React has mounted artboards
+    const waitForMount = () => new Promise((resolve) => {
+      const check = () => {
+        if (document.querySelectorAll('[data-dc-slot]').length > 0) resolve();
+        else setTimeout(check, 200);
+      };
+      check();
+    });
+    await waitForMount();
+    // Extra settle delay for layout + images
+    await new Promise(r => setTimeout(r, 1200));
+    window.print();
+  })();
+</script>
+</body>
+</html>
