@@ -22,6 +22,7 @@
 import Link from 'next/link';
 import { TOKENS } from './_data/tokens';
 import { LabelSection } from './_sections/label';
+import { SeparatorSection } from './_sections/separator';
 
 export const metadata = {
   title: 'Style Guide — Futurenostics',
@@ -47,12 +48,15 @@ const TOC = [
   },
   {
     label: 'Tier 1 · Atoms',
-    items: [{ id: 'primitive-label', label: 'Label' }],
+    items: [
+      { id: 'primitive-label', label: 'Label' },
+      { id: 'primitive-separator', label: 'Separator' },
+    ],
   },
   {
     label: 'Primitives — coming next',
     items: [
-      { id: 'tier-1-rest', label: 'Tier 1 rest · Separator / Spinner' },
+      { id: 'tier-1-rest', label: 'Tier 1 rest · Spinner' },
       { id: 'tier-2', label: 'Tier 2 · Form atoms' },
       { id: 'tier-3', label: 'Tier 3 · Display atoms' },
       { id: 'tier-4', label: 'Tier 4 · Containers' },
@@ -469,13 +473,13 @@ function PrimitivesSection() {
     <section className="gap-fn-8 flex flex-col">
       <SectionHeader title="Primitives" anchor="primitives" />
       <LabelSection />
+      <SeparatorSection />
       <div className="bg-fn-bg-panel border-fn-border rounded-fn-xs p-fn-6 border">
         <p className="text-fn-fg-muted text-fn-base leading-fn-normal max-w-[640px]">
           The rest of the primitives land here one commit at a time as Sub-phase B progresses:
-          Separator and Spinner next, then Form atoms (Button, Input, Textarea, Select, Combobox,
-          Checkbox, Radio, Switch), containers (Card, Sheet, Dialog, Popover, DropdownMenu),
-          compound (Tabs, Toast, Alert, Skeleton, Progress, EmptyState, KpiCard), form composition,
-          and finally the Table.
+          Spinner next, then Form atoms (Button, Input, Textarea, Select, Combobox, Checkbox, Radio,
+          Switch), containers (Card, Sheet, Dialog, Popover, DropdownMenu), compound (Tabs, Toast,
+          Alert, Skeleton, Progress, EmptyState, KpiCard), form composition, and finally the Table.
         </p>
       </div>
     </section>
