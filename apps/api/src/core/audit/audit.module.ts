@@ -10,6 +10,7 @@ import { installPrismaAuditMiddleware } from './prisma-audit.middleware';
  * to this set by declaring `auditedEntities` in their manifest.
  */
 const PHASE_0_AUDITED_MODELS = new Set([
+  'User',
   'Employee',
   'SalaryHistory',
   'Role',
