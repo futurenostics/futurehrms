@@ -1,0 +1,32 @@
+{
+  "name": "@futurenostics/config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./tailwind": {
+      "types": "./tailwind/index.ts",
+      "default": "./tailwind/index.ts"
+    },
+    "./tailwind/tokens.css": "./tailwind/fn-tokens.css",
+    "./eslint": "./eslint/index.mjs",
+    "./tsconfig/base.json": "./tsconfig/base.json",
+    "./tsconfig/nextjs.json": "./tsconfig/nextjs.json",
+    "./tsconfig/nestjs.json": "./tsconfig/nestjs.json"
+  },
+  "files": [
+    "tailwind",
+    "eslint",
+    "tsconfig"
+  ],
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "tailwindcss": "^4.1.16"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}
