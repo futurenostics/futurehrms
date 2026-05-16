@@ -471,19 +471,35 @@
 }
 
 /* ===========================================================================
- * §3 — Tailwind v4 default-lockdown
+ * §3 — Tailwind v4 default-lockdown (DEFERRED — re-enable after Sub-phase D)
  *
  * Setting `--<namespace>-*: initial` inside @theme deletes every default
- * theme key in that namespace. After this block, ONLY the fn-* utilities
- * declared in §4 generate CSS. Anyone writing `p-4`, `text-sm`,
- * `rounded-md`, `bg-blue-500`, `shadow-sm`, `text-gray-700`, etc. gets
- * "unknown utility" errors at build time AND lint errors via the
- * fn-tokens/no-default-utilities ESLint rule.
+ * theme key in that namespace, which means the compiler stops emitting
+ * the default utilities (`p-4`, `text-sm`, `rounded-md`, `bg-blue-500`,
+ * `shadow-sm`, etc.). That's the ultimate lockdown — `p-4` becomes
+ * literally non-renderable.
  *
- * What stays default: layout (flex/grid), positioning (absolute/relative),
- * display, opacity, z-index, blur, transition-property, cursor, overflow,
- * backdrop-blur — none of these have design-token implications.
+ * During the Foundation Reset we defer this CSS-level lockdown so the
+ * 45 legacy files in the ESLint skip-list keep rendering correctly
+ * while Sub-phase D remediates them one at a time. The ESLint rule
+ * `fn-tokens/no-default-utilities` is already active and prevents
+ * any NEW code from using defaults — that's the drift prevention.
+ *
+ * Re-enable trigger (final step of Sub-phase D):
+ *   1. Confirm packages/config/eslint/legacy-skip-list.mjs is empty.
+ *   2. Confirm `pnpm --filter @futurenostics/web lint` exits 0 with
+ *      the skip-list removed.
+ *   3. Uncomment the @theme block below.
+ *   4. Re-run dev — the served CSS should now contain only fn-* utilities
+ *      (verify with the curl script in docs/RESET_LINT_FAILURES.md).
+ *   5. Commit `feat(tokens): enable CSS-level lockdown after D completes`.
+ *
+ * What stays default after re-enable: layout (flex/grid), positioning
+ * (absolute/relative), display, opacity, z-index, blur, transition-
+ * property, cursor, overflow, backdrop-blur — these have no design-token
+ * implications.
  * ========================================================================= */
+/*
 @theme {
   --spacing: initial;
   --color-*: initial;
@@ -501,6 +517,7 @@
   --default-font-family: initial;
   --default-mono-font-family: initial;
 }
+*/
 
 /* ===========================================================================
  * §4 — Tailwind v4 token bridge (fn-* utilities only)
