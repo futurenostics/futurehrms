@@ -37,10 +37,7 @@ export function LoginCard() {
   return (
     <div
       className="border-fn-border bg-fn-bg-panel grid w-full max-w-[1280px] grid-cols-1 overflow-hidden rounded-2xl border md:grid-cols-2"
-      style={{
-        boxShadow:
-          '0 30px 60px -20px rgba(40, 30, 70, 0.18), 0 8px 24px -8px rgba(40, 30, 70, 0.08)',
-      }}
+      style={{ boxShadow: 'var(--fn-auth-card-shadow)' }}
     >
       <LoginForm />
       <PromoPanel />
@@ -308,86 +305,122 @@ function MicrosoftGlyph() {
 }
 
 function PromoPanel() {
+  // Satellites in compass order. r is the orbit radius from center; the
+  // top + bottom satellites sit slightly closer in than the diagonals,
+  // matching the design's vertical compression.
+  // Each satellite picks a semantic colorway from the token palette so
+  // the tile background and icon foreground both adapt to dark mode.
+  type SatTone = 'neutral' | 'mint' | 'teal' | 'blue' | 'coral' | 'violet';
   const sats: Array<{
     angle: number;
     r: number;
-    hue: number;
+    tone: SatTone;
     Icon: typeof Calendar;
-    bg: string;
+    delay: number;
   }> = [
-    { angle: -90, r: 110, hue: 200, Icon: Calendar, bg: '#fff' },
-    { angle: -150, r: 130, hue: 145, Icon: Mail, bg: 'oklch(0.95 0.06 145)' },
-    { angle: 150, r: 130, hue: 245, Icon: MessageCircle, bg: 'oklch(0.96 0.05 245)' },
-    { angle: -30, r: 130, hue: 22, Icon: CreditCard, bg: 'oklch(0.96 0.06 22)' },
-    { angle: 30, r: 130, hue: 175, Icon: Briefcase, bg: 'oklch(0.95 0.06 175)' },
-    { angle: 90, r: 130, hue: 280, Icon: Users, bg: 'oklch(0.96 0.06 280)' },
+    { angle: -90, r: 130, tone: 'neutral', Icon: Calendar, delay: 0 },
+    { angle: -150, r: 155, tone: 'mint', Icon: Mail, delay: 0.6 },
+    { angle: 150, r: 155, tone: 'blue', Icon: MessageCircle, delay: 1.2 },
+    { angle: -30, r: 155, tone: 'coral', Icon: CreditCard, delay: 1.8 },
+    { angle: 30, r: 155, tone: 'teal', Icon: Briefcase, delay: 2.4 },
+    { angle: 90, r: 130, tone: 'violet', Icon: Users, delay: 3.0 },
   ];
+
+  // Three concentric rings, matching the design shape progression:
+  //   inner = perfect circle (just clears the F mark),
+  //   middle = strongly-rounded squircle (~30% radius of side),
+  //   outer = lightly-rounded squircle (~18% radius of side, more square-like).
+  // `radius: 'circle'` is rendered as 50% so the shape is always a circle
+  // regardless of size; numeric radii are absolute pixel corner radii.
+  const rings: Array<{ size: number; radius: number | 'circle'; opacity: number }> = [
+    { size: 220, radius: 'circle', opacity: 0.24 },
+    { size: 310, radius: 92, opacity: 0.18 },
+    { size: 400, radius: 72, opacity: 0.12 },
+  ];
+
   return (
     <div
       className="relative hidden flex-col overflow-hidden p-11 md:flex"
-      style={{
-        background:
-          'linear-gradient(155deg, oklch(0.96 0.03 280) 0%, oklch(0.94 0.04 245) 60%, oklch(0.96 0.025 200) 100%)',
-      }}
+      style={{ background: 'var(--fn-auth-promo-bg)' }}
     >
       <h2 className="text-fn-fg text-center text-[30px] font-semibold tracking-tight">
         One place for <span style={{ color: 'var(--fn-accent)' }}>everyone</span>
       </h2>
 
-      <div className="relative flex min-h-[380px] flex-1 items-center justify-center">
-        <div className="relative h-[360px] w-[360px]">
-          {[80, 130, 175].map((r, i) => (
+      <div className="relative flex min-h-[480px] flex-1 items-center justify-center">
+        <div className="relative h-[480px] w-[480px]">
+          {/* Concentric rings: circle, then two squircles with decreasing roundness. */}
+          {rings.map((ring, i) => (
             <div
-              key={r}
-              className="absolute rounded-full opacity-90"
+              key={ring.size}
+              className="fn-ring-breathe absolute left-1/2 top-1/2"
               style={{
-                top: `calc(50% - ${r}px)`,
-                left: `calc(50% - ${r}px)`,
-                width: r * 2,
-                height: r * 2,
-                border: `1px solid color-mix(in oklch, var(--fn-accent) ${22 - i * 5}%, transparent)`,
+                width: ring.size,
+                height: ring.size,
+                marginLeft: -ring.size / 2,
+                marginTop: -ring.size / 2,
+                borderRadius: ring.radius === 'circle' ? '50%' : ring.radius,
+                border: `1px solid color-mix(in oklch, var(--fn-auth-ring-color) ${ring.opacity * 100}%, transparent)`,
+                animationDelay: `${i * 1.2}s`,
               }}
             />
           ))}
+
+          {/* Center logo with breathing glow */}
           <div
-            className="rounded-fn-xl absolute left-1/2 top-1/2 z-[2] flex h-20 w-20 -translate-x-1/2 -translate-y-1/2 items-center justify-center"
+            className="fn-center-glow rounded-fn-xl absolute left-1/2 top-1/2 z-[2] flex h-[100px] w-[100px] -translate-x-1/2 -translate-y-1/2 items-center justify-center"
             style={{
               background: 'linear-gradient(135deg, var(--fn-accent) 0%, oklch(0.42 0.20 280) 100%)',
-              boxShadow:
-                '0 16px 30px -8px color-mix(in oklch, var(--fn-accent) 55%, transparent), 0 6px 12px -4px rgba(40, 30, 70, 0.15)',
             }}
           >
-            <span className="font-display relative text-[30px] font-bold tracking-tight text-white">
+            <span className="font-display relative text-[36px] font-bold tracking-tight text-white">
               F
               <span
                 aria-hidden
-                className="absolute -right-2 bottom-1 h-1.5 w-1.5 rounded-full"
+                className="absolute -right-2.5 bottom-1.5 h-2 w-2 rounded-full"
                 style={{ background: 'oklch(0.94 0.06 175)' }}
               />
             </span>
           </div>
 
-          {sats.map((s, i) => {
-            const rad = (s.angle * Math.PI) / 180;
-            const x = Math.cos(rad) * s.r;
-            const y = Math.sin(rad) * s.r;
-            return (
-              <div
-                key={i}
-                className="rounded-fn-lg absolute z-[3] flex h-[52px] w-[52px] -translate-x-1/2 -translate-y-1/2 items-center justify-center"
-                style={{
-                  top: `calc(50% + ${y}px)`,
-                  left: `calc(50% + ${x}px)`,
-                  background: s.bg,
-                  boxShadow:
-                    '0 8px 16px -4px rgba(40, 30, 70, 0.18), 0 0 0 1px rgba(255, 255, 255, 0.5)',
-                  color: `oklch(0.42 0.16 ${s.hue})`,
-                }}
-              >
-                <s.Icon className="h-[22px] w-[22px]" strokeWidth={1.8} />
-              </div>
-            );
-          })}
+          {/* Orbit rotor — rotates the entire satellite arrangement. */}
+          <div className="fn-orbit absolute inset-0">
+            {sats.map((s, i) => {
+              const rad = (s.angle * Math.PI) / 180;
+              const x = Math.cos(rad) * s.r;
+              const y = Math.sin(rad) * s.r;
+              return (
+                <div
+                  key={i}
+                  className="absolute z-[3]"
+                  style={{
+                    top: `calc(50% + ${y}px)`,
+                    left: `calc(50% + ${x}px)`,
+                    width: 64,
+                    height: 64,
+                    marginLeft: -32,
+                    marginTop: -32,
+                  }}
+                >
+                  {/* Counter-rotates at the same rate so the icon stays upright. */}
+                  <div className="fn-orbit-counter h-full w-full">
+                    <div
+                      className="fn-satellite-float rounded-fn-lg flex h-full w-full items-center justify-center"
+                      style={{
+                        background: `var(--fn-sat-${s.tone}-bg)`,
+                        color: `var(--fn-sat-${s.tone}-fg)`,
+                        boxShadow:
+                          '0 8px 20px -4px rgb(0 0 0 / 0.18), 0 0 0 1px var(--fn-sat-tile-ring)',
+                        animationDelay: `${s.delay}s`,
+                      }}
+                    >
+                      <s.Icon className="h-[24px] w-[24px]" strokeWidth={1.8} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -399,17 +432,6 @@ function PromoPanel() {
           </strong>{' '}
           — one source of truth for every person, project, and payout.
         </p>
-        <div className="mt-4 flex justify-center gap-1.5">
-          <span className="h-1 w-6 rounded-full" style={{ background: 'var(--fn-accent)' }} />
-          <span
-            className="h-1 w-1.5 rounded-full"
-            style={{ background: 'color-mix(in oklch, var(--fn-accent) 25%, transparent)' }}
-          />
-          <span
-            className="h-1 w-1.5 rounded-full"
-            style={{ background: 'color-mix(in oklch, var(--fn-accent) 25%, transparent)' }}
-          />
-        </div>
       </div>
     </div>
   );

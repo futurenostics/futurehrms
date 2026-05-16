@@ -25,3 +25,89 @@ body {
 .font-tabular {
   font-variant-numeric: tabular-nums;
 }
+
+/* ---------- Login promo orbit ---------- */
+@keyframes fn-orbit-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes fn-orbit-counter {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(-360deg);
+  }
+}
+@keyframes fn-satellite-float {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+@keyframes fn-center-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 16px 30px -8px color-mix(in oklch, var(--fn-accent) 55%, transparent),
+      0 6px 12px -4px rgba(40, 30, 70, 0.15);
+  }
+  50% {
+    box-shadow:
+      0 22px 38px -8px color-mix(in oklch, var(--fn-accent) 70%, transparent),
+      0 8px 16px -4px rgba(40, 30, 70, 0.18);
+  }
+}
+@keyframes fn-ring-breathe {
+  0%,
+  100% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.015);
+  }
+}
+
+.fn-orbit {
+  animation: fn-orbit-spin 32s linear infinite;
+  transform-origin: center;
+}
+.fn-orbit-counter {
+  animation: fn-orbit-counter 32s linear infinite;
+  transform-origin: center;
+}
+.fn-satellite-float {
+  animation: fn-satellite-float 4.2s ease-in-out infinite;
+  transform-origin: center;
+  transition: transform 250ms ease;
+}
+.fn-satellite-float:hover {
+  animation-play-state: paused;
+  transform: scale(1.12);
+}
+.fn-center-glow {
+  animation: fn-center-glow 5s ease-in-out infinite;
+}
+.fn-ring-breathe {
+  animation: fn-ring-breathe 6s ease-in-out infinite;
+  transform-origin: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fn-orbit,
+  .fn-orbit-counter,
+  .fn-satellite-float,
+  .fn-center-glow,
+  .fn-ring-breathe {
+    animation: none;
+  }
+}
