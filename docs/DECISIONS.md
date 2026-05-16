@@ -127,3 +127,50 @@ retryAt?}` for INVALID_CREDENTIALS, ACCOUNT_LOCKED, and RATE_LIMITED so
   because the login UI reads `Retry-After` to drive the cooldown banner.
 - **`force-dynamic` on `/login`** since `useSearchParams()` reads `from`
   during render. Avoids the Suspense-around-search-params boilerplate.
+
+## 2026-05-16 — Visual-fidelity verification process
+
+The Phase 1 verification checklist had a 38-item entry for "List view
+matches design at 1440px, light + dark." That item was marked pass on
+inspection of _some_ elements but a side-by-side comparison was never
+done. The implementation was missing the entire KPI strip, had wrong
+column shapes, wrong filter row, and wrong header buttons. The mistake:
+treating visual-match items the same as code-correctness items.
+
+**Going forward**, every visual-match item in any phase checklist
+requires explicit element-by-element walkthrough before it can be
+marked pass:
+
+1. Open the design file (`docs/design/screens/<screen>.jsx`) and the
+   rendered HTML preview (`docs/design/Futurenostics HRMS.html`) in
+   one browser window at 1440px.
+2. Open the implementation in a second browser window at 1440px.
+3. Walk the design top to bottom. For each visible element list:
+   - Where it sits on the screen (header / strip / row / cell)
+   - What it contains (icon + label + value + delta, etc.)
+   - What primitives it uses (Card / Button / Pill / Avatar)
+4. Confirm each element exists in the implementation in the same
+   position with the same shape. Anything missing, in the wrong
+   place, or shaped differently is a failure.
+5. Capture screenshots of both windows and attach to the PR. The
+   reviewer should be able to see "this matches" without re-running
+   the verification themselves.
+
+Don't mark a visual-match item pass on partial inspection or on
+"I built all the listed primitives correctly." Built-correct ≠ visually
+matches the design.
+
+## 2026-05-16 — Employees list deviations
+
+Single intentional deviation: **the design's salary column shows USD when
+the topbar's USD/PKR toggle is set to USD**. The current `CurrencyToggle`
+in the topbar is a local UI-only state; there's no app-wide currency
+provider yet. We render PKR amounts only (matching the storage unit) and
+defer the USD conversion until the topbar toggle is wired to a context
+provider (planned for Phase 2 with the Commissions module, where USD↔PKR
+conversion is load-bearing).
+
+Avatar palette uses a single light-mode set in both themes. The pastels
+are tuned to remain readable on the dark panel; if any user reports a
+contrast issue we'll switch to theme-aware OKLCH variants under
+`--fn-avatar-*` tokens.
