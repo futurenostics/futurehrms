@@ -14,6 +14,8 @@ import { StorageModule } from './core/storage/storage.module';
 import { AuthModule } from './core/auth/auth.module';
 import { JwtAuthGuard } from './core/auth/guards/jwt-auth.guard';
 import { PermissionGuard } from './core/auth/guards/permission.guard';
+import { TimelineModule } from './core/timeline/timeline.module';
+import { EmployeesModule } from './modules/employees/employees.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -28,7 +30,9 @@ import { HealthController } from './health.controller';
     EmailModule,
     StorageModule,
     AuthModule,
-    // Domain modules slot in below as they land in subsequent phases.
+    TimelineModule,
+    // Domain modules
+    EmployeesModule,
   ],
   controllers: [HealthController],
   providers: [
