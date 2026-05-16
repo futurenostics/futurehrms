@@ -1,0 +1,27 @@
+/*
+ * Global stylesheet — loaded by app/layout.tsx.
+ *
+ * Order matters: Tailwind first, then our token layer overrides
+ * shadcn's defaults. Animations come from `tw-animate-css` (Tailwind v4
+ * replacement for tailwindcss-animate).
+ */
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import '@futurenostics/config/tailwind/tokens.css';
+
+@custom-variant dark (&:is([data-theme='dark'] *, .dark *));
+
+html,
+body {
+  height: 100%;
+  background: var(--fn-bg);
+  color: var(--fn-fg);
+  font-family: var(--fn-font-sans);
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.font-tabular {
+  font-variant-numeric: tabular-nums;
+}

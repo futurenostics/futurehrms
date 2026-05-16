@@ -16,6 +16,7 @@ export default tseslint.config(
       'docs/design/**',
       '**/*.config.{js,cjs,mjs,ts}',
       '**/prisma/migrations/**',
+      '**/next-env.d.ts',
     ],
   },
   js.configs.recommended,
