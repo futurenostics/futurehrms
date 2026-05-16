@@ -24,7 +24,7 @@ const PROTECTED_PATHS = [
 const AUTH_PATHS = ['/login'];
 
 export function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+  const { pathname, search } = request.nextUrl;
   const hasRefreshCookie = request.cookies.has(REFRESH_COOKIE);
 
   if (
@@ -32,6 +32,10 @@ export function middleware(request: NextRequest) {
     PROTECTED_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))
   ) {
     const loginUrl = new URL('/login', request.url);
+    // Preserve the original destination (path + query) so the login form
+    // can redirect there after a successful sign-in. Don't preserve hashes;
+    // the browser strips those before sending the request anyway.
+    loginUrl.searchParams.set('from', `${pathname}${search}`);
     return NextResponse.redirect(loginUrl);
   }
 
