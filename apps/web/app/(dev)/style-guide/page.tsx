@@ -23,6 +23,7 @@ import Link from 'next/link';
 import { TOKENS } from './_data/tokens';
 import { LabelSection } from './_sections/label';
 import { SeparatorSection } from './_sections/separator';
+import { SpinnerSection } from './_sections/spinner';
 
 export const metadata = {
   title: 'Style Guide — Futurenostics',
@@ -51,12 +52,12 @@ const TOC = [
     items: [
       { id: 'primitive-label', label: 'Label' },
       { id: 'primitive-separator', label: 'Separator' },
+      { id: 'primitive-spinner', label: 'Spinner' },
     ],
   },
   {
     label: 'Primitives — coming next',
     items: [
-      { id: 'tier-1-rest', label: 'Tier 1 rest · Spinner' },
       { id: 'tier-2', label: 'Tier 2 · Form atoms' },
       { id: 'tier-3', label: 'Tier 3 · Display atoms' },
       { id: 'tier-4', label: 'Tier 4 · Containers' },
@@ -474,12 +475,11 @@ function PrimitivesSection() {
       <SectionHeader title="Primitives" anchor="primitives" />
       <LabelSection />
       <SeparatorSection />
+      <SpinnerSection />
       <div className="bg-fn-bg-panel border-fn-border rounded-fn-xs p-fn-6 border">
         <p className="text-fn-fg-muted text-fn-base leading-fn-normal max-w-[640px]">
-          The rest of the primitives land here one commit at a time as Sub-phase B progresses:
-          Spinner next, then Form atoms (Button, Input, Textarea, Select, Combobox, Checkbox, Radio,
-          Switch), containers (Card, Sheet, Dialog, Popover, DropdownMenu), compound (Tabs, Toast,
-          Alert, Skeleton, Progress, EmptyState, KpiCard), form composition, and finally the Table.
+          Tier 1 atoms (Label · Separator · Spinner) are now live. Coming next: Tier 2 Form atoms —
+          Button, Input, Textarea, Select, Combobox, Checkbox, Radio, Switch.
         </p>
       </div>
     </section>
