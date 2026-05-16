@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import { Logger, ValidationPipe } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
@@ -20,13 +20,8 @@ async function bootstrap(): Promise<void> {
     origin: config.env.APP_URL,
     credentials: true,
   });
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-    }),
-  );
+  // Body validation is handled per-controller with zod schemas from
+  // @futurenostics/types — no class-validator dependency required.
   app.setGlobalPrefix('api', { exclude: ['health'] });
 
   await app.listen(config.env.PORT);
