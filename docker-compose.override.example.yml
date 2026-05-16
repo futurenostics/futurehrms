@@ -1,0 +1,15 @@
+# Copy to `docker-compose.override.yml` to apply local overrides.
+# Useful for changing ports, exposing additional volumes, or switching
+# images during local development. The override file is gitignored.
+services:
+  # Example: bind Postgres to a non-default port to avoid conflict with
+  # a host-installed Postgres.
+  # postgres:
+  #   ports:
+  #     - "55432:5432"
+
+  # Example: persist Mailpit messages on a shared host directory so they
+  # survive a `docker compose down -v`.
+  # mailpit:
+  #   volumes:
+  #     - ./.local/mailpit:/data
