@@ -1,11 +1,24 @@
 import { Module } from '@nestjs/common';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { AuthController } from './auth.controller';
+import { AuthService } from './auth.service';
+import { PasswordService } from './password.service';
+import { TokensService } from './tokens.service';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { PermissionGuard } from './guards/permission.guard';
 
-/**
- * Auth surface.
- *
- * Skeleton in Phase 0 — controller, service, guards, and strategies
- * land in the auth-implementation task. Kept as an empty module so the
- * registry and app wiring already references the right symbol.
- */
-@Module({})
+@Module({
+  imports: [
+    ThrottlerModule.forRoot([
+      {
+        // Default throttle — overridable per-route via @Throttle.
+        ttl: 60 * 1000,
+        limit: 60,
+      },
+    ]),
+  ],
+  controllers: [AuthController],
+  providers: [AuthService, PasswordService, TokensService, JwtAuthGuard, PermissionGuard],
+  exports: [AuthService, PasswordService, TokensService, JwtAuthGuard, PermissionGuard],
+})
 export class AuthModule {}
