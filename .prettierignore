@@ -1,0 +1,16 @@
+node_modules/
+dist/
+build/
+.next/
+.turbo/
+coverage/
+pnpm-lock.yaml
+*.min.js
+*.min.css
+
+# Generated Prisma client
+apps/api/prisma/migrations/
+
+# Design reference files — keep author's formatting
+docs/design/**/*.jsx
+docs/design/**/*.html
