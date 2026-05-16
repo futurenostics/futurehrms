@@ -97,22 +97,24 @@ interface KpiCardProps {
 
 function KpiCard({ icon: Icon, label, value, info, delta }: KpiCardProps) {
   return (
-    <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm border p-5">
-      <div className="flex items-start justify-between gap-2">
-        <div
-          className="rounded-fn-md flex h-10 w-10 items-center justify-center"
+    <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm border px-6 py-[22px]">
+      {/* Row 1 — icon tile + label + info trigger on the right */}
+      <div className="flex items-center gap-2.5">
+        <span
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px]"
           style={{ background: 'var(--fn-icon-tile)', color: 'var(--fn-icon-tile-fg)' }}
         >
-          <Icon className="h-[18px] w-[18px]" />
-        </div>
+          <Icon className="h-3.5 w-3.5" strokeWidth={2} />
+        </span>
+        <span className="text-fn-fg text-[15px] font-medium">{label}</span>
         <Tooltip>
           <TooltipTrigger asChild>
             <button
               type="button"
               aria-label={`About ${label}`}
-              className="text-fn-fg-faint hover:bg-fn-bg-inset hover:text-fn-fg-muted focus-visible:ring-fn-accent -mr-1 -mt-1 inline-flex h-6 w-6 cursor-help items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2"
+              className="text-fn-fg-faint hover:text-fn-fg-muted focus-visible:ring-fn-accent ml-auto inline-flex h-[15px] w-[15px] shrink-0 cursor-help items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
             >
-              <Info className="h-3.5 w-3.5" />
+              <Info className="h-[15px] w-[15px]" strokeWidth={1.75} />
             </button>
           </TooltipTrigger>
           <TooltipContent side="top" sideOffset={6} className="max-w-[240px] text-center">
@@ -120,9 +122,10 @@ function KpiCard({ icon: Icon, label, value, info, delta }: KpiCardProps) {
           </TooltipContent>
         </Tooltip>
       </div>
-      <div className="text-fn-fg-muted mt-3 text-[13px] font-medium">{label}</div>
-      <div className="mt-1 flex items-end gap-2.5">
-        <span className="font-display font-tabular text-fn-fg text-[28px] font-semibold leading-none tracking-tight">
+
+      {/* Row 2 — large light-weight value + inline trend pill */}
+      <div className="mt-[18px] flex items-center gap-3">
+        <span className="text-fn-fg font-display text-[34px] font-normal tabular-nums leading-none tracking-[-0.03em]">
           {value}
         </span>
         {delta && <DeltaPill delta={delta} />}
@@ -136,38 +139,64 @@ function DeltaPill({ delta }: { delta: NonNullable<KpiCardProps['delta']> }) {
     const tone: DeltaTone = delta.value >= 0 ? 'success' : 'danger';
     const text = `${delta.value >= 0 ? '+' : ''}${delta.value.toFixed(1)}%`;
     return (
-      <Pill tone={tone}>
+      <TrendPill tone={tone}>
         {text}
         {delta.value >= 0 ? (
-          <ArrowUpRight className="h-3 w-3" strokeWidth={2.5} />
+          <ArrowUpRight className="h-3 w-3" strokeWidth={2.25} />
         ) : (
-          <ArrowDownRight className="h-3 w-3" strokeWidth={2.5} />
+          <ArrowDownRight className="h-3 w-3" strokeWidth={2.25} />
         )}
-      </Pill>
+      </TrendPill>
     );
   }
   return (
-    <Pill tone={delta.tone}>
+    <TrendPill tone={delta.tone}>
       {delta.text}
-      <ArrowUpRight className="h-3 w-3" strokeWidth={2.5} />
-    </Pill>
+      <ArrowUpRight className="h-3 w-3" strokeWidth={2.25} />
+    </TrendPill>
   );
 }
 
-const PILL_TONE: Record<DeltaTone, string> = {
-  success: 'bg-fn-success-soft text-fn-success-soft-fg',
-  danger: 'bg-fn-danger-soft text-fn-danger-soft-fg',
-  warning: 'bg-fn-warning-soft text-fn-warning-soft-fg',
-  neutral: 'bg-fn-bg-inset text-fn-fg-muted',
+const TREND_TONE: Record<DeltaTone, { bg: string; fg: string; border: string }> = {
+  success: {
+    bg: 'var(--fn-success-soft)',
+    fg: 'var(--fn-success-soft-fg)',
+    border: 'var(--fn-success)',
+  },
+  danger: {
+    bg: 'var(--fn-danger-soft)',
+    fg: 'var(--fn-danger-soft-fg)',
+    border: 'var(--fn-danger)',
+  },
+  warning: {
+    bg: 'var(--fn-warning-soft)',
+    fg: 'var(--fn-warning-soft-fg)',
+    border: 'var(--fn-warning)',
+  },
+  neutral: {
+    bg: 'var(--fn-bg-inset)',
+    fg: 'var(--fn-fg-muted)',
+    border: 'var(--fn-border)',
+  },
 };
 
-function Pill({ tone, children }: { tone: DeltaTone; children: React.ReactNode }) {
+/**
+ * Trend pill — the design's "outlined-pill" treatment: soft-tinted bg,
+ * matching text, and a 35%-mix colored border so the pill reads even
+ * when sitting on a coloured background. Used for KPI deltas only.
+ */
+function TrendPill({ tone, children }: { tone: DeltaTone; children: React.ReactNode }) {
+  const t = TREND_TONE[tone];
   return (
     <span
       className={cn(
-        'font-tabular inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold leading-tight',
-        PILL_TONE[tone],
+        'rounded-fn-xs inline-flex items-center gap-1 px-[9px] py-[2px] text-[12px] font-semibold tabular-nums leading-[1.55] tracking-[-0.005em]',
       )}
+      style={{
+        background: t.bg,
+        color: t.fg,
+        border: `1px solid color-mix(in oklch, ${t.border} 35%, transparent)`,
+      }}
     >
       {children}
     </span>
@@ -176,15 +205,15 @@ function Pill({ tone, children }: { tone: DeltaTone; children: React.ReactNode }
 
 function KpiSkeleton() {
   return (
-    <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm border p-5">
-      <div className="flex items-start justify-between gap-2">
-        <Skeleton className="rounded-fn-md h-10 w-10" />
-        <Skeleton className="h-6 w-6 rounded-full" />
+    <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm border px-6 py-[22px]">
+      <div className="flex items-center gap-2.5">
+        <Skeleton className="h-7 w-7 rounded-[7px]" />
+        <Skeleton className="h-3.5 w-28" />
+        <Skeleton className="ml-auto h-[15px] w-[15px] rounded-full" />
       </div>
-      <Skeleton className="mt-3 h-3 w-28" />
-      <div className="mt-2 flex items-end gap-2.5">
-        <Skeleton className="h-7 w-16" />
-        <Skeleton className="h-5 w-16 rounded-full" />
+      <div className="mt-[18px] flex items-center gap-3">
+        <Skeleton className="h-8 w-16" />
+        <Skeleton className="rounded-fn-xs h-5 w-16" />
       </div>
     </div>
   );
