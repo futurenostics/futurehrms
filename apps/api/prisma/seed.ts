@@ -232,12 +232,426 @@ async function main(): Promise<void> {
     });
   }
 
+  console.info('Seeding sample employees + linked users...');
+  const employeesCreated = await seedSampleEmployees(superAdminUser.id, passwordHash);
+
   console.info(`Seed complete.`);
   console.info(`  Super admin email: ${env.SEED_ADMIN_EMAIL}`);
   console.info(`  Statuses: ${STATUSES.length}`);
   console.info(`  Departments: ${DEPARTMENTS.length}`);
   console.info(`  Roles: ${ROLES.length}`);
   console.info(`  Platform permissions: ${PLATFORM_PERMISSIONS.length}`);
+  console.info(`  Sample employees: ${employeesCreated}`);
+}
+
+/* ---------- Sample employees ---------- */
+
+interface SampleEmployee {
+  fullName: string;
+  email: string;
+  deptSlug: string;
+  designation: string;
+  statusSlug: string;
+  contractType: 'FullTime' | 'PartTime' | 'Contractor' | 'Intern';
+  joinDate: string;
+  salaryPkr: number;
+  managerEmail: string | null;
+  /** When set, also create a User account with the given role(s). */
+  user?: {
+    roles: string[];
+    /** When the role is department_manager / team_lead, the dept slug to scope. */
+    scopeDeptSlug?: string;
+  };
+}
+
+const SAMPLE_EMPLOYEES: SampleEmployee[] = [
+  // Engineering (12) — Maria → (Asma | Faisal) → engineers/interns
+  {
+    fullName: 'Maria Tanveer',
+    email: 'maria.tanveer@futurenostics.local',
+    deptSlug: 'engineering',
+    designation: 'CTO',
+    statusSlug: 'permanent',
+    contractType: 'FullTime',
+    joinDate: '2022-01-15',
+    salaryPkr: 800000,
+    managerEmail: null,
+  },
+  {
+    fullName: 'Asma Ali',
+    email: 'asma.ali@futurenostics.local',
+    deptSlug: 'engineering',
+    designation: 'Engineering Lead',
+    statusSlug: 'permanent',
+    contractType: 'FullTime',
+    joinDate: '2022-03-01',
+    salaryPkr: 450000,
+    managerEmail: 'maria.tanveer@futurenostics.local',
+    user: { roles: ['department_manager'], scopeDeptSlug: 'engineering' },
+  },
+  {
+    fullName: 'Faisal Hussain',
+    email: 'faisal.hussain@futurenostics.local',
+    deptSlug: 'engineering',
+    designation: 'Engineering Lead',
+    statusSlug: 'permanent',
+    contractType: 'FullTime',
+    joinDate: '2022-04-10',
+    salaryPkr: 430000,
+    managerEmail: 'maria.tanveer@futurenostics.local',
+  },
+  {
+    fullName: 'Bilal Khan',
+    email: 'bilal.khan@futurenostics.local',
+    deptSlug: 'engineering',
+    designation: 'Senior Software Engineer',
+    statusSlug: 'permanent',
+    contractType: 'FullTime',
+    joinDate: '2023-02-15',
+    salaryPkr: 280000,
+    managerEmail: 'asma.ali@futurenostics.local',
+  },
+  {
+    fullName: 'Hira Mahmood',
+    email: 'hira.mahmood@futurenostics.local',
+    deptSlug: 'engineering',
+    designation: 'Senior Software Engineer',
+    statusSlug: 'permanent',
+    contractType: 'FullTime',
+    joinDate: '2023-05-20',
+    salaryPkr: 265000,
+    managerEmail: 'asma.ali@futurenostics.local',
+  },
+  {
+    fullName: 'Zara Saleem',
+    email: 'zara.saleem@futurenostics.local',
+    deptSlug: 'engineering',
+    designation: 'Software Engineer',
+    statusSlug: 'permanent',
+    contractType: 'FullTime',
+    joinDate: '2024-01-10',
+    salaryPkr: 175000,
+    managerEmail: 'asma.ali@futurenostics.local',
+  },
+  {
+    fullName: 'Omar Sheikh',
+    email: 'omar.sheikh@futurenostics.local',
+    deptSlug: 'engineering',
+    designation: 'Software Engineer',
+    statusSlug: 'permanent',
+    contractType: 'FullTime',
+    joinDate: '2024-03-25',
+    salaryPkr: 165000,
+    managerEmail: 'asma.ali@futurenostics.local',
+  },
+  {
+    fullName: 'Maryam Iqbal',
+    email: 'maryam.iqbal@futurenostics.local',
+    deptSlug: 'engineering',
+    designation: 'Software Engineer',
+    statusSlug: 'permanent',
+    contractType: 'FullTime',
+    joinDate: '2024-06-01',
+    salaryPkr: 150000,
+    managerEmail: 'faisal.hussain@futurenostics.local',
+    user: { roles: ['employee'] },
+  },
+  {
+    fullName: 'Junaid Akhtar',
+    email: 'junaid.akhtar@futurenostics.local',
+    deptSlug: 'engineering',
+    designation: 'Software Engineer',
+    statusSlug: 'probation',
+    contractType: 'FullTime',
+    joinDate: '2025-12-15',
+    salaryPkr: 130000,
+    managerEmail: 'faisal.hussain@futurenostics.local',
+  },
+  {
+    fullName: 'Sara Nadeem',
+    email: 'sara.nadeem@futurenostics.local',
+    deptSlug: 'engineering',
+    designation: 'Software Engineer',
+    statusSlug: 'probation',
+    contractType: 'FullTime',
+    joinDate: '2026-01-20',
+    salaryPkr: 125000,
+    managerEmail: 'faisal.hussain@futurenostics.local',
+  },
+  {
+    fullName: 'Ahmed Raza',
+    email: 'ahmed.raza@futurenostics.local',
+    deptSlug: 'engineering',
+    designation: 'Software Engineer',
+    statusSlug: 'intern',
+    contractType: 'Intern',
+    joinDate: '2026-03-01',
+    salaryPkr: 60000,
+    managerEmail: 'faisal.hussain@futurenostics.local',
+  },
+  {
+    fullName: 'Imran Yousaf',
+    email: 'imran.yousaf@futurenostics.local',
+    deptSlug: 'engineering',
+    designation: 'Software Engineer',
+    statusSlug: 'intern',
+    contractType: 'Intern',
+    joinDate: '2026-04-01',
+    salaryPkr: 55000,
+    managerEmail: 'asma.ali@futurenostics.local',
+  },
+
+  // Business Development (4)
+  {
+    fullName: 'Adnan Bhatti',
+    email: 'adnan.bhatti@futurenostics.local',
+    deptSlug: 'business-development',
+    designation: 'Head of BD',
+    statusSlug: 'permanent',
+    contractType: 'FullTime',
+    joinDate: '2022-02-01',
+    salaryPkr: 600000,
+    managerEmail: null,
+  },
+  {
+    fullName: 'Sana Akram',
+    email: 'sana.akram@futurenostics.local',
+    deptSlug: 'business-development',
+    designation: 'BD Manager',
+    statusSlug: 'permanent',
+    contractType: 'FullTime',
+    joinDate: '2023-04-15',
+    salaryPkr: 320000,
+    managerEmail: 'adnan.bhatti@futurenostics.local',
+    user: { roles: ['department_manager'], scopeDeptSlug: 'business-development' },
+  },
+  {
+    fullName: 'Talha Ahmed',
+    email: 'talha.ahmed@futurenostics.local',
+    deptSlug: 'business-development',
+    designation: 'BD Lead',
+    statusSlug: 'permanent',
+    contractType: 'FullTime',
+    joinDate: '2024-02-01',
+    salaryPkr: 180000,
+    managerEmail: 'sana.akram@futurenostics.local',
+  },
+  {
+    fullName: 'Ayesha Malik',
+    email: 'ayesha.malik@futurenostics.local',
+    deptSlug: 'business-development',
+    designation: 'BD Associate',
+    statusSlug: 'probation',
+    contractType: 'FullTime',
+    joinDate: '2025-11-10',
+    salaryPkr: 100000,
+    managerEmail: 'sana.akram@futurenostics.local',
+  },
+
+  // Operations (2)
+  {
+    fullName: 'Hassan Riaz',
+    email: 'hassan.riaz@futurenostics.local',
+    deptSlug: 'operations',
+    designation: 'COO',
+    statusSlug: 'permanent',
+    contractType: 'FullTime',
+    joinDate: '2022-01-15',
+    salaryPkr: 700000,
+    managerEmail: null,
+  },
+  {
+    fullName: 'Noor ul Ain',
+    email: 'noor.ulain@futurenostics.local',
+    deptSlug: 'operations',
+    designation: 'Operations Manager',
+    statusSlug: 'permanent',
+    contractType: 'FullTime',
+    joinDate: '2023-06-01',
+    salaryPkr: 310000,
+    managerEmail: 'hassan.riaz@futurenostics.local',
+  },
+
+  // HR (2) — Rida is the de-facto HR Admin
+  {
+    fullName: 'Rida Hashmi',
+    email: 'rida.hashmi@futurenostics.local',
+    deptSlug: 'hr',
+    designation: 'Head of People',
+    statusSlug: 'permanent',
+    contractType: 'FullTime',
+    joinDate: '2022-02-15',
+    salaryPkr: 550000,
+    managerEmail: null,
+    user: { roles: ['hr_admin'] },
+  },
+  {
+    fullName: 'Asif Mehmood',
+    email: 'asif.mehmood@futurenostics.local',
+    deptSlug: 'hr',
+    designation: 'HR Manager',
+    statusSlug: 'permanent',
+    contractType: 'FullTime',
+    joinDate: '2023-08-20',
+    salaryPkr: 300000,
+    managerEmail: 'rida.hashmi@futurenostics.local',
+  },
+];
+
+/** Past salary changes for a handful of employees, for the history tab. */
+const PAST_INCREMENTS: Array<{
+  email: string;
+  effectiveDate: string;
+  fromSalaryPkr: number;
+  remarks: string;
+}> = [
+  {
+    email: 'asma.ali@futurenostics.local',
+    effectiveDate: '2024-07-01',
+    fromSalaryPkr: 380000,
+    remarks: 'Annual increment — promoted to Eng Lead.',
+  },
+  {
+    email: 'bilal.khan@futurenostics.local',
+    effectiveDate: '2025-02-15',
+    fromSalaryPkr: 230000,
+    remarks: 'Annual increment.',
+  },
+  {
+    email: 'hira.mahmood@futurenostics.local',
+    effectiveDate: '2025-05-20',
+    fromSalaryPkr: 220000,
+    remarks: 'Promoted to Senior Software Engineer.',
+  },
+  {
+    email: 'sana.akram@futurenostics.local',
+    effectiveDate: '2025-04-15',
+    fromSalaryPkr: 270000,
+    remarks: 'Annual increment.',
+  },
+];
+
+async function seedSampleEmployees(
+  superAdminUserId: string,
+  sharedPasswordHash: string,
+): Promise<number> {
+  const departments = await prisma.department.findMany();
+  const designations = await prisma.designation.findMany();
+  const statuses = await prisma.employeeStatus.findMany();
+  const roles = await prisma.role.findMany();
+
+  const deptBySlug = new Map(departments.map((d) => [d.slug, d]));
+  const statusBySlug = new Map(statuses.map((s) => [s.slug, s]));
+  const designKey = (name: string, deptId: string) => `${name}|${deptId}`;
+  const designBySlugName = new Map(designations.map((d) => [designKey(d.name, d.departmentId), d]));
+  const roleBySlug = new Map(roles.map((r) => [r.slug, r]));
+
+  // Pass 1: upsert employees (without manager) so they all exist.
+  let created = 0;
+  for (const sample of SAMPLE_EMPLOYEES) {
+    const dept = deptBySlug.get(sample.deptSlug);
+    const design = dept ? designBySlugName.get(designKey(sample.designation, dept.id)) : null;
+    const status = statusBySlug.get(sample.statusSlug);
+    if (!dept || !design || !status) {
+      console.warn(
+        `Skipping ${sample.email}: missing reference (dept=${!!dept}, design=${!!design}, status=${!!status})`,
+      );
+      continue;
+    }
+
+    const existing = await prisma.employee.findUnique({ where: { email: sample.email } });
+    if (existing) continue;
+
+    // Assign sequential EIDs by counting existing employees.
+    const count = await prisma.employee.count();
+    const eid = `EMP-${String(count + 1).padStart(4, '0')}`;
+
+    await prisma.employee.create({
+      data: {
+        eid,
+        fullName: sample.fullName,
+        email: sample.email,
+        joinDate: new Date(sample.joinDate),
+        departmentId: dept.id,
+        designationId: design.id,
+        statusId: status.id,
+        contractType: sample.contractType,
+        salaryPkr: sample.salaryPkr,
+      },
+    });
+    created += 1;
+  }
+
+  // Pass 2: wire managers now that every email exists.
+  const allEmployees = await prisma.employee.findMany({ select: { id: true, email: true } });
+  const empByEmail = new Map(allEmployees.map((e) => [e.email, e]));
+  for (const sample of SAMPLE_EMPLOYEES) {
+    if (!sample.managerEmail) continue;
+    const employee = empByEmail.get(sample.email);
+    const manager = empByEmail.get(sample.managerEmail);
+    if (!employee || !manager) continue;
+    await prisma.employee.update({
+      where: { id: employee.id },
+      data: { managerId: manager.id },
+    });
+  }
+
+  // Pass 3: link User accounts where requested.
+  for (const sample of SAMPLE_EMPLOYEES) {
+    if (!sample.user) continue;
+    const employee = empByEmail.get(sample.email);
+    if (!employee) continue;
+
+    const user = await prisma.user.upsert({
+      where: { email: sample.email },
+      create: {
+        email: sample.email,
+        passwordHash: sharedPasswordHash,
+        employeeId: employee.id,
+        isActive: true,
+      },
+      update: { employeeId: employee.id, isActive: true },
+    });
+
+    for (const roleSlug of sample.user.roles) {
+      const role = roleBySlug.get(roleSlug);
+      if (!role) continue;
+      const scopeDeptId = sample.user.scopeDeptSlug
+        ? (deptBySlug.get(sample.user.scopeDeptSlug)?.id ?? null)
+        : null;
+      await prisma.userRole.upsert({
+        where: { userId_roleId: { userId: user.id, roleId: role.id } },
+        create: { userId: user.id, roleId: role.id, departmentScope: scopeDeptId },
+        update: { departmentScope: scopeDeptId },
+      });
+    }
+  }
+
+  // Pass 4: past salary changes so the history tab has data.
+  for (const increment of PAST_INCREMENTS) {
+    const employee = empByEmail.get(increment.email);
+    if (!employee) continue;
+    const existingHistory = await prisma.salaryHistory.count({
+      where: { employeeId: employee.id, effectiveDate: new Date(increment.effectiveDate) },
+    });
+    if (existingHistory > 0) continue;
+
+    const current = await prisma.employee.findUnique({ where: { id: employee.id } });
+    if (!current?.salaryPkr) continue;
+
+    await prisma.salaryHistory.create({
+      data: {
+        employeeId: employee.id,
+        oldSalaryPkr: increment.fromSalaryPkr,
+        newSalaryPkr: current.salaryPkr,
+        effectiveDate: new Date(increment.effectiveDate),
+        remarks: increment.remarks,
+        changedBy: superAdminUserId,
+      },
+    });
+  }
+
+  return created;
 }
 
 main()
