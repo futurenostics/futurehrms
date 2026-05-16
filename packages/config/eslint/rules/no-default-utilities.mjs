@@ -46,20 +46,31 @@ function stripVariants(token) {
  * The hint is shown in the error message and points the author at the
  * fn-* utility (or the catalog) they should be using.
  */
+// Note on scope: the bans below target NUMERIC scale values
+// (`p-4`, `w-12`, `inset-2`). Two exemptions:
+//   1. Keyword-based forms (`mx-auto`, `w-full`, `min-h-screen`) are
+//      structural CSS primitives, not design tokens.
+//   2. Zero (`p-0`, `min-w-0`, `top-0`) is a layout-reset marker —
+//      "no value here" — not a scale step. Authors compose layouts
+//      with it; banning it costs ergonomics for no design-fidelity
+//      gain (real spacing tokens still error out).
+// `px` is also allowed for sub-pixel layouts (rare; covers 1px
+// dividers when written `border-px` style — though typically authors
+// write `border` for the same effect).
 const BANS = [
-  // ---- Spacing (p/m/gap/space/inset/size/width/height/min/max) ----
+  // ---- Spacing scale (p/m/gap/space, numeric only, excluding 0) ----
   {
-    re: /^(?:p|m|gap|space)[xytrbl]?-(?:\d+(?:\.\d+)?|px|auto|full|screen|min|max|fit)$/,
+    re: /^(?:p|m|gap|space)[xytrbl]?-(?:[1-9]\d*(?:\.\d+)?)$/,
     name: 'spacing',
     hint: 'use p-fn-* / m-fn-* / gap-fn-* (see fn-tokens.css §4.9)',
   },
   {
-    re: /^-?(?:inset|top|right|bottom|left|start|end)-(?:\d+(?:\.\d+)?|px|auto|full)$/,
+    re: /^-?(?:inset|top|right|bottom|left|start|end)-(?:[1-9]\d*(?:\.\d+)?)$/,
     name: 'inset',
     hint: 'use inset-fn-* / top-fn-* etc.',
   },
   {
-    re: /^(?:w|h|min-w|min-h|max-w|max-h|size)-(?:\d+(?:\.\d+)?|px|full|screen|fit|min|max|auto)$/,
+    re: /^(?:w|h|min-w|min-h|max-w|max-h|size)-(?:[1-9]\d*(?:\.\d+)?)$/,
     name: 'sizing',
     hint: 'use w-fn-* / h-fn-* / size-fn-*',
   },
