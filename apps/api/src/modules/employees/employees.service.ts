@@ -119,6 +119,7 @@ export class EmployeesService {
     if (query.departmentId) filters.push({ departmentId: query.departmentId });
     if (query.statusId) filters.push({ statusId: query.statusId });
     if (query.managerId) filters.push({ managerId: query.managerId });
+    if (query.contractType) filters.push({ contractType: query.contractType });
     if (query.search) {
       const search = query.search.trim();
       filters.push({
@@ -214,6 +215,143 @@ export class EmployeesService {
       .filter((x): x is { slug: string; name: string; count: number } => x !== null);
 
     return { total, byStatus };
+  }
+
+  /**
+   * KPI tile inputs for the employees list page header. All four cards
+   * come from one round-trip — frontend renders skeletons until the
+   * single query resolves rather than juggle four separate states.
+   *
+   * Every count is scoped via buildEmployeeScopeWhere so a department
+   * manager sees stats for their team only, not the whole org.
+   */
+  async stats(viewer: AuthenticatedUser): Promise<{
+    totalHeadcount: number;
+    totalDeltaPct: number | null;
+    newThisMonth: number;
+    newThisMonthDeltaPct: number | null;
+    onProbation: number;
+    onProbationClosingThisWeek: number;
+    avgTenureYears: number;
+    tenureOver3yPercent: number;
+    distinctDepartments: number;
+  }> {
+    const scope = computeEmployeeReadScope(viewer);
+    if (!scope.canRead) {
+      return {
+        totalHeadcount: 0,
+        totalDeltaPct: null,
+        newThisMonth: 0,
+        newThisMonthDeltaPct: null,
+        onProbation: 0,
+        onProbationClosingThisWeek: 0,
+        avgTenureYears: 0,
+        tenureOver3yPercent: 0,
+        distinctDepartments: 0,
+      };
+    }
+
+    const activeWhere = buildEmployeeScopeWhere(viewer, {
+      deletedAt: null,
+      status: { slug: { not: 'terminated' } },
+    });
+
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const sevenDaysOut = new Date(now);
+    sevenDaysOut.setDate(now.getDate() + 7);
+
+    const newThisMonthWhere = buildEmployeeScopeWhere(viewer, {
+      deletedAt: null,
+      joinDate: { gte: startOfMonth, lte: now },
+    });
+    const newLastMonthWhere = buildEmployeeScopeWhere(viewer, {
+      deletedAt: null,
+      joinDate: { gte: startOfLastMonth, lt: startOfMonth },
+    });
+    const headcountLastMonthWhere = buildEmployeeScopeWhere(viewer, {
+      deletedAt: null,
+      status: { slug: { not: 'terminated' } },
+      joinDate: { lt: startOfMonth },
+    });
+    const headcountBeforeLastWhere = buildEmployeeScopeWhere(viewer, {
+      deletedAt: null,
+      status: { slug: { not: 'terminated' } },
+      joinDate: { lt: startOfLastMonth },
+    });
+
+    const probationWhere = buildEmployeeScopeWhere(viewer, {
+      deletedAt: null,
+      status: { slug: 'probation' },
+    });
+    const probationClosingWhere = buildEmployeeScopeWhere(viewer, {
+      deletedAt: null,
+      status: { slug: 'probation' },
+      probationEndDate: { gte: now, lte: sevenDaysOut },
+    });
+
+    const [
+      totalHeadcount,
+      headcountLastMonth,
+      headcountBeforeLast,
+      newThisMonth,
+      newLastMonth,
+      onProbation,
+      onProbationClosingThisWeek,
+      tenureRows,
+      deptGroups,
+    ] = await Promise.all([
+      prisma.employee.count({ where: activeWhere }),
+      prisma.employee.count({ where: headcountLastMonthWhere }),
+      prisma.employee.count({ where: headcountBeforeLastWhere }),
+      prisma.employee.count({ where: newThisMonthWhere }),
+      prisma.employee.count({ where: newLastMonthWhere }),
+      prisma.employee.count({ where: probationWhere }),
+      prisma.employee.count({ where: probationClosingWhere }),
+      prisma.employee.findMany({
+        where: activeWhere,
+        select: { joinDate: true },
+      }),
+      prisma.employee.groupBy({
+        by: ['departmentId'],
+        where: activeWhere,
+        _count: { _all: true },
+      }),
+    ]);
+
+    const totalDeltaPct = pctChange(
+      headcountBeforeLast,
+      // Approximate "last month's headcount" with rows joined before this
+      // month started — soft-deleted/terminated rows joined later don't
+      // skew it. Same logic for the start-of-last-month baseline below.
+      headcountLastMonth,
+    );
+    const newThisMonthDeltaPct = pctChange(newLastMonth, newThisMonth);
+
+    const dayMs = 24 * 60 * 60 * 1000;
+    const yearMs = 365.25 * dayMs;
+    let avgTenureYears = 0;
+    let tenureOver3yPercent = 0;
+    if (tenureRows.length > 0) {
+      const tenures = tenureRows.map((r) => (now.getTime() - r.joinDate.getTime()) / yearMs);
+      const sum = tenures.reduce((acc, t) => acc + t, 0);
+      avgTenureYears = sum / tenures.length;
+      const over3 = tenures.filter((t) => t > 3).length;
+      tenureOver3yPercent = (over3 / tenures.length) * 100;
+    }
+
+    return {
+      totalHeadcount,
+      totalDeltaPct,
+      newThisMonth,
+      newThisMonthDeltaPct,
+      onProbation,
+      onProbationClosingThisWeek,
+      avgTenureYears: Math.round(avgTenureYears * 10) / 10,
+      tenureOver3yPercent: Math.round(tenureOver3yPercent),
+      distinctDepartments: deptGroups.length,
+    };
   }
 
   /* ---------- Writes ---------- */
@@ -833,10 +971,17 @@ export class EmployeesService {
     }
   }
 
+  /* ---------- Internals (continued) ---------- */
   private async assertEmailUnique(email: string, excludeId: string | null): Promise<void> {
     const existing = await prisma.employee.findUnique({ where: { email: email.toLowerCase() } });
     if (existing && existing.id !== excludeId) {
       throw new BadRequestException('Email is already in use');
     }
   }
+}
+
+/** Percentage change from `prev` to `next` — null when prev is 0 (avoid /0). */
+function pctChange(prev: number, next: number): number | null {
+  if (prev <= 0) return next > 0 ? null : 0;
+  return Math.round(((next - prev) / prev) * 1000) / 10;
 }

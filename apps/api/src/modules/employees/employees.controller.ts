@@ -65,6 +65,12 @@ export class EmployeesController {
     return this.employees.totalActiveCount(user);
   }
 
+  @Get('stats')
+  @RequirePermission('employees:view_team')
+  async stats(@CurrentUser() user: AuthenticatedUser) {
+    return this.employees.stats(user);
+  }
+
   @Get('org-chart')
   @RequirePermission('employees:view_team')
   async orgChart(@CurrentUser() user: AuthenticatedUser) {

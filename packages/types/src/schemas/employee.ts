@@ -92,7 +92,13 @@ export type ChangeSalaryInput = z.infer<typeof changeSalarySchema>;
 
 /* ---------- List query ---------- */
 
-export const employeeSortBySchema = z.enum(['fullName', 'eid', 'joinDate', 'createdAt']);
+export const employeeSortBySchema = z.enum([
+  'fullName',
+  'eid',
+  'joinDate',
+  'createdAt',
+  'salaryPkr',
+]);
 export type EmployeeSortBy = z.infer<typeof employeeSortBySchema>;
 
 export const employeeListQuerySchema = z.object({
@@ -102,6 +108,7 @@ export const employeeListQuerySchema = z.object({
   departmentId: z.string().optional(),
   statusId: z.string().optional(),
   managerId: z.string().optional(),
+  contractType: contractTypeSchema.optional(),
   sortBy: employeeSortBySchema.default('fullName'),
   sortDir: z.enum(['asc', 'desc']).default('asc'),
   includeArchived: z.coerce.boolean().default(false),
@@ -249,6 +256,26 @@ export const csvImportCommitResultSchema = z.object({
   errorDetails: z.array(z.object({ rowNumber: z.number().int(), errors: z.array(z.string()) })),
 });
 export type CsvImportCommitResult = z.infer<typeof csvImportCommitResultSchema>;
+
+/* ---------- KPI stats for the list page ---------- */
+
+export const employeeStatsSchema = z.object({
+  totalHeadcount: z.number().int().nonnegative(),
+  /** Percentage delta vs last month's headcount (positive = growth). */
+  totalDeltaPct: z.number().nullable(),
+  newThisMonth: z.number().int().nonnegative(),
+  /** Percentage delta vs last month's new-joins count (positive = growth). */
+  newThisMonthDeltaPct: z.number().nullable(),
+  onProbation: z.number().int().nonnegative(),
+  onProbationClosingThisWeek: z.number().int().nonnegative(),
+  /** Average tenure across active employees, in years (1 decimal precision on the wire). */
+  avgTenureYears: z.number().nonnegative(),
+  /** Percentage of active employees with tenure > 3 years. */
+  tenureOver3yPercent: z.number().min(0).max(100),
+  /** Distinct departments with at least one active employee — drives the header sub-line. */
+  distinctDepartments: z.number().int().nonnegative(),
+});
+export type EmployeeStats = z.infer<typeof employeeStatsSchema>;
 
 /* ---------- Reference lookups (departments, designations, statuses, managers) ---------- */
 
