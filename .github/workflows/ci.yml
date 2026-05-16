@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: Lint + Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r --filter '@futurenostics/*' run build
+        env:
+          DATABASE_URL: postgresql://hrms:hrms_dev_password@localhost:5432/hrms_dev
+      - run: pnpm lint
+      - run: pnpm typecheck
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: hrms
+          POSTGRES_PASSWORD: hrms_dev_password
+          POSTGRES_DB: hrms_dev
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U hrms -d hrms_dev"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://hrms:hrms_dev_password@localhost:5432/hrms_dev
+      REDIS_URL: redis://localhost:6379
+      JWT_ACCESS_SECRET: ci-access-secret-must-be-at-least-32-characters-long
+      JWT_REFRESH_SECRET: ci-refresh-secret-must-be-at-least-32-characters-long
+      JWT_ACCESS_EXPIRY: 15m
+      JWT_REFRESH_EXPIRY: 7d
+      S3_ENDPOINT: http://localhost:9000
+      S3_ACCESS_KEY: minio_admin
+      S3_SECRET_KEY: minio_dev_password
+      S3_REGION: us-east-1
+      S3_FORCE_PATH_STYLE: 'true'
+      DOCUMENTS_BUCKET: fn-hrms-documents
+      TEMPLATES_BUCKET: fn-hrms-template-assets
+      EMAIL_PROVIDER: mailpit
+      SMTP_HOST: localhost
+      SMTP_PORT: '1025'
+      SMTP_FROM: 'Futurenostics HRMS <no-reply@futurenostics.local>'
+      APP_URL: http://localhost:3000
+      API_URL: http://localhost:4000
+      NODE_ENV: test
+      LOG_LEVEL: warn
+      PORT: '4000'
+      TZ: Asia/Karachi
+      SEED_ADMIN_EMAIL: admin@futurenostics.local
+      SEED_ADMIN_PASSWORD: ChangeMe!Now123
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r --filter '@futurenostics/*' run build
+      - name: Apply migrations
+        run: pnpm --filter @futurenostics/api exec prisma migrate deploy
+      - name: Seed database
+        run: pnpm db:seed
+      - run: pnpm --filter @futurenostics/api test
+      - run: pnpm --filter @futurenostics/api test:e2e
+
+  build:
+    name: Build apps
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r --filter '@futurenostics/*' run build
+      - run: pnpm --filter @futurenostics/api exec prisma generate
+      - run: pnpm --filter @futurenostics/api build
+      - run: pnpm --filter @futurenostics/web build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:4000
