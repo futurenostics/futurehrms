@@ -15,7 +15,7 @@ export interface LoginResult {
   accessToken: string;
   refreshToken: string;
   refreshExpiresAt: Date;
-  user: AuthenticatedUser & { fullName: string | null; employeeId: string | null };
+  user: AuthenticatedUser & { fullName: string | null };
 }
 
 @Injectable()
@@ -86,9 +86,10 @@ export class AuthService {
       },
     });
 
-    const [permissions, roles] = await Promise.all([
+    const [permissions, roles, scopedDepartmentIds] = await Promise.all([
       this.rbac.getEffectivePermissions(user.id),
       this.rbac.getRolesForUser(user.id),
+      this.rbac.getScopedDepartmentIds(user.id),
     ]);
 
     return {
@@ -102,6 +103,7 @@ export class AuthService {
         employeeId: user.employee?.id ?? null,
         permissions: [...permissions],
         roles,
+        scopedDepartmentIds,
       },
     };
   }
@@ -164,39 +166,47 @@ export class AuthService {
   }
 
   async resolveUser(userId: string): Promise<AuthenticatedUser | null> {
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, isActive: true, deletedAt: true, employeeId: true },
+    });
     if (!user || !user.isActive || user.deletedAt) {
       return null;
     }
-    const [permissions, roles] = await Promise.all([
+    const [permissions, roles, scopedDepartmentIds] = await Promise.all([
       this.rbac.getEffectivePermissions(user.id),
       this.rbac.getRolesForUser(user.id),
+      this.rbac.getScopedDepartmentIds(user.id),
     ]);
     return {
       id: user.id,
       email: user.email,
+      employeeId: user.employeeId ?? null,
       permissions: [...permissions],
       roles,
+      scopedDepartmentIds,
     };
   }
 
   async getCurrentUserPayload(
     userId: string,
-  ): Promise<(AuthenticatedUser & { fullName: string | null; employeeId: string | null }) | null> {
+  ): Promise<(AuthenticatedUser & { fullName: string | null }) | null> {
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: { employee: { select: { id: true, fullName: true } } },
     });
     if (!user || !user.isActive || user.deletedAt) return null;
-    const [permissions, roles] = await Promise.all([
+    const [permissions, roles, scopedDepartmentIds] = await Promise.all([
       this.rbac.getEffectivePermissions(user.id),
       this.rbac.getRolesForUser(user.id),
+      this.rbac.getScopedDepartmentIds(user.id),
     ]);
     return {
       id: user.id,
       email: user.email,
       fullName: user.employee?.fullName ?? null,
       employeeId: user.employee?.id ?? null,
+      scopedDepartmentIds,
       permissions: [...permissions],
       roles,
     };

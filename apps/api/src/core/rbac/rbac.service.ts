@@ -41,4 +41,26 @@ export class RbacService {
     });
     return rows.map((r) => r.role.slug);
   }
+
+  /**
+   * The department IDs the user's roles are scoped to. Used by the
+   * row-level scoping helpers in modules with team-only views
+   * (employees, leave, attendance, ...).
+   *
+   * A user holding ANY role with `departmentScope = null` (global)
+   * implicitly sees every department — that case is signalled by an
+   * empty list combined with a global permission like `view_all` on
+   * the consuming module. Callers must check the permission first.
+   */
+  async getScopedDepartmentIds(userId: string): Promise<string[]> {
+    const rows = await prisma.userRole.findMany({
+      where: { userId, departmentScope: { not: null } },
+      select: { departmentScope: true },
+    });
+    const set = new Set<string>();
+    for (const row of rows) {
+      if (row.departmentScope) set.add(row.departmentScope);
+    }
+    return [...set];
+  }
 }
