@@ -4,9 +4,12 @@ import { Sparkles } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { AppShell } from '@/components/shell/app-shell';
 import { useUser } from '@/hooks/use-user';
+import { usePermissions } from '@/hooks/use-permissions';
+import { TotalEmployeesWidget } from '@/components/employees/widgets/total-employees-widget';
 
 export default function DashboardPage() {
   const { data: user } = useUser();
+  const perms = usePermissions();
   const firstName = user?.fullName?.split(' ')[0] ?? user?.email?.split('@')[0] ?? 'there';
 
   return (
@@ -21,6 +24,12 @@ export default function DashboardPage() {
             phases.
           </p>
         </div>
+
+        {perms.has('employees:view_all') && (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <TotalEmployeesWidget />
+          </div>
+        )}
 
         <Card>
           <CardHeader className="flex flex-row items-center gap-3">
