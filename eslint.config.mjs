@@ -43,6 +43,9 @@ export default tseslint.config(
       curly: ['error', 'all'],
     },
   },
+  // NOTE: The Foundation Reset design-system lockdown
+  // (fn-tokens/no-default-utilities) lives in apps/web/eslint.config.mjs
+  // because its file globs need to resolve against the apps/web cwd.
   {
     files: ['**/*.test.ts', '**/*.spec.ts', '**/test/**', '**/__tests__/**'],
     rules: {
