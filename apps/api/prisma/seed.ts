@@ -16,6 +16,7 @@
 import { PrismaClient } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { parseEnv } from '../src/config/env.schema';
+import { seedPhase2 } from './seed-phase2';
 
 const prisma = new PrismaClient();
 
@@ -234,6 +235,8 @@ async function main(): Promise<void> {
 
   console.info('Seeding sample employees + linked users...');
   const employeesCreated = await seedSampleEmployees(superAdminUser.id, passwordHash);
+
+  await seedPhase2(prisma, superAdminUser.id);
 
   console.info(`Seed complete.`);
   console.info(`  Super admin email: ${env.SEED_ADMIN_EMAIL}`);
