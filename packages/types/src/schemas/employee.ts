@@ -29,14 +29,61 @@ export type EmergencyContact = z.infer<typeof emergencyContactSchema>;
 
 /* ---------- Create + Update inputs ---------- */
 
+/* ---------- Enums new to the form-sheet redesign ---------- */
+
+export const employmentRecordSchema = z.enum([
+  'on_roll',
+  'off_roll',
+  'intern_stipend',
+  'consultant_invoice',
+]);
+export type EmploymentRecord = z.infer<typeof employmentRecordSchema>;
+
+export const systemRoleSchema = z.enum([
+  'employee',
+  'team_lead',
+  'manager',
+  'hr',
+  'finance',
+  'super_admin',
+]);
+export type SystemRole = z.infer<typeof systemRoleSchema>;
+
 const baseInputShape = {
+  /**
+   * Canonical display name. The sheet UI splits this into First +
+   * Last inputs and joins them on save; the API also accepts firstName
+   * + lastName directly and falls back to fullName when both arrive.
+   */
   fullName: z.string().min(2, 'Name must be at least 2 characters').max(120),
+  firstName: z.string().trim().min(1, 'First name is required').max(60).optional(),
+  lastName: z.string().trim().min(1, 'Last name is required').max(60).optional(),
+  pronouns: z.string().trim().max(40).nullish(),
+
+  /** Work email — locked after onboarding per the design's Contact section. */
   email: z.string().email('Enter a valid email').toLowerCase(),
+  /** Optional secondary email used as a login fallback. */
+  personalEmail: z
+    .string()
+    .email('Enter a valid email')
+    .toLowerCase()
+    .nullish()
+    .transform((v) => v ?? null),
+  /** Work phone. */
   phone: z
     .string()
     .regex(phonePattern, 'Enter a valid phone')
     .nullish()
     .transform((v) => v ?? null),
+  /** Optional personal phone. */
+  personalPhone: z
+    .string()
+    .regex(phonePattern, 'Enter a valid phone')
+    .nullish()
+    .transform((v) => v ?? null),
+  /** Free-form mailing address; rendered as a textarea. */
+  address: z.string().max(500).nullish(),
+
   dateOfBirth: z.coerce.date().nullish(),
   gender: genderSchema.nullish(),
   cnic: z
@@ -44,21 +91,44 @@ const baseInputShape = {
     .regex(cnicPattern, 'Use format 12345-1234567-1')
     .nullish()
     .transform((v) => v ?? null),
+
   joinDate: z.coerce.date(),
   departmentId: z.string().min(1, 'Department is required'),
   designationId: z.string().min(1, 'Designation is required'),
   statusId: z.string().min(1, 'Status is required'),
   contractType: contractTypeSchema,
+  /** Independent of contractType — tracks the legal / payroll record. */
+  employmentRecord: employmentRecordSchema.nullish(),
   managerId: z.string().nullish(),
+
   salaryPkr: z.coerce.number().nonnegative('Salary must be non-negative').nullish(),
+  salaryEffectiveDate: z.coerce.date().nullish(),
   salaryProcessedExternally: z.boolean().optional().default(false),
   hasPayoneer: z.boolean().optional().default(false),
   payoneerAccountId: z.string().max(60).nullish(),
+  payoneerEmail: z
+    .string()
+    .email('Enter a valid email')
+    .toLowerCase()
+    .nullish()
+    .transform((v) => v ?? null),
+  /** Free-form so HR can pick a fixed name without a junction table. */
+  commissionRate: z.string().max(60).nullish(),
+  eligibleForCommissions: z.boolean().optional().default(false),
+
+  /** PKR payroll bank — name picked from a fixed list in the UI. */
+  bankName: z.string().max(80).nullish(),
+  bankBranch: z.string().max(120).nullish(),
+  iban: z.string().max(34).nullish(),
+
   internshipEndDate: z.coerce.date().nullish(),
   probationEndDate: z.coerce.date().nullish(),
   biannualReviewEnabled: z.boolean().optional().default(false),
   annualReviewEnabled: z.boolean().optional().default(true),
   emergencyContact: emergencyContactSchema.nullish(),
+
+  /** In-app permission role. Defaults to 'employee' on create. */
+  systemRole: systemRoleSchema.optional().default('employee'),
 };
 
 export const employeeCreateSchema = z.object(baseInputShape);
@@ -135,8 +205,14 @@ export const employeePublicSchema = z.object({
   id: z.string(),
   eid: z.string(),
   fullName: z.string(),
+  firstName: z.string().nullable(),
+  lastName: z.string().nullable(),
+  pronouns: z.string().nullable(),
   email: z.string().email(),
+  personalEmail: z.string().email().nullable(),
   phone: z.string().nullable(),
+  personalPhone: z.string().nullable(),
+  address: z.string().nullable(),
   dateOfBirth: z.string().nullable(),
   gender: genderSchema.nullable(),
   /** Masked unless viewer has `employees:view_pii` (currently always masked for non-HR). */
@@ -147,6 +223,7 @@ export const employeePublicSchema = z.object({
   designation: designationRefSchema,
   status: statusRefSchema,
   contractType: contractTypeSchema,
+  employmentRecord: employmentRecordSchema.nullable(),
   manager: employeeRefSchema.nullable(),
   reportsCount: z.number().int().nonnegative(),
   photoUrl: z.string().nullable(),
@@ -154,16 +231,49 @@ export const employeePublicSchema = z.object({
   internshipEndDate: z.string().nullable(),
   probationEndDate: z.string().nullable(),
   emergencyContact: emergencyContactSchema.nullable(),
+  systemRole: systemRoleSchema.nullable(),
+
   /** Present when viewer has `employees:view_salary`. */
   salaryPkr: z.number().nullable().optional(),
+  salaryEffectiveDate: z.string().nullable().optional(),
   salaryProcessedExternally: z.boolean().optional(),
   payoneerAccountId: z.string().nullable().optional(),
+  payoneerEmail: z.string().nullable().optional(),
+  eligibleForCommissions: z.boolean().optional(),
+  commissionRate: z.string().nullable().optional(),
+
+  /** PKR payroll bank info. */
+  bankName: z.string().nullable().optional(),
+  bankBranch: z.string().nullable().optional(),
+  iban: z.string().nullable().optional(),
+
+  /** Offboarding state. terminatedAt non-null = employment ended. */
+  noticePeriodStart: z.string().nullable().optional(),
+  terminatedAt: z.string().nullable().optional(),
+  lastWorkingDay: z.string().nullable().optional(),
+  terminationReason: z.string().nullable().optional(),
+
   lastIncrementDate: z.string().nullable().optional(),
   isArchived: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
 export type EmployeePublic = z.infer<typeof employeePublicSchema>;
+
+/* ---------- Offboarding ---------- */
+
+export const terminateEmployeeSchema = z.object({
+  reason: z.string().min(1, 'Reason is required').max(500),
+  lastWorkingDay: z.coerce.date(),
+  notes: z.string().max(2000).optional(),
+});
+export type TerminateEmployeeInput = z.infer<typeof terminateEmployeeSchema>;
+
+export const moveToNoticeSchema = z.object({
+  noticePeriodStart: z.coerce.date().optional(),
+  remarks: z.string().max(500).optional(),
+});
+export type MoveToNoticeInput = z.infer<typeof moveToNoticeSchema>;
 
 export const employeeListResponseSchema = z.object({
   /** Items in this page, in the requested sort order. */
