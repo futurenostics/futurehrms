@@ -48,7 +48,7 @@ export const legacySkipList = [
   // 'components/shell/user-menu.tsx' — remediated in Sub-phase D.
   'components/ui/avatar.tsx',
   'components/ui/badge.tsx',
-  'components/ui/button.tsx',
+  // 'components/ui/button.tsx' — remediated in Sub-phase B Tier 2.
   'components/ui/card.tsx',
   'components/ui/checkbox.tsx',
   'components/ui/dialog.tsx',

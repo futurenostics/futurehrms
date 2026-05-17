@@ -24,6 +24,7 @@ import { TOKENS } from './_data/tokens';
 import { LabelSection } from './_sections/label';
 import { SeparatorSection } from './_sections/separator';
 import { SpinnerSection } from './_sections/spinner';
+import { ButtonSection } from './_sections/button';
 
 export const metadata = {
   title: 'Style Guide — Futurenostics',
@@ -56,9 +57,13 @@ const TOC = [
     ],
   },
   {
+    label: 'Tier 2 · Form atoms',
+    items: [{ id: 'primitive-button', label: 'Button' }],
+  },
+  {
     label: 'Primitives — coming next',
     items: [
-      { id: 'tier-2', label: 'Tier 2 · Form atoms' },
+      { id: 'tier-2-rest', label: 'Tier 2 rest · Input / Textarea / Switch / etc.' },
       { id: 'tier-3', label: 'Tier 3 · Display atoms' },
       { id: 'tier-4', label: 'Tier 4 · Containers' },
       { id: 'tier-5', label: 'Tier 5 · Compound' },
@@ -476,6 +481,7 @@ function PrimitivesSection() {
       <LabelSection />
       <SeparatorSection />
       <SpinnerSection />
+      <ButtonSection />
       <div className="bg-fn-bg-panel border-fn-border rounded-fn-xs p-fn-6 border">
         <p className="text-fn-fg-muted text-fn-base leading-fn-normal max-w-[640px]">
           Tier 1 atoms (Label · Separator · Spinner) are now live. Coming next: Tier 2 Form atoms —
