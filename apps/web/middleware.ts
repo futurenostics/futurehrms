@@ -13,6 +13,7 @@ const REFRESH_COOKIE = 'fn_refresh';
 const PROTECTED_PATHS = [
   '/dashboard',
   '/employees',
+  '/org-chart',
   '/projects',
   '/commissions',
   '/payroll',

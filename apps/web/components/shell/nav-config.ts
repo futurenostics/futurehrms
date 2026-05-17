@@ -53,7 +53,7 @@ export const navGroups: NavGroup[] = [
     label: 'HR Core',
     items: [
       { key: 'employees', label: 'Employees', icon: Users, href: '/employees', count: 84 },
-      { key: 'org', label: 'Org Chart', icon: Network, href: '/employees/org' },
+      { key: 'org', label: 'Org Chart', icon: Network, href: '/org-chart' },
       {
         key: 'departments',
         label: 'Departments',
