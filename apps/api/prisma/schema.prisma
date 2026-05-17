@@ -161,9 +161,21 @@ model EmployeeStatus {
 model Employee {
   id          String    @id @default(cuid())
   eid         String    @unique
+  // fullName is kept as the canonical name field (joined first + last
+  // on save); firstName / lastName are the inputs the new sheet
+  // surfaces. Nullable so the migration can backfill existing rows.
   fullName    String
-  email       String    @unique
-  phone       String?
+  firstName   String?
+  lastName    String?
+  pronouns    String?
+  // `email` is the work email (locked after onboarding); personalEmail
+  // is the optional secondary used as a login-fallback target.
+  email         String    @unique
+  personalEmail String?
+  // `phone` is the work phone; personalPhone is optional secondary.
+  phone         String?
+  personalPhone String?
+  address       String?
   dateOfBirth DateTime?
   gender      String?
   cnic        String?   @unique
@@ -176,7 +188,10 @@ model Employee {
   statusId      String
   status        EmployeeStatus @relation(fields: [statusId], references: [id])
 
-  contractType String
+  contractType     String
+  // 'on_roll' | 'off_roll' | 'intern_stipend' | 'consultant_invoice'
+  // — independent of contractType; tracks the legal / payroll record.
+  employmentRecord String?
 
   managerId String?
   manager   Employee?  @relation("EmployeeManager", fields: [managerId], references: [id])
@@ -184,10 +199,25 @@ model Employee {
 
   user User?
 
-  salaryPkr                 Decimal? @db.Decimal(14, 2)
-  salaryProcessedExternally Boolean  @default(false)
-  hasPayoneer               Boolean  @default(false)
+  // Optional system role slug (mirrors Role.slug). Drives in-app
+  // visibility; defaults to 'employee' at create time.
+  systemRoleSlug String?
+
+  salaryPkr                 Decimal?  @db.Decimal(14, 2)
+  salaryEffectiveDate       DateTime?
+  salaryProcessedExternally Boolean   @default(false)
+  hasPayoneer               Boolean   @default(false)
   payoneerAccountId         String?
+  payoneerEmail             String?
+  eligibleForCommissions    Boolean   @default(false)
+  // Free-form so HR can pick from a fixed list ('standard',
+  // 'per_project_category', custom string) without a junction table.
+  commissionRate            String?
+
+  // PKR payroll bank account.
+  bankName   String?
+  bankBranch String?
+  iban       String?
 
   internshipEndDate     DateTime?
   probationEndDate      DateTime?
@@ -196,6 +226,15 @@ model Employee {
   lastIncrementDate     DateTime?
 
   emergencyContact Json?
+
+  // Offboarding / termination state. noticePeriodStart marks 'Move
+  // to Notice'; terminatedAt + lastWorkingDay + terminationReason +
+  // terminationNotes capture the Terminate confirmation modal output.
+  noticePeriodStart DateTime?
+  terminatedAt      DateTime?
+  lastWorkingDay    DateTime?
+  terminationReason String?
+  terminationNotes  String?
 
   documents     EmployeeDocument[]
   salaryHistory SalaryHistory[]
