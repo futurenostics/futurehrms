@@ -373,18 +373,6 @@ export default function OrgChartPage() {
         {/* Header */}
         <div className="gap-fn-3 flex flex-wrap items-end justify-between">
           <div>
-            <div className="gap-fn-2 mb-fn-2 flex items-center text-[13px]">
-              <Link
-                href="/employees"
-                className="text-fn-accent-soft-fg font-fn-semibold cursor-pointer hover:underline"
-              >
-                ← Employees
-              </Link>
-              <span aria-hidden className="text-fn-fg-faint">
-                ·
-              </span>
-              <span className="text-fn-fg-muted">Org chart</span>
-            </div>
             <h1
               className="text-fn-fg font-fn-semibold m-0 text-[26px]"
               style={{ letterSpacing: '-0.025em' }}
