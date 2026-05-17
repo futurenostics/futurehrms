@@ -45,8 +45,10 @@ export const commissionRuleCreateSchema = z.object({
   categoryId: z.string().min(1),
   poolMode: poolModeSchema,
   poolValue: z.coerce.number().min(0).max(99_999_999.99),
+  /** Projects below this revenue threshold generate no line items. 0 = no threshold. */
+  minProjectRevenueUsd: z.coerce.number().min(0).max(99_999_999.99).default(0),
   rolePercentages: rolePercentagesSchema,
-  disbursementSchedule: z.record(z.string(), z.unknown()).nullable().optional(), // shape finalised Session 2
+  disbursementSchedule: z.record(z.string(), z.unknown()).nullable().optional(),
   effectiveFrom: z.string().min(1).optional(),
   status: commissionRuleStatusSchema.default('draft'),
   pendingReason: z.string().trim().max(500).optional(),
@@ -76,6 +78,7 @@ export const commissionRulePublicSchema = z.object({
   version: z.string(),
   poolMode: poolModeSchema,
   poolValue: z.number(),
+  minProjectRevenueUsd: z.number(),
   rolePercentages: rolePercentagesSchema,
   disbursementSchedule: z.record(z.string(), z.unknown()).nullable(),
   effectiveFrom: z.string(),

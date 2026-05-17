@@ -9,3 +9,4 @@ export * from './auth';
 export * from './employee';
 export * from './project';
 export * from './commission-rule';
+export * from './commission-run';
