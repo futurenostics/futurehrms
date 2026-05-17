@@ -2,23 +2,43 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { useForm, type FieldPath } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
-import { Briefcase, Eye, Pencil, Phone, User, UserPlus, Wallet, ChevronDown } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowDown,
+  Briefcase,
+  BadgeAlert,
+  IdCard,
+  Info,
+  Landmark,
+  LifeBuoy,
+  Mail,
+  ShieldCheck,
+  UserCircle2,
+  Users,
+  Wallet,
+} from 'lucide-react';
 import {
   contractTypeSchema,
   employeeCreateSchema,
+  employmentRecordSchema,
+  systemRoleSchema,
+  terminateEmployeeSchema,
   type EmployeeCreateInput,
   type EmployeePublic,
+  type EmploymentRecord,
   type Gender,
+  type SystemRole,
+  type TerminateEmployeeInput,
 } from '@futurenostics/types';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Combobox } from '@/components/ui/combobox';
-import { RadioCardGroup, RadioCard } from '@/components/ui/radio-group';
 import {
   Sheet,
   SheetBody,
@@ -27,23 +47,33 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { EmployeeAvatar } from '@/components/employees/employee-avatar';
+import { apiFetch } from '@/lib/api-client';
 import { useCreateEmployee, useReferences, useUpdateEmployee } from '@/lib/queries/employees';
 import { usePermissions } from '@/hooks/use-permissions';
 import { cn } from '@/lib/utils';
 
 /**
- * Employee form sheet — shared between Create and Edit modes.
+ * Employee form sheet — Add new + Edit modes.
  *
- * Visual + interaction model is locked to the Overtime Rules editor
- * sheet (docs/design/screens/overtime-rules.jsx → RuleEditorSheet
- * @ L192). Sections, fields, live preview panel, and footer match.
- *
- * Headless on URL state — the parent page reads any ?sheet= query
- * param and passes `open` accordingly, then handles browser-back
- * close by clearing the param.
+ * Visual reference: docs/design/screens/employees-form/189–193.png.
+ * Sections are anchored top-to-bottom: Identity, Contact, Employment,
+ * Compensation, Bank, Emergency, Access & Role; edit mode adds a
+ * Danger Zone (Move to notice + Terminate) at the bottom plus a tab
+ * bar in the header that scrolls to each section.
  */
 
 const CONTRACT_OPTIONS = contractTypeSchema.options;
+const EMPLOYMENT_RECORD_OPTIONS = employmentRecordSchema.options;
+const SYSTEM_ROLE_OPTIONS = systemRoleSchema.options;
 
 const GENDER_OPTIONS: Array<{ value: '' | Gender; label: string }> = [
   { value: '', label: 'Not specified' },
@@ -51,6 +81,85 @@ const GENDER_OPTIONS: Array<{ value: '' | Gender; label: string }> = [
   { value: 'female', label: 'Female' },
   { value: 'other', label: 'Other' },
   { value: 'prefer_not_to_say', label: 'Prefer not to say' },
+];
+
+// Fixed list of Pakistani banks used by the Bank section's dropdown.
+// Free-form means HR can override via API; the picker just gives the
+// common cases without needing a Bank lookup table.
+const BANK_OPTIONS = [
+  'HBL',
+  'UBL',
+  'MCB',
+  'Allied Bank',
+  'Bank Alfalah',
+  'Meezan Bank',
+  'Standard Chartered',
+  'Faysal Bank',
+  'Askari Bank',
+  'Habib Metropolitan',
+  'JS Bank',
+  'NBP',
+  'Bank Al Habib',
+].map((name) => ({ value: name, label: name }));
+
+const COMMISSION_RATE_OPTIONS = [
+  { value: 'standard', label: 'Standard' },
+  { value: 'per_project_category', label: 'Per project category' },
+  { value: 'flat_5', label: 'Flat 5%' },
+  { value: 'flat_10', label: 'Flat 10%' },
+];
+
+const EMPLOYMENT_RECORD_LABELS: Record<EmploymentRecord, string> = {
+  on_roll: 'On-roll (statutory benefits)',
+  off_roll: 'Off-roll',
+  intern_stipend: 'Intern stipend',
+  consultant_invoice: 'Consultant — invoiced',
+};
+
+const SYSTEM_ROLE_LABELS: Record<SystemRole, { title: string; description: string }> = {
+  employee: {
+    title: 'Employee (default)',
+    description: 'Sees own data only · request leave, submit OT, view payslips.',
+  },
+  team_lead: {
+    title: 'Team Lead',
+    description: 'Approves leave / OT for direct reports.',
+  },
+  manager: {
+    title: 'Manager',
+    description: 'Approves for the whole org branch under them.',
+  },
+  hr: {
+    title: 'HR',
+    description: 'Full read/write across employees + payroll.',
+  },
+  finance: {
+    title: 'Finance',
+    description: 'Read employees, full write on payouts.',
+  },
+  super_admin: {
+    title: 'Super Admin',
+    description: 'Unrestricted access including destructive actions.',
+  },
+};
+
+// Sections render their content inside a scrollable body; the edit-mode
+// tab bar scrolls to these anchors. Keep ids stable.
+type SectionKey =
+  | 'identity'
+  | 'contact'
+  | 'employment'
+  | 'compensation'
+  | 'bank'
+  | 'emergency'
+  | 'access';
+const TABS: Array<{ key: SectionKey; label: string }> = [
+  { key: 'identity', label: 'Identity' },
+  { key: 'employment', label: 'Employment' },
+  { key: 'compensation', label: 'Compensation' },
+  { key: 'bank', label: 'Bank' },
+  { key: 'emergency', label: 'Emergency' },
+  { key: 'access', label: 'Access' },
 ];
 
 export type EmployeeFormSheetProps = {
@@ -68,21 +177,12 @@ export function EmployeeFormSheet({
   employee,
   onSuccess,
 }: EmployeeFormSheetProps) {
-  // Unsaved-changes guard — if the user has dirtied the form, intercept
-  // the close (X / backdrop / Escape / Cancel) and require confirmation
-  // via a native window.confirm. Lightweight, framework-free, and
-  // matches the browser's beforeunload semantics users already know.
-  const formDirtyRef = React.useRef(false);
-  const requestClose = React.useCallback(() => {
-    if (!formDirtyRef.current || window.confirm('Discard your unsaved changes?')) {
-      onOpenChange(false);
-    }
-  }, [onOpenChange]);
   const router = useRouter();
   const perms = usePermissions();
   const refs = useReferences();
 
   const canViewSalary = perms.has('employees:view_salary');
+  const canTerminate = perms.has('employees:delete');
 
   const createMutation = useCreateEmployee();
   const updateMutation = useUpdateEmployee(employee?.id ?? '');
@@ -99,29 +199,42 @@ export function EmployeeFormSheet({
     mode: 'onBlur',
   });
 
-  // Reset whenever the sheet reopens or the editing employee changes so
-  // re-opening the sheet doesn't show stale field state from a previous
-  // edit session.
   React.useEffect(() => {
     if (open) form.reset(defaults);
   }, [open, defaults, form]);
 
-  // Keep the dirty ref in sync so the close guard reads the current
-  // form state without re-creating the callback on every keystroke.
+  // Unsaved-changes close guard — preserved from prior implementation.
+  const formDirtyRef = React.useRef(false);
   React.useEffect(() => {
     formDirtyRef.current = form.formState.isDirty;
   }, [form.formState.isDirty]);
+  const requestClose = React.useCallback(() => {
+    if (!formDirtyRef.current || window.confirm('Discard your unsaved changes?')) {
+      onOpenChange(false);
+    }
+  }, [onOpenChange]);
+
+  // Validation banner — fires on a failed submit, clears once valid.
+  const [showValidationBanner, setShowValidationBanner] = React.useState(false);
+  React.useEffect(() => {
+    if (form.formState.isValid) setShowValidationBanner(false);
+  }, [form.formState.isValid]);
+  React.useEffect(() => {
+    if (open) setShowValidationBanner(false);
+  }, [open]);
 
   const watch = form.watch();
-  const departmentId = watch.departmentId;
-  const contractType = watch.contractType;
-  const statusId = watch.statusId;
-  const hasPayoneer = watch.hasPayoneer ?? false;
+  const firstName = watch.firstName ?? '';
+  const lastName = watch.lastName ?? '';
+  const computedFullName =
+    [firstName, lastName].filter(Boolean).join(' ').trim() ||
+    (mode === 'edit' ? (employee?.fullName ?? '') : '');
 
+  // Filter designations / status / manager option lists.
   const filteredDesignations = React.useMemo(() => {
-    if (!refs.data || !departmentId) return [];
-    return refs.data.designations.filter((d) => d.departmentId === departmentId);
-  }, [refs.data, departmentId]);
+    if (!refs.data || !watch.departmentId) return [];
+    return refs.data.designations.filter((d) => d.departmentId === watch.departmentId);
+  }, [refs.data, watch.departmentId]);
 
   const departmentOptions = React.useMemo(
     () => (refs.data?.departments ?? []).map((d) => ({ value: d.id, label: d.name })),
@@ -131,21 +244,26 @@ export function EmployeeFormSheet({
     () => filteredDesignations.map((d) => ({ value: d.id, label: d.name })),
     [filteredDesignations],
   );
-  const statusOptions = React.useMemo(
+  // Status as pill toggles instead of a dropdown — matches the design.
+  const statusPills = React.useMemo(
     () =>
       (refs.data?.statuses ?? [])
-        .filter((s) => s.slug !== 'terminated')
-        .map((s) => ({ value: s.id, label: s.name })),
+        .filter((s) => ['intern', 'probation', 'permanent', 'contractor'].includes(s.slug))
+        .sort((a, b) => {
+          const order = ['intern', 'probation', 'permanent', 'contractor'];
+          return order.indexOf(a.slug) - order.indexOf(b.slug);
+        }),
     [refs.data?.statuses],
   );
 
   const statusSlug = React.useMemo(
-    () => refs.data?.statuses.find((s) => s.id === statusId)?.slug,
-    [refs.data?.statuses, statusId],
+    () => refs.data?.statuses.find((s) => s.id === watch.statusId)?.slug,
+    [refs.data?.statuses, watch.statusId],
   );
   const showProbationEnd = statusSlug === 'probation';
-  const showInternshipEnd = contractType === 'Intern';
+  const showInternshipEnd = watch.contractType === 'Intern';
 
+  // Submit + close paths.
   async function onSubmit(values: EmployeeCreateInput) {
     try {
       const result =
@@ -160,497 +278,753 @@ export function EmployeeFormSheet({
       toast.error((err as Error).message);
     }
   }
-
   function handleSubmitClick() {
-    void form.handleSubmit(onSubmit, () => {
-      // Trigger the validation-error banner via a re-render. The
-      // handler runs only when validation fails; setting state here
-      // surfaces the field list at the top of the body.
-      setShowValidationBanner(true);
-    })();
+    void form.handleSubmit(onSubmit, () => setShowValidationBanner(true))();
   }
 
-  // Validation error banner — set true on a failed submit attempt,
-  // cleared once the form becomes valid again.
-  const [showValidationBanner, setShowValidationBanner] = React.useState(false);
-  React.useEffect(() => {
-    if (form.formState.isValid) setShowValidationBanner(false);
-  }, [form.formState.isValid]);
-  // Reset when the sheet reopens.
-  React.useEffect(() => {
-    if (open) setShowValidationBanner(false);
-  }, [open]);
+  // Tab-anchor scroll — clicking a tab smooth-scrolls to the section.
+  const bodyRef = React.useRef<HTMLDivElement | null>(null);
+  function jumpTo(key: SectionKey) {
+    const el = bodyRef.current?.querySelector<HTMLElement>(`[data-section="${key}"]`);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  function jumpToFirstError() {
+    const firstErrorKey = Object.keys(form.formState.errors)[0];
+    if (!firstErrorKey) return;
+    const el = bodyRef.current?.querySelector<HTMLElement>(`[data-field="${firstErrorKey}"]`);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    (el?.querySelector('input, textarea, button, select') as HTMLElement | null)?.focus();
+  }
 
-  // Audit-significant edit banners. Only render in edit mode; only when
-  // the user has actually dirtied the field; never on initial open.
-  const showManagerBanner = mode === 'edit' && Boolean(form.formState.dirtyFields.managerId);
-  const showStatusBanner = mode === 'edit' && Boolean(form.formState.dirtyFields.statusId);
-  const showSalaryBanner = mode === 'edit' && Boolean(form.formState.dirtyFields.salaryPkr);
+  // Terminate modal state — edit only, exists alongside the sheet.
+  const [terminateOpen, setTerminateOpen] = React.useState(false);
 
-  const erroredFieldLabels = React.useMemo(() => {
-    if (!showValidationBanner) return [];
-    return Object.keys(form.formState.errors).map((k) => FIELD_LABELS[k] ?? k);
-  }, [showValidationBanner, form.formState.errors]);
-
-  // Reset designation when department changes — the options are filtered
-  // by department so the prior value will be invalid.
-  const setDepartment = (id: string) => {
-    form.setValue('departmentId', id, { shouldDirty: true, shouldValidate: true });
-    form.setValue('designationId', '', { shouldDirty: true });
-  };
-
-  // Title input — wired to the fullName field. In Create mode the title
-  // input is disabled (the input row reads "New employee" as a static
-  // label); the actual fullName field lives in the Basics section.
-  const titleValue = mode === 'create' ? '' : (watch.fullName ?? '');
+  const eyebrow = mode === 'create' ? 'ADD NEW EMPLOYEE' : `EDIT · ${employee?.eid ?? '—'}`;
   const subtitle =
-    mode === 'create'
-      ? 'New employee · will be assigned EID on save'
-      : `Editing ${employee?.eid ?? '—'} · changes are audit-logged`;
+    mode === 'create' ? 'EID will be assigned automatically · default access: Employee' : null;
+
+  const erroredFieldCount = Object.keys(form.formState.errors).length;
 
   return (
-    <Sheet
-      open={open}
-      onOpenChange={(next) => {
-        if (next) onOpenChange(true);
-        else requestClose();
-      }}
-    >
-      <SheetContent
-        side="right"
-        width="lg"
-        className="flex flex-col p-0"
-        // Intercept the built-in X / Escape / overlay-click handlers so
-        // the unsaved-changes confirmation fires before the sheet closes.
-        onEscapeKeyDown={(e) => {
-          e.preventDefault();
-          requestClose();
-        }}
-        onPointerDownOutside={(e) => {
-          if (formDirtyRef.current) e.preventDefault();
-          requestClose();
+    <>
+      <Sheet
+        open={open}
+        onOpenChange={(next) => {
+          if (next) onOpenChange(true);
+          else requestClose();
         }}
       >
-        {/* ── Sticky header ────────────────────────────────────────── */}
-        <SheetHeader className="gap-fn-3 flex-row items-center">
-          <span
-            aria-hidden
-            className="rounded-fn-sm h-fn-9 w-fn-9 inline-flex shrink-0 items-center justify-center"
-            style={{
-              background: 'var(--fn-icon-tile)',
-              color: 'var(--fn-icon-tile-fg)',
-            }}
-          >
-            {mode === 'create' ? (
-              <UserPlus className="h-fn-4 w-fn-4" />
-            ) : (
-              <Pencil className="h-fn-4 w-fn-4" />
-            )}
-          </span>
-          <div className="min-w-0 flex-1">
-            <SheetTitle className="sr-only">
-              {mode === 'create' ? 'Add new employee' : `Edit ${employee?.fullName ?? 'employee'}`}
-            </SheetTitle>
-            <Input
-              value={mode === 'create' ? 'New employee' : titleValue}
-              onChange={(e) =>
-                mode === 'edit' &&
-                form.setValue('fullName', e.target.value, {
-                  shouldDirty: true,
-                  shouldValidate: true,
-                })
-              }
-              disabled={mode === 'create'}
-              placeholder="Full name"
-              aria-label="Employee full name"
-              className={cn(
-                'font-fn-semibold h-[38px] text-[14px]',
-                mode === 'create' && 'disabled:cursor-default disabled:opacity-100',
+        <SheetContent
+          side="right"
+          width="lg"
+          className="flex flex-col p-0"
+          onEscapeKeyDown={(e) => {
+            e.preventDefault();
+            requestClose();
+          }}
+          onPointerDownOutside={(e) => {
+            if (formDirtyRef.current) e.preventDefault();
+            requestClose();
+          }}
+        >
+          {/* ── Sticky header ───────────────────────────────────────── */}
+          <SheetHeader className="gap-fn-2_5 flex-col items-stretch">
+            {/* Eyebrow */}
+            <div className="text-fn-fg-faint font-fn-semibold tracking-fn-uppercase-tight text-[11px] uppercase">
+              {eyebrow}
+            </div>
+
+            {/* Identity row — photo tile / avatar on left, name block on right */}
+            <div className="gap-fn-3 flex items-center">
+              {mode === 'create' ? (
+                <PhotoUploadTile />
+              ) : (
+                <EmployeeAvatar
+                  fullName={employee?.fullName ?? ''}
+                  photoUrl={employee?.photoUrl ?? null}
+                  size="lg"
+                />
               )}
-            />
-            <div className="text-fn-fg-faint mt-fn-1 text-[11.5px]">{subtitle}</div>
-          </div>
-        </SheetHeader>
+              <div className="min-w-0 flex-1">
+                <SheetTitle className="sr-only">
+                  {mode === 'create'
+                    ? 'Add new employee'
+                    : `Edit ${employee?.fullName ?? 'employee'}`}
+                </SheetTitle>
+                {mode === 'create' ? (
+                  <div className="text-fn-fg font-fn-semibold leading-fn-tight text-[18px]">
+                    {computedFullName || 'Full name (e.g. Aliya Saeed)'}
+                  </div>
+                ) : (
+                  <div className="text-fn-fg font-fn-semibold leading-fn-tight text-[18px]">
+                    {employee?.fullName ?? '—'}
+                  </div>
+                )}
+                {subtitle ? (
+                  <div className="text-fn-fg-faint mt-fn-1 text-[11.5px]">{subtitle}</div>
+                ) : employee ? (
+                  <div className="gap-fn-2 mt-fn-1 text-fn-fg-faint flex items-center text-[11.5px]">
+                    <span className="font-mono">{employee.eid}</span>
+                    <span aria-hidden>·</span>
+                    <span>{employee.designation.name}</span>
+                    <StatusBadge slug={employee.status.slug} name={employee.status.name} />
+                    <span aria-hidden>·</span>
+                    <span>joined {formatShortDate(employee.joinDate)}</span>
+                  </div>
+                ) : null}
+              </div>
+            </div>
 
-        {/* ── Scrollable body ──────────────────────────────────────── */}
-        <SheetBody className="pt-fn-1_5 pb-fn-6 flex flex-col">
-          {/* Inline alert banners — same visual treatment as the OT Rules
-              overlap warning. Order: validation error first (blocking),
-              then info banners about audit-significant changes. */}
-          {showValidationBanner && erroredFieldLabels.length > 0 && (
-            <Alert tone="danger" title="Some fields need attention" className="mt-fn-1 mb-fn-2">
-              {`Required or invalid: ${erroredFieldLabels.join(', ')}`}
-            </Alert>
-          )}
-          {showManagerBanner && (
-            <Alert tone="info" className="mt-fn-1 mb-fn-2">
-              Changing manager creates a timeline entry visible to HR and the old / new managers.
-            </Alert>
-          )}
-          {showStatusBanner && (
-            <Alert tone="info" className="mt-fn-1 mb-fn-2">
-              Changing status records a transition event. Some transitions (e.g. probation →
-              permanent) have downstream effects on review schedules.
-            </Alert>
-          )}
-          {showSalaryBanner && (
-            <Alert tone="warning" className="mt-fn-1 mb-fn-2">
-              Salary changes create a new SalaryHistory entry and an audit-log entry. Be sure the
-              effective date and amount are correct before saving.
-            </Alert>
-          )}
-
-          {/* Section 1 — Basics */}
-          <SheetSection
-            icon={<User className="h-fn-3_5 w-fn-3_5" />}
-            title="Basics"
-            description="Identity and contact information."
-            first
-          >
-            <SheetField
-              label="Full name"
-              required
-              error={form.formState.errors.fullName?.message}
-              fullWidth
-            >
-              <Input {...form.register('fullName')} autoComplete="name" placeholder="Asma Ali" />
-            </SheetField>
-            <SheetField
-              label="Email"
-              required
-              error={form.formState.errors.email?.message}
-              fullWidth
-            >
-              <Input
-                type="email"
-                {...form.register('email')}
-                autoComplete="email"
-                placeholder="asma.ali@futurenostics.com"
-              />
-            </SheetField>
-            <SheetField label="Phone" error={form.formState.errors.phone?.message}>
-              <Input
-                value={watch.phone ?? ''}
-                onChange={(e) =>
-                  form.setValue('phone', e.target.value || null, { shouldDirty: true })
-                }
-                placeholder="+92 300 1234567"
-                autoComplete="tel"
-              />
-            </SheetField>
-            <SheetField label="Date of birth">
-              <Input
-                type="date"
-                value={dateValue(watch.dateOfBirth)}
-                onChange={(e) =>
-                  form.setValue('dateOfBirth', e.target.value ? new Date(e.target.value) : null, {
-                    shouldDirty: true,
-                  })
-                }
-              />
-            </SheetField>
-            <SheetField label="Gender">
-              <Combobox
-                options={GENDER_OPTIONS.map((g) => ({
-                  value: g.value || '__none__',
-                  label: g.label,
-                }))}
-                value={watch.gender ?? '__none__'}
-                onValueChange={(v) =>
-                  form.setValue('gender', v === '__none__' ? null : (v as Gender), {
-                    shouldDirty: true,
-                  })
-                }
-                placeholder="Not specified"
-              />
-            </SheetField>
-            <SheetField
-              label="CNIC"
-              hint="Format: 12345-1234567-1"
-              error={form.formState.errors.cnic?.message}
-            >
-              <Input
-                value={watch.cnic ?? ''}
-                onChange={(e) =>
-                  form.setValue('cnic', e.target.value || null, { shouldDirty: true })
-                }
-                placeholder="12345-1234567-1"
-                className="tabular-nums"
-              />
-            </SheetField>
-          </SheetSection>
-
-          {/* Section 2 — Employment */}
-          <SheetSection
-            icon={<Briefcase className="h-fn-3_5 w-fn-3_5" />}
-            title="Employment"
-            description="Role, department, and employment terms."
-          >
-            <SheetField
-              label="Department"
-              required
-              error={form.formState.errors.departmentId?.message}
-            >
-              <Combobox
-                options={departmentOptions}
-                value={watch.departmentId}
-                onValueChange={setDepartment}
-                placeholder="Select department…"
-              />
-            </SheetField>
-            <SheetField
-              label="Designation"
-              required
-              hint={departmentId ? undefined : 'Select department first'}
-              error={form.formState.errors.designationId?.message}
-            >
-              <Combobox
-                options={designationOptions}
-                value={watch.designationId}
-                onValueChange={(v) =>
-                  form.setValue('designationId', v, { shouldDirty: true, shouldValidate: true })
-                }
-                placeholder="Select designation…"
-                disabled={!departmentId}
-              />
-            </SheetField>
-
-            <SheetField label="Contract type" required fullWidth>
-              <RadioCardGroup
-                value={watch.contractType}
-                onValueChange={(v) =>
-                  form.setValue('contractType', v as EmployeeCreateInput['contractType'], {
-                    shouldDirty: true,
-                    shouldValidate: true,
-                  })
-                }
-                className="gap-fn-2 grid grid-cols-2 sm:grid-cols-4"
+            {/* Tab anchors — edit mode only */}
+            {mode === 'edit' && (
+              <nav
+                aria-label="Form sections"
+                className="border-fn-divider -mb-fn-2 gap-fn-3 pt-fn-1 flex items-center border-b"
               >
-                {CONTRACT_OPTIONS.map((c) => (
-                  <RadioCard key={c} value={c} title={c} />
+                {TABS.map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => jumpTo(t.key)}
+                    className="text-fn-fg-muted hover:text-fn-fg font-fn-medium pb-fn-2 -mb-px cursor-pointer border-b border-transparent text-[12.5px] transition-colors"
+                  >
+                    {t.label}
+                  </button>
                 ))}
-              </RadioCardGroup>
-            </SheetField>
-
-            <SheetField label="Status" required error={form.formState.errors.statusId?.message}>
-              <Combobox
-                options={statusOptions}
-                value={watch.statusId}
-                onValueChange={(v) =>
-                  form.setValue('statusId', v, { shouldDirty: true, shouldValidate: true })
-                }
-                placeholder="Select status…"
-              />
-            </SheetField>
-            <SheetField label="Join date" required>
-              <Input
-                type="date"
-                value={dateValue(watch.joinDate)}
-                onChange={(e) =>
-                  form.setValue('joinDate', new Date(e.target.value), {
-                    shouldDirty: true,
-                    shouldValidate: true,
-                  })
-                }
-              />
-            </SheetField>
-
-            {showInternshipEnd && (
-              <SheetField label="Internship end date">
-                <Input
-                  type="date"
-                  value={dateValue(watch.internshipEndDate)}
-                  onChange={(e) =>
-                    form.setValue(
-                      'internshipEndDate',
-                      e.target.value ? new Date(e.target.value) : null,
-                      { shouldDirty: true },
-                    )
-                  }
-                />
-              </SheetField>
+              </nav>
             )}
-            {showProbationEnd && (
-              <SheetField label="Probation end date" hint="Defaults to join date + 90 days">
-                <Input
-                  type="date"
-                  value={dateValue(watch.probationEndDate)}
-                  onChange={(e) =>
-                    form.setValue(
-                      'probationEndDate',
-                      e.target.value ? new Date(e.target.value) : null,
-                      { shouldDirty: true },
-                    )
-                  }
-                />
-              </SheetField>
-            )}
-          </SheetSection>
+          </SheetHeader>
 
-          {/* Section 3 — Compensation (permission-gated) */}
-          {canViewSalary && (
-            <SheetSection
-              icon={<Wallet className="h-fn-3_5 w-fn-3_5" />}
-              title="Compensation"
-              description="Salary and payment routing. Changes are audit-logged."
+          {/* ── Scrollable body ──────────────────────────────────────── */}
+          <SheetBody ref={bodyRef} className="pt-fn-2 pb-fn-6 flex flex-col">
+            {/* Validation summary */}
+            {showValidationBanner && erroredFieldCount > 0 && (
+              <Alert tone="danger" className="mb-fn-3 items-center" showIcon={false}>
+                <div className="gap-fn-3 flex w-full items-center">
+                  <AlertTriangle className="h-fn-4 w-fn-4 shrink-0" strokeWidth={2} />
+                  <div className="flex-1">
+                    <strong className="font-fn-semibold">
+                      {erroredFieldCount} {erroredFieldCount === 1 ? 'field needs' : 'fields need'}{' '}
+                      attention
+                    </strong>{' '}
+                    · scroll to find them or fix them below.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={jumpToFirstError}
+                    className="text-fn-danger gap-fn-1 font-fn-semibold inline-flex cursor-pointer items-center text-[12px] hover:underline"
+                  >
+                    Jump to first <ArrowDown className="h-fn-3 w-fn-3" />
+                  </button>
+                </div>
+              </Alert>
+            )}
+
+            {/* IDENTITY */}
+            <Section
+              icon={<IdCard className="h-fn-3_5 w-fn-3_5" />}
+              title="Identity"
+              description="Used in the system and on official documents."
+              anchor="identity"
+              first
             >
-              <SheetField
-                label="Monthly salary (PKR)"
-                error={form.formState.errors.salaryPkr?.message}
+              <Field
+                label="First name"
+                required
+                error={form.formState.errors.firstName?.message}
+                fieldKey="firstName"
               >
                 <Input
-                  inputMode="numeric"
-                  value={watch.salaryPkr ?? ''}
-                  onChange={(e) => {
-                    const raw = e.target.value.replace(/[,\s]/g, '');
-                    form.setValue('salaryPkr', raw === '' ? null : Number(raw), {
+                  {...form.register('firstName')}
+                  placeholder="e.g. Aliya"
+                  autoComplete="given-name"
+                />
+              </Field>
+              <Field
+                label="Last name"
+                required
+                error={form.formState.errors.lastName?.message}
+                fieldKey="lastName"
+              >
+                <Input
+                  {...form.register('lastName')}
+                  placeholder="e.g. Saeed"
+                  autoComplete="family-name"
+                />
+              </Field>
+              <Field label="Pronouns" hint="Optional" fieldKey="pronouns">
+                <Input
+                  value={watch.pronouns ?? ''}
+                  onChange={(e) =>
+                    form.setValue('pronouns', e.target.value || null, { shouldDirty: true })
+                  }
+                  placeholder="he / him · she / her · they / them"
+                />
+              </Field>
+              <Field label="Date of birth" fieldKey="dateOfBirth">
+                <Input
+                  type="date"
+                  value={dateValue(watch.dateOfBirth)}
+                  onChange={(e) =>
+                    form.setValue('dateOfBirth', e.target.value ? new Date(e.target.value) : null, {
                       shouldDirty: true,
-                      shouldValidate: true,
-                    });
-                  }}
-                  placeholder="e.g. 150000"
+                    })
+                  }
+                />
+              </Field>
+              <Field label="Gender" fieldKey="gender">
+                <Combobox
+                  options={GENDER_OPTIONS.map((g) => ({
+                    value: g.value || '__none__',
+                    label: g.label,
+                  }))}
+                  value={watch.gender ?? '__none__'}
+                  onValueChange={(v) =>
+                    form.setValue('gender', v === '__none__' ? null : (v as Gender), {
+                      shouldDirty: true,
+                    })
+                  }
+                  placeholder="Not specified"
+                />
+              </Field>
+              <Field
+                label="CNIC"
+                hint="Pakistani national ID · 13 digits"
+                error={form.formState.errors.cnic?.message}
+                fieldKey="cnic"
+              >
+                <Input
+                  value={watch.cnic ?? ''}
+                  onChange={(e) =>
+                    form.setValue('cnic', e.target.value || null, { shouldDirty: true })
+                  }
+                  placeholder="XXXXX-XXXXXXX-X"
                   className="tabular-nums"
                 />
-              </SheetField>
-              <SheetField label="Has Payoneer account">
-                <label className="gap-fn-2_5 inline-flex h-[38px] cursor-pointer items-center text-[13px]">
-                  <Switch
-                    checked={hasPayoneer}
-                    onCheckedChange={(v) =>
-                      form.setValue('hasPayoneer', v === true, { shouldDirty: true })
-                    }
-                  />
-                  <span className="text-fn-fg">{hasPayoneer ? 'Yes' : 'No'}</span>
-                </label>
-              </SheetField>
-              {hasPayoneer && (
-                <SheetField
-                  label="Payoneer account id"
-                  hint="Optional · used to route USD payouts"
-                  fullWidth
+              </Field>
+            </Section>
+
+            {/* CONTACT */}
+            <Section
+              icon={<Mail className="h-fn-3_5 w-fn-3_5" />}
+              title="Contact"
+              description="Login email is locked after onboarding · contact HR to change."
+              anchor="contact"
+            >
+              <Field
+                label="Work email"
+                required
+                hint="For login fallback only"
+                error={form.formState.errors.email?.message}
+                fieldKey="email"
+              >
+                <Input
+                  type="email"
+                  {...form.register('email')}
+                  placeholder="e.g. aliya@futurenostics.com"
+                  autoComplete="email"
+                  disabled={mode === 'edit'}
+                />
+              </Field>
+              <Field
+                label="Personal email"
+                hint="Optional"
+                error={form.formState.errors.personalEmail?.message}
+                fieldKey="personalEmail"
+              >
+                <Input
+                  type="email"
+                  value={watch.personalEmail ?? ''}
+                  onChange={(e) =>
+                    form.setValue('personalEmail', e.target.value || null, { shouldDirty: true })
+                  }
+                  placeholder="aliya@gmail.com"
+                  autoComplete="email"
+                />
+              </Field>
+              <Field
+                label="Phone (work)"
+                error={form.formState.errors.phone?.message}
+                fieldKey="phone"
+              >
+                <Input
+                  value={watch.phone ?? ''}
+                  onChange={(e) =>
+                    form.setValue('phone', e.target.value || null, { shouldDirty: true })
+                  }
+                  placeholder="+92 …"
+                  autoComplete="tel"
+                />
+              </Field>
+              <Field
+                label="Phone (personal)"
+                hint="Optional"
+                error={form.formState.errors.personalPhone?.message}
+                fieldKey="personalPhone"
+              >
+                <Input
+                  value={watch.personalPhone ?? ''}
+                  onChange={(e) =>
+                    form.setValue('personalPhone', e.target.value || null, { shouldDirty: true })
+                  }
+                  placeholder="+92 …"
+                />
+              </Field>
+              <Field label="Address" hint="Area, city" fullWidth fieldKey="address">
+                <Textarea
+                  rows={3}
+                  value={watch.address ?? ''}
+                  onChange={(e) =>
+                    form.setValue('address', e.target.value || null, { shouldDirty: true })
+                  }
+                  placeholder="House #, Street, Area, City"
+                />
+              </Field>
+            </Section>
+
+            {/* EMPLOYMENT */}
+            <Section
+              icon={<Briefcase className="h-fn-3_5 w-fn-3_5" />}
+              title="Employment"
+              description="Where they sit in the org and how they're employed."
+              anchor="employment"
+            >
+              <Field
+                label="Department"
+                required
+                error={form.formState.errors.departmentId?.message}
+                fieldKey="departmentId"
+              >
+                <Combobox
+                  options={departmentOptions}
+                  value={watch.departmentId}
+                  onValueChange={(v) => {
+                    form.setValue('departmentId', v, { shouldDirty: true, shouldValidate: true });
+                    form.setValue('designationId', '', { shouldDirty: true });
+                  }}
+                  placeholder="Select department"
+                />
+              </Field>
+              <Field
+                label="Designation"
+                required
+                hint={watch.departmentId ? undefined : 'Pick a department first'}
+                error={form.formState.errors.designationId?.message}
+                fieldKey="designationId"
+              >
+                <Combobox
+                  options={designationOptions}
+                  value={watch.designationId}
+                  onValueChange={(v) =>
+                    form.setValue('designationId', v, { shouldDirty: true, shouldValidate: true })
+                  }
+                  placeholder="Select designation"
+                  disabled={!watch.departmentId}
+                />
+              </Field>
+
+              <Field label="Reports to (manager)" fullWidth fieldKey="managerId">
+                <ManagerPicker
+                  value={watch.managerId ?? null}
+                  selfId={employee?.id}
+                  onChange={(v) => form.setValue('managerId', v ?? null, { shouldDirty: true })}
+                />
+              </Field>
+
+              <Field label="Status" required hint="Lifecycle stage" fullWidth fieldKey="statusId">
+                <StatusPillBar
+                  options={statusPills.map((s) => ({ id: s.id, slug: s.slug, name: s.name }))}
+                  value={watch.statusId}
+                  onChange={(id) =>
+                    form.setValue('statusId', id, { shouldDirty: true, shouldValidate: true })
+                  }
+                />
+              </Field>
+
+              <Field label="Joining date" required fieldKey="joinDate">
+                <Input
+                  type="date"
+                  value={dateValue(watch.joinDate)}
+                  onChange={(e) =>
+                    form.setValue('joinDate', new Date(e.target.value), {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })
+                  }
+                />
+              </Field>
+              {showProbationEnd && (
+                <Field
+                  label="Probation ends"
+                  hint="Auto-set 90d from joining"
+                  fieldKey="probationEndDate"
                 >
                   <Input
-                    value={watch.payoneerAccountId ?? ''}
+                    type="date"
+                    value={dateValue(watch.probationEndDate)}
                     onChange={(e) =>
-                      form.setValue('payoneerAccountId', e.target.value || null, {
-                        shouldDirty: true,
-                      })
+                      form.setValue(
+                        'probationEndDate',
+                        e.target.value ? new Date(e.target.value) : null,
+                        { shouldDirty: true },
+                      )
                     }
-                    placeholder="e.g. PAY-1234567"
                   />
-                </SheetField>
+                </Field>
               )}
-            </SheetSection>
-          )}
+              {showInternshipEnd && (
+                <Field label="Internship ends" fieldKey="internshipEndDate">
+                  <Input
+                    type="date"
+                    value={dateValue(watch.internshipEndDate)}
+                    onChange={(e) =>
+                      form.setValue(
+                        'internshipEndDate',
+                        e.target.value ? new Date(e.target.value) : null,
+                        { shouldDirty: true },
+                      )
+                    }
+                  />
+                </Field>
+              )}
 
-          {/* Section 4 — Emergency contact (collapsed) */}
-          <CollapsibleSection
-            icon={<Phone className="h-fn-3_5 w-fn-3_5" />}
-            title="Emergency contact"
-            description="Optional · used only in genuine emergencies."
-          >
-            <SheetField label="Contact name">
-              <Input
-                value={watch.emergencyContact?.name ?? ''}
-                onChange={(e) =>
-                  form.setValue(
-                    'emergencyContact',
-                    { ...(watch.emergencyContact ?? {}), name: e.target.value || undefined },
-                    { shouldDirty: true },
-                  )
-                }
-              />
-            </SheetField>
-            <SheetField label="Relationship">
-              <Input
-                value={watch.emergencyContact?.relationship ?? ''}
-                onChange={(e) =>
-                  form.setValue(
-                    'emergencyContact',
-                    {
-                      ...(watch.emergencyContact ?? {}),
-                      relationship: e.target.value || undefined,
-                    },
-                    { shouldDirty: true },
-                  )
-                }
-              />
-            </SheetField>
-            <SheetField label="Phone" fullWidth>
-              <Input
-                value={watch.emergencyContact?.phone ?? ''}
-                onChange={(e) =>
-                  form.setValue(
-                    'emergencyContact',
-                    { ...(watch.emergencyContact ?? {}), phone: e.target.value || undefined },
-                    { shouldDirty: true },
-                  )
-                }
-                placeholder="+92 300 1234567"
-              />
-            </SheetField>
-          </CollapsibleSection>
+              <Field label="Contract type" fieldKey="contractType">
+                <Combobox
+                  options={CONTRACT_OPTIONS.map((c) => ({
+                    value: c,
+                    label: c.replace(/([A-Z])/g, ' $1').trim(),
+                  }))}
+                  value={watch.contractType}
+                  onValueChange={(v) =>
+                    form.setValue('contractType', v as EmployeeCreateInput['contractType'], {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })
+                  }
+                />
+              </Field>
+              <Field
+                label="Employment record"
+                hint="On-roll · Off-roll · Intern"
+                fieldKey="employmentRecord"
+              >
+                <Combobox
+                  options={EMPLOYMENT_RECORD_OPTIONS.map((er) => ({
+                    value: er,
+                    label: EMPLOYMENT_RECORD_LABELS[er],
+                  }))}
+                  value={watch.employmentRecord ?? ''}
+                  onValueChange={(v) =>
+                    form.setValue('employmentRecord', (v as EmploymentRecord) || null, {
+                      shouldDirty: true,
+                    })
+                  }
+                  placeholder="Select record type"
+                />
+              </Field>
+            </Section>
 
-          {/* Live preview / changes panel */}
-          <LivePreviewPanel
-            mode={mode}
-            values={watch}
-            employee={employee}
-            dirtyFields={form.formState.dirtyFields}
-            refs={refs.data}
-          />
-        </SheetBody>
+            {/* COMPENSATION (gated) */}
+            {canViewSalary && (
+              <Section
+                icon={<Wallet className="h-fn-3_5 w-fn-3_5" />}
+                title="Compensation"
+                description="Salary and commission setup · Salary changes are audit-logged."
+                anchor="compensation"
+              >
+                <Field
+                  label="Monthly salary (PKR)"
+                  required={mode === 'create'}
+                  error={form.formState.errors.salaryPkr?.message}
+                  fieldKey="salaryPkr"
+                >
+                  <Input
+                    inputMode="numeric"
+                    value={watch.salaryPkr ?? ''}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/[,\s]/g, '');
+                      form.setValue('salaryPkr', raw === '' ? null : Number(raw), {
+                        shouldDirty: true,
+                        shouldValidate: true,
+                      });
+                    }}
+                    placeholder="e.g. 200,000"
+                    className="tabular-nums"
+                  />
+                </Field>
+                <Field label="Effective from" fieldKey="salaryEffectiveDate">
+                  <Input
+                    type="date"
+                    value={dateValue(watch.salaryEffectiveDate)}
+                    onChange={(e) =>
+                      form.setValue(
+                        'salaryEffectiveDate',
+                        e.target.value ? new Date(e.target.value) : null,
+                        { shouldDirty: true },
+                      )
+                    }
+                  />
+                </Field>
+                <Field label="Eligible for commissions" fullWidth>
+                  <label className="bg-fn-bg-subtle border-fn-border-strong rounded-fn-xs gap-fn-3 px-fn-3 py-fn-2_5 flex cursor-pointer items-center border">
+                    <Switch
+                      checked={watch.eligibleForCommissions ?? false}
+                      onCheckedChange={(v) =>
+                        form.setValue('eligibleForCommissions', v === true, { shouldDirty: true })
+                      }
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-fn-fg font-fn-medium text-[13px]">
+                        Eligible for commissions
+                      </div>
+                      <div className="text-fn-fg-faint mt-fn-0_5 text-[11.5px]">
+                        Will appear in monthly commission processing for projects they're tagged on.
+                      </div>
+                    </div>
+                  </label>
+                </Field>
+                {watch.eligibleForCommissions && (
+                  <>
+                    <Field label="Payoneer email" fieldKey="payoneerEmail">
+                      <Input
+                        type="email"
+                        value={watch.payoneerEmail ?? ''}
+                        onChange={(e) =>
+                          form.setValue('payoneerEmail', e.target.value || null, {
+                            shouldDirty: true,
+                          })
+                        }
+                        placeholder="aliya@futurenostics.com"
+                      />
+                    </Field>
+                    <Field label="Commission rate" fieldKey="commissionRate">
+                      <Combobox
+                        options={COMMISSION_RATE_OPTIONS}
+                        value={watch.commissionRate ?? ''}
+                        onValueChange={(v) =>
+                          form.setValue('commissionRate', v || null, { shouldDirty: true })
+                        }
+                        placeholder="Standard"
+                      />
+                    </Field>
+                  </>
+                )}
+              </Section>
+            )}
 
-        {/* ── Sticky footer ────────────────────────────────────────── */}
-        <SheetFooter className="bg-fn-bg-subtle">
-          <div className="gap-fn-2_5 flex items-center">
-            <Switch defaultChecked disabled={mode === 'create'} aria-label="Active on save" />
-            <span className="text-fn-fg text-[12.5px]">
-              {mode === 'create' ? 'Active on create' : 'Active'}
-            </span>
-          </div>
-          <div className="gap-fn-2 ml-auto flex items-center">
-            <Button variant="ghost" size="sm" onClick={requestClose}>
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleSubmitClick}
-              disabled={
-                isSubmitting ||
-                !form.formState.isValid ||
-                (mode === 'edit' && !form.formState.isDirty)
-              }
+            {/* BANK (gated; required for salary deposits) */}
+            {canViewSalary && (
+              <Section
+                icon={<Landmark className="h-fn-3_5 w-fn-3_5" />}
+                title="Bank account (PKR payroll)"
+                description="Required for salary deposits."
+                anchor="bank"
+              >
+                <Field label="Bank" fieldKey="bankName">
+                  <Combobox
+                    options={BANK_OPTIONS}
+                    value={watch.bankName ?? ''}
+                    onValueChange={(v) =>
+                      form.setValue('bankName', v || null, { shouldDirty: true })
+                    }
+                    placeholder="Select bank"
+                  />
+                </Field>
+                <Field label="Branch" fieldKey="bankBranch">
+                  <Input
+                    value={watch.bankBranch ?? ''}
+                    onChange={(e) =>
+                      form.setValue('bankBranch', e.target.value || null, { shouldDirty: true })
+                    }
+                    placeholder="e.g. DHA Karachi"
+                  />
+                </Field>
+                <Field label="IBAN / Account number" fullWidth fieldKey="iban">
+                  <Input
+                    value={watch.iban ?? ''}
+                    onChange={(e) =>
+                      form.setValue('iban', e.target.value || null, { shouldDirty: true })
+                    }
+                    placeholder="PK00 BANK 0000 0000 0000 0000"
+                    className="font-mono tabular-nums"
+                  />
+                </Field>
+              </Section>
+            )}
+
+            {/* EMERGENCY */}
+            <Section
+              icon={<LifeBuoy className="h-fn-3_5 w-fn-3_5" />}
+              title="Emergency contact"
+              description="Required by HR · only used in emergencies."
+              anchor="emergency"
             >
-              {isSubmitting ? 'Saving…' : mode === 'create' ? 'Create employee' : 'Save changes'}
-            </Button>
-          </div>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+              <Field label="Full name">
+                <Input
+                  value={watch.emergencyContact?.name ?? ''}
+                  onChange={(e) =>
+                    form.setValue(
+                      'emergencyContact',
+                      { ...(watch.emergencyContact ?? {}), name: e.target.value || undefined },
+                      { shouldDirty: true },
+                    )
+                  }
+                  placeholder="e.g. Ayesha Saeed"
+                />
+              </Field>
+              <Field label="Relationship">
+                <Combobox
+                  options={[
+                    { value: 'spouse', label: 'Spouse' },
+                    { value: 'parent', label: 'Parent' },
+                    { value: 'sibling', label: 'Sibling' },
+                    { value: 'child', label: 'Child' },
+                    { value: 'friend', label: 'Friend' },
+                  ]}
+                  value={watch.emergencyContact?.relationship ?? ''}
+                  onValueChange={(v) =>
+                    form.setValue(
+                      'emergencyContact',
+                      { ...(watch.emergencyContact ?? {}), relationship: v || undefined },
+                      { shouldDirty: true },
+                    )
+                  }
+                  placeholder="Spouse · Parent · …"
+                />
+              </Field>
+              <Field label="Phone">
+                <Input
+                  value={watch.emergencyContact?.phone ?? ''}
+                  onChange={(e) =>
+                    form.setValue(
+                      'emergencyContact',
+                      { ...(watch.emergencyContact ?? {}), phone: e.target.value || undefined },
+                      { shouldDirty: true },
+                    )
+                  }
+                  placeholder="+92 …"
+                />
+              </Field>
+            </Section>
+
+            {/* ACCESS & ROLE */}
+            <Section
+              icon={<ShieldCheck className="h-fn-3_5 w-fn-3_5" />}
+              title="Access & role"
+              description="System role decides what they see in the app."
+              anchor="access"
+            >
+              <Field label="System role" fullWidth fieldKey="systemRole">
+                <SystemRoleCard
+                  value={(watch.systemRole as SystemRole | undefined) ?? 'employee'}
+                  onChange={(v) => form.setValue('systemRole', v, { shouldDirty: true })}
+                />
+              </Field>
+              {mode === 'edit' && employee && (employee.reportsCount ?? 0) > 0 && (
+                <div className="col-span-full">
+                  <Alert tone="info" showIcon={false}>
+                    <div className="gap-fn-2 flex items-start">
+                      <Info className="h-fn-4 w-fn-4 mt-fn-0_5 shrink-0" strokeWidth={2} />
+                      <div className="leading-fn-normal text-[12.5px]">
+                        <strong className="font-fn-semibold">
+                          {employee.firstName ?? employee.fullName.split(' ')[0]}
+                        </strong>{' '}
+                        also belongs to the{' '}
+                        <strong className="font-fn-semibold">
+                          {employee.department.name} managers
+                        </strong>{' '}
+                        role group (auto-derived from their direct reports).
+                      </div>
+                    </div>
+                  </Alert>
+                </div>
+              )}
+            </Section>
+
+            {/* DANGER ZONE — edit only */}
+            {mode === 'edit' && employee && canTerminate && (
+              <DangerZone
+                employee={employee}
+                onMoveToNotice={async () => {
+                  try {
+                    await apiFetch(`/api/employees/${employee.id}/move-to-notice`, {
+                      method: 'POST',
+                      body: JSON.stringify({}),
+                    });
+                    toast.success('Employee moved to notice period.');
+                    onSuccess?.(employee);
+                    router.refresh();
+                  } catch (err) {
+                    toast.error((err as Error).message);
+                  }
+                }}
+                onTerminate={() => setTerminateOpen(true)}
+              />
+            )}
+          </SheetBody>
+
+          {/* ── Sticky footer ──────────────────────────────────────── */}
+          <SheetFooter className="bg-fn-bg-subtle">
+            <div className="gap-fn-2_5 flex items-center">
+              <Switch defaultChecked disabled={mode === 'create'} aria-label="Active on save" />
+              <span className="text-fn-fg text-[12.5px]">
+                {mode === 'create' ? 'Active on create' : 'Active'}
+              </span>
+            </div>
+            <div className="gap-fn-2 ml-auto flex items-center">
+              <Button variant="ghost" size="sm" onClick={requestClose}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleSubmitClick}
+                disabled={isSubmitting || (mode === 'edit' && !form.formState.isDirty)}
+              >
+                {isSubmitting ? 'Saving…' : mode === 'create' ? 'Create employee' : 'Save changes'}
+              </Button>
+            </div>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+
+      {mode === 'edit' && employee && (
+        <TerminateModal
+          open={terminateOpen}
+          onOpenChange={setTerminateOpen}
+          employee={employee}
+          onConfirmed={() => {
+            onSuccess?.(employee);
+            onOpenChange(false);
+            router.refresh();
+          }}
+        />
+      )}
+    </>
   );
 }
 
 /* ────────────── Section + Field helpers ────────────── */
 
-function SheetSection({
+function Section({
   icon,
   title,
   description,
+  anchor,
   first,
   children,
 }: {
   icon: React.ReactNode;
   title: string;
   description?: string;
-  /** First section has no top border (the sheet header already provides one). */
+  anchor: SectionKey | 'danger';
   first?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <section
+      data-section={anchor}
       className={cn(
-        'pt-fn-5 mt-fn-5 gap-fn-4 grid grid-cols-1 sm:grid-cols-2',
+        'pt-fn-5 mt-fn-5 gap-fn-4 scroll-mt-fn-6 grid grid-cols-1 sm:grid-cols-2',
         !first && 'border-fn-divider border-t',
       )}
     >
@@ -663,7 +1037,9 @@ function SheetSection({
           {icon}
         </span>
         <div className="min-w-0 flex-1">
-          <h3 className="text-fn-fg font-fn-semibold tracking-fn-tight text-[14px]">{title}</h3>
+          <h3 className="text-fn-fg font-fn-semibold tracking-fn-uppercase-tight text-[12px] uppercase">
+            {title}
+          </h3>
           {description && <p className="text-fn-fg-faint mt-fn-0_5 text-[11.5px]">{description}</p>}
         </div>
       </header>
@@ -672,55 +1048,13 @@ function SheetSection({
   );
 }
 
-function CollapsibleSection({
-  icon,
-  title,
-  description,
-  children,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  description?: string;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = React.useState(false);
-  return (
-    <section className="border-fn-divider mt-fn-5 pt-fn-5 border-t">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="gap-fn-2_5 hover:text-fn-fg flex w-full cursor-pointer items-center text-left"
-      >
-        <span
-          aria-hidden
-          className="rounded-fn-xs h-fn-6 w-fn-6 inline-flex shrink-0 items-center justify-center"
-          style={{ background: 'var(--fn-icon-tile)', color: 'var(--fn-icon-tile-fg)' }}
-        >
-          {icon}
-        </span>
-        <div className="min-w-0 flex-1">
-          <h3 className="text-fn-fg font-fn-semibold tracking-fn-tight text-[14px]">{title}</h3>
-          {description && <p className="text-fn-fg-faint mt-fn-0_5 text-[11.5px]">{description}</p>}
-        </div>
-        <ChevronDown
-          className={cn(
-            'text-fn-fg-faint h-fn-4 w-fn-4 transition-transform',
-            open && 'rotate-180',
-          )}
-        />
-      </button>
-      {open && <div className="gap-fn-4 mt-fn-4 grid grid-cols-1 sm:grid-cols-2">{children}</div>}
-    </section>
-  );
-}
-
-function SheetField({
+function Field({
   label,
   hint,
   error,
   required,
   fullWidth,
+  fieldKey,
   children,
 }: {
   label: string;
@@ -728,149 +1062,452 @@ function SheetField({
   error?: string;
   required?: boolean;
   fullWidth?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className={cn('flex flex-col', fullWidth && 'sm:col-span-2')}>
-      <label className="text-fn-fg font-fn-semibold mb-fn-1 text-[12.5px]">
-        {label}
-        {required && <span className="text-fn-danger ml-fn-0_5">*</span>}
-      </label>
-      {children}
-      {error ? (
-        <div className="text-fn-danger mt-fn-1 text-[11px]">{error}</div>
-      ) : hint ? (
-        <div className="text-fn-fg-faint mt-fn-1 text-[11px]">{hint}</div>
-      ) : null}
-    </div>
-  );
-}
-
-/* ────────────── Live preview / changes panel ────────────── */
-
-type ReferencesData = NonNullable<ReturnType<typeof useReferences>['data']>;
-
-function LivePreviewPanel({
-  mode,
-  values,
-  employee,
-  dirtyFields,
-  refs,
-}: {
-  mode: 'create' | 'edit';
-  values: EmployeeCreateInput;
-  employee: EmployeePublic | undefined;
-  dirtyFields: Partial<Record<FieldPath<EmployeeCreateInput>, unknown>>;
-  refs: ReferencesData | undefined;
-}) {
-  if (mode === 'create') {
-    const status = refs?.statuses.find((s) => s.id === values.statusId);
-    const dept = refs?.departments.find((d) => d.id === values.departmentId);
-    const desg = refs?.designations.find((d) => d.id === values.designationId);
-    const probationEnds = dateValue(values.probationEndDate);
-    return (
-      <PreviewFrame label="Summary" intent="info">
-        <p className="text-fn-fg text-[13.5px]">On save, this employee will be created with:</p>
-        <ul className="mt-fn-1_5 text-fn-fg-muted gap-fn-1 flex flex-col text-[12.5px]">
-          <li>EID will be auto-assigned</li>
-          {dept && (
-            <li>
-              Department: <strong className="text-fn-fg font-fn-semibold">{dept.name}</strong>
-            </li>
-          )}
-          {desg && (
-            <li>
-              Designation: <strong className="text-fn-fg font-fn-semibold">{desg.name}</strong>
-            </li>
-          )}
-          {status && (
-            <li>
-              Status: <strong className="text-fn-fg font-fn-semibold">{status.name}</strong>
-              {probationEnds && status.slug === 'probation' && (
-                <> · probation ends {probationEnds}</>
-              )}
-            </li>
-          )}
-          {values.salaryPkr != null && (
-            <li>
-              Salary:{' '}
-              <strong className="text-fn-fg font-fn-semibold tabular-nums">
-                PKR {values.salaryPkr.toLocaleString()}
-              </strong>
-            </li>
-          )}
-        </ul>
-      </PreviewFrame>
-    );
-  }
-
-  // Edit mode — compute a diff of dirty fields
-  const dirty = Object.keys(dirtyFields).filter((k) =>
-    Boolean((dirtyFields as Record<string, unknown>)[k]),
-  );
-  if (dirty.length === 0 || !employee) {
-    return (
-      <PreviewFrame label="Changes" intent="muted">
-        <p className="text-fn-fg-muted text-[12.5px]">
-          No changes yet. Edit a field above to see a summary here.
-        </p>
-      </PreviewFrame>
-    );
-  }
-  return (
-    <PreviewFrame label="Changes" intent="info">
-      <p className="text-fn-fg text-[13.5px]">
-        You're changing <strong className="font-fn-semibold">{dirty.length}</strong>{' '}
-        {dirty.length === 1 ? 'field' : 'fields'}:
-      </p>
-      <ul className="mt-fn-1_5 text-fn-fg-muted gap-fn-1 flex flex-col text-[12.5px]">
-        {dirty.slice(0, 6).map((field) => (
-          <li key={field}>
-            <span className="text-fn-fg-faint font-fn-medium">{labelForField(field)}:</span>{' '}
-            <span className="tabular-nums">{describeChange(field, employee, values, refs)}</span>
-          </li>
-        ))}
-        {dirty.length > 6 && <li className="text-fn-fg-faint">… and {dirty.length - 6} more</li>}
-      </ul>
-    </PreviewFrame>
-  );
-}
-
-function PreviewFrame({
-  label,
-  intent,
-  children,
-}: {
-  label: string;
-  intent: 'info' | 'muted';
+  fieldKey?: string;
   children: React.ReactNode;
 }) {
   return (
     <div
-      className={cn(
-        'rounded-fn-sm mt-fn-6 gap-fn-3 p-fn-4 flex border',
-        intent === 'info'
-          ? 'border-fn-accent/25 bg-fn-accent-soft/40'
-          : 'border-fn-border bg-fn-bg-subtle',
-      )}
+      data-field={fieldKey}
+      className={cn('scroll-mt-fn-6 flex flex-col', fullWidth && 'sm:col-span-2')}
     >
-      <span
-        aria-hidden
-        className="rounded-fn-xs h-fn-7 w-fn-7 bg-fn-bg-panel/60 text-fn-accent-soft-fg inline-flex shrink-0 items-center justify-center"
-      >
-        <Eye className="h-fn-3_5 w-fn-3_5" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="text-fn-accent-soft-fg font-fn-semibold tracking-fn-uppercase-tight text-[11px] uppercase">
-          {label}
-        </div>
-        <div className="mt-fn-1">{children}</div>
-      </div>
+      <label className="text-fn-fg font-fn-semibold mb-fn-1 text-[12.5px]">
+        {label}
+        {required && <span className="text-fn-danger ml-fn-0_5">*</span>}
+        {hint && !error && (
+          <span className="text-fn-fg-faint font-fn-medium ml-fn-2 text-[11px]">{hint}</span>
+        )}
+      </label>
+      {children}
+      {error && <div className="text-fn-danger mt-fn-1 text-[11px]">{error}</div>}
     </div>
   );
 }
 
-/* ────────────── Helpers ────────────── */
+/* ────────────── Status pill bar (Employment) ────────────── */
+
+function StatusPillBar({
+  options,
+  value,
+  onChange,
+}: {
+  options: Array<{ id: string; slug: string; name: string }>;
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const SLUG_STYLE: Record<string, string> = {
+    intern:
+      'data-[on=true]:bg-fn-info-soft data-[on=true]:text-fn-info-soft-fg data-[on=true]:border-fn-info/30',
+    probation:
+      'data-[on=true]:bg-fn-warning-soft data-[on=true]:text-fn-warning-soft-fg data-[on=true]:border-fn-warning/30',
+    permanent:
+      'data-[on=true]:bg-fn-success-soft data-[on=true]:text-fn-success-soft-fg data-[on=true]:border-fn-success/30',
+    contractor:
+      'data-[on=true]:bg-fn-accent-soft data-[on=true]:text-fn-accent-soft-fg data-[on=true]:border-fn-accent/30',
+  };
+  return (
+    <div className="gap-fn-2 grid grid-cols-2 sm:grid-cols-4">
+      {options.map((opt) => {
+        const on = opt.id === value;
+        return (
+          <button
+            key={opt.id}
+            type="button"
+            data-on={on}
+            onClick={() => onChange(opt.id)}
+            className={cn(
+              'rounded-fn-xs border-fn-border bg-fn-bg-panel text-fn-fg-muted hover:border-fn-border-strong px-fn-3 py-fn-2 font-fn-medium cursor-pointer border text-center text-[12.5px] transition-colors',
+              SLUG_STYLE[opt.slug] ?? '',
+            )}
+          >
+            {opt.name}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ────────────── Manager picker (Employment) ────────────── */
+
+function ManagerPicker({
+  value,
+  selfId,
+  onChange,
+}: {
+  value: string | null;
+  selfId?: string;
+  onChange: (id: string | null) => void;
+}) {
+  // For now wire through a simple Combobox; the design's manager card
+  // with avatar + role is rendered when a manager is selected. Full
+  // employee-typeahead picker can come later as a Tier 2 enhancement.
+  const [search, setSearch] = React.useState('');
+  // Lazy import to keep this section light — use the existing list query.
+  // We rely on the Combobox's free text — labels stay simple.
+  const [candidates, setCandidates] = React.useState<
+    Array<{ id: string; name: string; subtitle: string }>
+  >([]);
+  React.useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const qs = new URLSearchParams({ limit: '50', sortBy: 'fullName', sortDir: 'asc' });
+        if (search) qs.set('search', search);
+        const res = await apiFetch<{ items: EmployeePublic[] }>(`/api/employees?${qs.toString()}`);
+        if (cancelled) return;
+        setCandidates(
+          res.items
+            .filter((e) => e.id !== selfId && !e.isArchived)
+            .map((e) => ({
+              id: e.id,
+              name: e.fullName,
+              subtitle: `${e.designation.name} · ${e.department.name}`,
+            })),
+        );
+      } catch {
+        // ignore — combobox just shows previously loaded
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [search, selfId]);
+
+  const selected = candidates.find((c) => c.id === value);
+  const options = candidates.map((c) => ({ value: c.id, label: c.name, description: c.subtitle }));
+
+  if (selected) {
+    return (
+      <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel p-fn-2_5 gap-fn-3 flex items-center border">
+        <EmployeeAvatar fullName={selected.name} photoUrl={null} size="sm" />
+        <div className="min-w-0 flex-1">
+          <div className="text-fn-fg font-fn-semibold text-[13px]">{selected.name}</div>
+          <div className="text-fn-fg-faint text-[11.5px]">{selected.subtitle}</div>
+        </div>
+        <button
+          type="button"
+          onClick={() => onChange(null)}
+          className="text-fn-fg-faint hover:text-fn-fg cursor-pointer text-[12px]"
+        >
+          Change
+        </button>
+      </div>
+    );
+  }
+  return (
+    <Combobox
+      options={options}
+      value={value ?? ''}
+      onValueChange={(v) => onChange(v || null)}
+      placeholder="Search employee…"
+      searchPlaceholder="Search employee…"
+    />
+  );
+  // search state is reserved for future server-side filter; reference
+  // it to keep the hook dependencies honest.
+  void setSearch;
+}
+
+/* ────────────── System role card (Access) ────────────── */
+
+function SystemRoleCard({
+  value,
+  onChange,
+}: {
+  value: SystemRole;
+  onChange: (next: SystemRole) => void;
+}) {
+  const info = SYSTEM_ROLE_LABELS[value];
+  const [picking, setPicking] = React.useState(false);
+  return (
+    <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel p-fn-3 gap-fn-3 flex items-start border">
+      <span
+        aria-hidden
+        className="rounded-fn-xs h-fn-7 w-fn-7 bg-fn-accent-soft text-fn-accent-soft-fg inline-flex shrink-0 items-center justify-center"
+      >
+        <Users className="h-fn-3_5 w-fn-3_5" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="text-fn-fg font-fn-semibold text-[13px]">{info.title}</div>
+        <div className="text-fn-fg-faint mt-fn-0_5 text-[11.5px]">{info.description}</div>
+        {picking && (
+          <div className="mt-fn-2">
+            <Combobox
+              options={SYSTEM_ROLE_OPTIONS.map((r) => ({
+                value: r,
+                label: SYSTEM_ROLE_LABELS[r].title,
+                description: SYSTEM_ROLE_LABELS[r].description,
+              }))}
+              value={value}
+              onValueChange={(v) => {
+                onChange(v as SystemRole);
+                setPicking(false);
+              }}
+            />
+          </div>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={() => setPicking((p) => !p)}
+        className="text-fn-fg-muted hover:text-fn-fg font-fn-medium cursor-pointer text-[12px]"
+      >
+        Change
+      </button>
+    </div>
+  );
+}
+
+/* ────────────── Danger Zone (edit only) ────────────── */
+
+function DangerZone({
+  employee,
+  onMoveToNotice,
+  onTerminate,
+}: {
+  employee: EmployeePublic;
+  onMoveToNotice: () => Promise<void>;
+  onTerminate: () => void;
+}) {
+  const [movingToNotice, setMovingToNotice] = React.useState(false);
+  const isOnNotice = Boolean(employee.noticePeriodStart);
+  return (
+    <section
+      data-section="danger"
+      className="border-fn-danger/30 pt-fn-5 mt-fn-7 gap-fn-3 grid grid-cols-1 border-t"
+    >
+      <header className="gap-fn-2_5 col-span-full flex items-center">
+        <span
+          aria-hidden
+          className="rounded-fn-xs h-fn-6 w-fn-6 bg-fn-danger-soft text-fn-danger-soft-fg inline-flex shrink-0 items-center justify-center"
+        >
+          <BadgeAlert className="h-fn-3_5 w-fn-3_5" />
+        </span>
+        <h3 className="text-fn-danger font-fn-semibold tracking-fn-uppercase-tight text-[12px] uppercase">
+          Danger zone
+        </h3>
+      </header>
+
+      <DangerRow
+        title={isOnNotice ? 'On notice period' : "Move to 'Notice' status"}
+        description={
+          isOnNotice
+            ? `Notice period started ${employee.noticePeriodStart ? formatShortDate(employee.noticePeriodStart) : '—'}.`
+            : 'Begin offboarding · notice period 30 days · final pay calculation kicks in.'
+        }
+        actionLabel={isOnNotice ? 'Started' : 'Start offboarding'}
+        disabled={isOnNotice || movingToNotice}
+        onClick={async () => {
+          setMovingToNotice(true);
+          try {
+            await onMoveToNotice();
+          } finally {
+            setMovingToNotice(false);
+          }
+        }}
+      />
+      <DangerRow
+        title="Terminate employment"
+        description="Hard termination · revokes access immediately · cannot be undone except by Super Admin."
+        actionLabel="Terminate"
+        actionVariant="destructive"
+        onClick={onTerminate}
+        disabled={Boolean(employee.terminatedAt)}
+      />
+    </section>
+  );
+}
+
+function DangerRow({
+  title,
+  description,
+  actionLabel,
+  actionVariant = 'outline',
+  disabled,
+  onClick,
+}: {
+  title: string;
+  description: string;
+  actionLabel: string;
+  actionVariant?: 'outline' | 'destructive';
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <div className="border-fn-danger/30 bg-fn-danger-soft/40 rounded-fn-xs gap-fn-3 p-fn-3 flex items-center border">
+      <div className="min-w-0 flex-1">
+        <div className="text-fn-fg font-fn-semibold text-[13px]">{title}</div>
+        <div className="text-fn-fg-muted mt-fn-0_5 leading-fn-normal text-[11.5px]">
+          {description}
+        </div>
+      </div>
+      <Button
+        size="sm"
+        variant={actionVariant}
+        onClick={onClick}
+        disabled={disabled}
+        className="shrink-0"
+      >
+        {actionLabel}
+      </Button>
+    </div>
+  );
+}
+
+/* ────────────── Terminate confirmation modal ────────────── */
+
+const TERMINATE_REASONS = [
+  { value: 'resignation', label: 'Resignation' },
+  { value: 'contract_end', label: 'Contract end' },
+  { value: 'performance', label: 'Performance' },
+  { value: 'misconduct', label: 'Misconduct' },
+  { value: 'redundancy', label: 'Redundancy' },
+  { value: 'other', label: 'Other' },
+];
+
+function TerminateModal({
+  open,
+  onOpenChange,
+  employee,
+  onConfirmed,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  employee: EmployeePublic;
+  onConfirmed: () => void;
+}) {
+  const form = useForm<TerminateEmployeeInput>({
+    resolver: zodResolver(terminateEmployeeSchema),
+    defaultValues: { reason: '', lastWorkingDay: new Date(), notes: '' },
+  });
+  const [submitting, setSubmitting] = React.useState(false);
+
+  async function onConfirm(values: TerminateEmployeeInput) {
+    setSubmitting(true);
+    try {
+      await apiFetch(`/api/employees/${employee.id}/terminate`, {
+        method: 'POST',
+        body: JSON.stringify(values),
+      });
+      toast.success(`${employee.fullName}'s employment has been terminated.`);
+      onOpenChange(false);
+      onConfirmed();
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <div className="gap-fn-3 mb-fn-1 flex items-start">
+            <span
+              aria-hidden
+              className="rounded-fn-xs h-fn-8 w-fn-8 bg-fn-danger-soft text-fn-danger-soft-fg inline-flex shrink-0 items-center justify-center"
+            >
+              <BadgeAlert className="h-fn-4 w-fn-4" />
+            </span>
+            <div>
+              <DialogTitle>Terminate {employee.fullName}'s employment?</DialogTitle>
+              <DialogDescription className="mt-fn-1">
+                This revokes login immediately, freezes payroll for the current month, and marks the
+                profile read-only.{' '}
+                <strong className="font-fn-semibold">Only a Super Admin can reverse this.</strong>
+              </DialogDescription>
+            </div>
+          </div>
+        </DialogHeader>
+
+        <form
+          className="gap-fn-3 flex flex-col"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void form.handleSubmit(onConfirm)();
+          }}
+        >
+          <Field label="Reason" required error={form.formState.errors.reason?.message}>
+            <Combobox
+              options={TERMINATE_REASONS}
+              value={form.watch('reason')}
+              onValueChange={(v) =>
+                form.setValue('reason', v, { shouldDirty: true, shouldValidate: true })
+              }
+              placeholder="Resignation · contract end · …"
+            />
+          </Field>
+          <Field
+            label="Last working day"
+            required
+            error={form.formState.errors.lastWorkingDay?.message}
+          >
+            <Input
+              type="date"
+              value={dateValue(form.watch('lastWorkingDay'))}
+              onChange={(e) =>
+                form.setValue('lastWorkingDay', new Date(e.target.value), {
+                  shouldDirty: true,
+                  shouldValidate: true,
+                })
+              }
+            />
+          </Field>
+          <Field label="Notes (internal)" hint="Optional">
+            <Textarea
+              rows={3}
+              value={form.watch('notes') ?? ''}
+              onChange={(e) => form.setValue('notes', e.target.value, { shouldDirty: true })}
+              placeholder="Anything HR + Finance should know…"
+            />
+          </Field>
+
+          <DialogFooter>
+            <Button type="button" variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="destructive" size="sm" disabled={submitting}>
+              {submitting ? 'Terminating…' : 'Terminate'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ────────────── Misc helpers ────────────── */
+
+function PhotoUploadTile() {
+  return (
+    <span
+      aria-hidden
+      className="rounded-fn-sm h-fn-10 w-fn-10 bg-fn-bg-subtle text-fn-fg-faint border-fn-border inline-flex shrink-0 items-center justify-center border border-dashed"
+    >
+      <UserCircle2 className="h-fn-5 w-fn-5" />
+    </span>
+  );
+}
+
+function StatusBadge({ slug, name }: { slug: string; name: string }) {
+  const tone: Record<string, string> = {
+    intern: 'bg-fn-info-soft text-fn-info-soft-fg border-fn-info/30',
+    probation: 'bg-fn-warning-soft text-fn-warning-soft-fg border-fn-warning/30',
+    permanent: 'bg-fn-success-soft text-fn-success-soft-fg border-fn-success/30',
+    contractor: 'bg-fn-accent-soft text-fn-accent-soft-fg border-fn-accent/30',
+  };
+  return (
+    <span
+      className={cn(
+        'rounded-fn-full px-fn-2 py-fn-0_5 font-fn-medium inline-flex items-center border text-[10.5px]',
+        tone[slug] ?? 'bg-fn-bg-subtle text-fn-fg-muted border-fn-border',
+      )}
+    >
+      {name}
+    </span>
+  );
+}
 
 function emptyDefaults(): EmployeeCreateInput {
   return {
@@ -926,7 +1563,7 @@ function toDefaults(employee: EmployeePublic): EmployeeCreateInput {
     address: employee.address ?? null,
     dateOfBirth: employee.dateOfBirth ? new Date(employee.dateOfBirth) : null,
     gender: employee.gender,
-    cnic: null, // masked CNIC is never round-tripped; blank preserves existing
+    cnic: null,
     joinDate: new Date(employee.joinDate),
     departmentId: employee.department.id,
     designationId: employee.designation.id,
@@ -963,63 +1600,9 @@ function dateValue(value: Date | string | null | undefined): string {
   return d.toISOString().slice(0, 10);
 }
 
-const FIELD_LABELS: Record<string, string> = {
-  fullName: 'Full name',
-  email: 'Email',
-  phone: 'Phone',
-  dateOfBirth: 'Date of birth',
-  gender: 'Gender',
-  cnic: 'CNIC',
-  joinDate: 'Join date',
-  departmentId: 'Department',
-  designationId: 'Designation',
-  statusId: 'Status',
-  contractType: 'Contract type',
-  managerId: 'Manager',
-  salaryPkr: 'Salary',
-  hasPayoneer: 'Payoneer',
-  payoneerAccountId: 'Payoneer account',
-  internshipEndDate: 'Internship end',
-  probationEndDate: 'Probation end',
-  emergencyContact: 'Emergency contact',
-};
-function labelForField(field: string): string {
-  return FIELD_LABELS[field] ?? field;
-}
-
-function describeChange(
-  field: string,
-  employee: EmployeePublic,
-  values: EmployeeCreateInput,
-  refs: ReferencesData | undefined,
-): string {
-  switch (field) {
-    case 'departmentId': {
-      const next = refs?.departments.find((d) => d.id === values.departmentId)?.name ?? '—';
-      return `${employee.department.name} → ${next}`;
-    }
-    case 'designationId': {
-      const next = refs?.designations.find((d) => d.id === values.designationId)?.name ?? '—';
-      return `${employee.designation.name} → ${next}`;
-    }
-    case 'statusId': {
-      const next = refs?.statuses.find((s) => s.id === values.statusId)?.name ?? '—';
-      return `${employee.status.name} → ${next}`;
-    }
-    case 'salaryPkr': {
-      const before =
-        employee.salaryPkr != null ? `PKR ${employee.salaryPkr.toLocaleString()}` : '—';
-      const after = values.salaryPkr != null ? `PKR ${values.salaryPkr.toLocaleString()}` : '—';
-      return `${before} → ${after}`;
-    }
-    case 'managerId': {
-      return `${employee.manager?.fullName ?? '—'} → ${values.managerId ?? '—'}`;
-    }
-    case 'fullName':
-      return `${employee.fullName} → ${values.fullName}`;
-    case 'email':
-      return `${employee.email} → ${values.email}`;
-    default:
-      return 'updated';
-  }
+function formatShortDate(value: string | Date | null | undefined): string {
+  if (!value) return '—';
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  return `${d.getDate()} ${d.toLocaleString('en-GB', { month: 'short' })} ${d.getFullYear()}`;
 }
