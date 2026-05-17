@@ -208,10 +208,13 @@ function ExpandedLink({ item, active }: { item: NavItem; active: boolean }) {
       {item.count != null && !item.badge && (
         <span className="text-fn-fg-faint text-[11px] tabular-nums">{item.count}</span>
       )}
-      {/* Badge: accent-coloured pill. Actionable ("2 things waiting for
-          approval") — demands attention. */}
+      {/* Badge: accent-coloured circle for single digits, stadium for
+          two-digit counts. Fixed 18px height + 18px min-width keeps
+          "2" / "4" perfectly circular; padding only kicks in for
+          numbers wide enough to need it ("10", "84"). Actionable
+          ("2 things waiting for approval") — demands attention. */}
       {item.badge && (
-        <span className="bg-fn-accent text-fn-accent-fg rounded-fn-full font-fn-semibold leading-fn-unit inline-flex items-center justify-center px-[6px] py-[1px] text-[10.5px]">
+        <span className="bg-fn-accent text-fn-accent-fg rounded-fn-full font-fn-semibold leading-fn-unit inline-flex h-[18px] min-w-[18px] items-center justify-center px-[5px] text-[10.5px]">
           {item.badge}
         </span>
       )}
