@@ -43,7 +43,6 @@ const TAB_KEYS = [
   'overview',
   'jobcomp',
   'salary',
-  'timeline',
   'documents',
   'evaluations',
   'commissions',
@@ -65,7 +64,7 @@ export default function EmployeeProfilePage() {
   const employee = employeeQuery.data;
 
   const requestedTab = searchParams.get('tab');
-  const activeTab: TabKey = isTabKey(requestedTab) ? requestedTab : 'timeline';
+  const activeTab: TabKey = isTabKey(requestedTab) ? requestedTab : 'overview';
 
   const [changeStatusOpen, setChangeStatusOpen] = React.useState(false);
   const [changeManagerOpen, setChangeManagerOpen] = React.useState(false);
@@ -148,7 +147,6 @@ export default function EmployeeProfilePage() {
                 {perms.has('employees:view_salary') && (
                   <TabsTrigger value="salary">Salary history</TabsTrigger>
                 )}
-                <TabsTrigger value="timeline">Timeline</TabsTrigger>
                 <TabsTrigger value="documents">Documents</TabsTrigger>
                 <TabsTrigger value="evaluations">Evaluations</TabsTrigger>
                 <TabsTrigger value="commissions">Commissions</TabsTrigger>
@@ -157,7 +155,15 @@ export default function EmployeeProfilePage() {
               <div className="gap-fn-5 mt-fn-4 grid grid-cols-1 lg:grid-cols-[1.4fr_1fr]">
                 <div className="min-w-0">
                   <TabsContent value="overview" className="mt-0">
-                    <PersonalTab employee={employee} />
+                    <div className="gap-fn-5 flex flex-col">
+                      <PersonalTab employee={employee} />
+                      {/* Activity timeline lives at the bottom of the
+                          Overview tab now — the standalone Timeline tab
+                          was removed in favour of this co-located view
+                          so the profile reads top-to-bottom as
+                          "who they are → what's been happening". */}
+                      <ProfileTimeline employeeId={employee.id} />
+                    </div>
                   </TabsContent>
                   <TabsContent value="jobcomp" className="mt-0">
                     <JobTab employee={employee} />
@@ -167,9 +173,6 @@ export default function EmployeeProfilePage() {
                       <SalaryTab employeeId={employee.id} />
                     </TabsContent>
                   )}
-                  <TabsContent value="timeline" className="mt-0">
-                    <ProfileTimeline employeeId={employee.id} />
-                  </TabsContent>
                   <TabsContent value="documents" className="mt-0">
                     <PlaceholderTab
                       title="Documents"
