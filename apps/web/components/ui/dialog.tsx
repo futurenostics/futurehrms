@@ -34,7 +34,12 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'rounded-fn-xl border-fn-border bg-fn-bg-panel shadow-fn-lg gap-fn-4 p-fn-6 fixed left-1/2 top-1/2 z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 border',
+        // Width capped at 520px to match the OT Rules / form-sheet
+        // 'md' sizing. The earlier `max-w-lg` was inert under the
+        // Foundation Reset CSS lockdown (`--container-*: initial`),
+        // which zeroed every default container token; `max-w-[…]`
+        // arbitrary value sidesteps the lockdown.
+        'rounded-fn-xl border-fn-border bg-fn-bg-panel shadow-fn-lg gap-fn-4 p-fn-6 fixed left-1/2 top-1/2 z-50 grid w-[calc(100%-32px)] max-w-[520px] -translate-x-1/2 -translate-y-1/2 border',
         'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
         className,
       )}

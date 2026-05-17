@@ -28,7 +28,7 @@ export function ForgotPasswordDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-[440px]">
         <DialogHeader>
           <div className="gap-fn-2_5 flex items-center">
             <div
