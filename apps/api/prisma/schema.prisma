@@ -125,6 +125,7 @@ model Department {
 
   employees    Employee[]
   designations Designation[]
+  projects     Project[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -236,9 +237,10 @@ model Employee {
   terminationReason String?
   terminationNotes  String?
 
-  documents     EmployeeDocument[]
-  salaryHistory SalaryHistory[]
-  timeline      TimelineEntry[]
+  documents          EmployeeDocument[]
+  salaryHistory      SalaryHistory[]
+  timeline           TimelineEntry[]
+  projectAssignments ProjectAssignment[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -288,6 +290,190 @@ model TimelineEntry {
 
   @@index([employeeId, occurredAt])
   @@index([eventType])
+}
+
+// ---------- Phase 2: Projects + Commissions ----------
+//
+// Projects, ProjectCategory (taxonomy), ProjectAssignment, and
+// CommissionRule. The Commission Run + LineItem models land in
+// Session 2 with the calculation engine.
+//
+// Locked decisions live in docs/DECISIONS.md § "Phase 2 — Business
+// rules". The short version, because future-me will read this code
+// without the doc open:
+//
+//   - CommissionRule is keyed by (department, categoryId, version).
+//     `department` may be the literal '*' to mean an org-wide
+//     fallback when no dept-specific rule exists.
+//   - Roles inside a rule are stored as a JSON map (role-name →
+//     %), not as DB enums; the design's "Winner / Communicator /
+//     Eligible team" labels are seed data, not schema constants.
+//   - `poolMode` toggles between `percentage` (poolValue is a % of
+//     project revenue) and `fixed` (poolValue is a USD amount).
+//   - ProjectCategory is a tree (parent → sub-categories like
+//     Upwork → Johnny / Michele) with color + archive + a soft
+//     pointer to its default rule.
+//   - Project snapshots its commission contract by FK to a specific
+//     CommissionRule version, not by duplicating JSON. Rule versions
+//     are immutable (publishing a new version creates a new row), so
+//     the FK is a stable historical contract.
+//   - ProjectAssignment is the per-project role/percentage truth.
+//     For a default-percentages project, rows are derived from the
+//     rule's rolePercentages at create time. When hasOverride is on,
+//     the assignment percentages diverge from the rule defaults and
+//     the project records the override reason.
+
+model ProjectCategory {
+  id            String           @id @default(cuid())
+  slug          String           @unique
+  name          String
+  description   String?
+  color         String           @default("violet")
+  parentId      String?
+  parent        ProjectCategory? @relation("CategoryTree", fields: [parentId], references: [id])
+  children      ProjectCategory[] @relation("CategoryTree")
+  archived      Boolean          @default(false)
+  // Soft pointer to the rule the UI should suggest by default when a
+  // new project is created under this category. SetNull because rules
+  // are immutable per version — when a new version supersedes the
+  // pointer target, the seed/publish flow updates the pointer.
+  defaultRuleId String?
+  defaultRule   CommissionRule?  @relation("CategoryDefault", fields: [defaultRuleId], references: [id], onDelete: SetNull)
+
+  projects Project[]
+  rules    CommissionRule[] @relation("CategoryRules")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([parentId])
+  @@index([archived])
+  @@index([deletedAt])
+}
+
+model Project {
+  id          String @id @default(cuid())
+  name        String
+  clientName  String
+
+  categoryId String
+  category   ProjectCategory @relation(fields: [categoryId], references: [id])
+
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id])
+
+  // FK to the specific (immutable) rule version this project's
+  // commissions are calculated against. Rule edits create a new
+  // version row; this FK never silently follows.
+  commissionRuleId String
+  commissionRule   CommissionRule @relation(fields: [commissionRuleId], references: [id])
+
+  // True when project assignments diverge from rule defaults.
+  hasOverride    Boolean @default(false)
+  overrideReason String?
+
+  // Expected billable revenue. Drives the commission pool when the
+  // rule uses poolMode='percentage'.
+  revenueUsd Decimal @db.Decimal(12, 2)
+
+  // Lifecycle. Constrained by the API layer (see projectStatusSchema)
+  // to: draft | active | in_billing | on_hold | completed | cancelled | refunded.
+  status String @default("draft")
+
+  startDate              DateTime
+  expectedCompletionDate DateTime?
+
+  notes String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+  createdById String
+
+  assignments ProjectAssignment[]
+
+  @@index([categoryId])
+  @@index([departmentId])
+  @@index([commissionRuleId])
+  @@index([status])
+  @@index([startDate])
+  @@index([deletedAt])
+}
+
+model ProjectAssignment {
+  id         String   @id @default(cuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
+  // Role label. Convention: 'winner' | 'communicator' | 'eligible_team' but
+  // not enforced by the schema — additional roles are valid as long as
+  // they exist in the rule's rolePercentages map.
+  roleName   String
+  percentage Decimal @db.Decimal(5, 2)
+
+  assignedAt   DateTime  @default(now())
+  assignedById String
+  // Soft-delete a removed assignment instead of hard-deleting so the
+  // commission run for a historical month can still show "Jane was on
+  // this project until April" without resurrecting the row.
+  removedAt   DateTime?
+  removedById String?
+
+  @@unique([projectId, employeeId, roleName])
+  @@index([projectId])
+  @@index([employeeId])
+  @@index([roleName])
+  @@index([removedAt])
+}
+
+model CommissionRule {
+  id String @id @default(cuid())
+
+  // Identity: (department, categoryId, version). department may be
+  // '*' meaning org-wide fallback. Resolution at project-create time:
+  // try (project.department, categoryId), then ('*', categoryId).
+  department String
+  categoryId String
+  category   ProjectCategory @relation("CategoryRules", fields: [categoryId], references: [id])
+  version    String // semver-ish — '3.2', '3.3'. Generated by the publish flow.
+
+  // Pool model.
+  poolMode  String  // 'percentage' | 'fixed'
+  poolValue Decimal @db.Decimal(12, 2)
+
+  // Roles + splits as JSON. Shape: { winner: 58, communicator: 30, eligible_team: 12 }.
+  // Sum should equal 100 in any non-pending row.
+  rolePercentages Json
+  // Disbursement schedule placeholder — format locked in Session 2
+  // (single-shot vs monthly fractions vs milestone). Stored as JSON
+  // so the schema doesn't need to migrate when the format crystallises.
+  disbursementSchedule Json?
+
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+
+  // Status. Constrained by the API layer to: draft | active | pending | archived.
+  // 'pending' matches PNG 11's "Awaiting decision" row — rule slot
+  // exists but the numbers haven't been settled yet, so it cannot be
+  // used to back a new project.
+  status        String  @default("active")
+  pendingReason String?
+
+  createdAt     DateTime  @default(now())
+  createdById   String
+  publishedAt   DateTime?
+  publishedById String?
+
+  projects             Project[]
+  defaultForCategories ProjectCategory[] @relation("CategoryDefault")
+
+  @@unique([department, categoryId, version])
+  @@index([department, categoryId])
+  @@index([effectiveFrom, effectiveTo])
+  @@index([status])
 }
 
 // ---------- Audit ----------
