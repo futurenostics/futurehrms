@@ -309,16 +309,23 @@ export default function EmployeesListPage() {
 
             {/* Table */}
             <div className="p-fn-3_5">
+              {/*
+               * Column widths: Employee flexes to fill remaining space;
+               * every other content column is 170px so EID / Department /
+               * Designation / Status / Join date / Salary read as a
+               * visually even rhythm. First col (checkbox) 48px, last
+               * (kebab) 44px.
+               */}
               <table className="w-full table-fixed border-collapse text-[13px]">
                 <colgroup>
                   <col style={{ width: 48 }} />
                   <col />
-                  <col style={{ width: 130 }} />
-                  <col style={{ width: 140 }} />
-                  <col style={{ width: 160 }} />
-                  <col style={{ width: 130 }} />
-                  <col style={{ width: 140 }} />
-                  {canViewSalary && <col style={{ width: 160 }} />}
+                  <col style={{ width: 170 }} />
+                  <col style={{ width: 170 }} />
+                  <col style={{ width: 170 }} />
+                  <col style={{ width: 170 }} />
+                  <col style={{ width: 170 }} />
+                  {canViewSalary && <col style={{ width: 170 }} />}
                   <col style={{ width: 44 }} />
                 </colgroup>
                 <thead>
@@ -329,17 +336,17 @@ export default function EmployeesListPage() {
                           <colgroup>
                             <col style={{ width: 48 }} />
                             <col />
-                            <col style={{ width: 130 }} />
-                            <col style={{ width: 140 }} />
-                            <col style={{ width: 160 }} />
-                            <col style={{ width: 130 }} />
-                            <col style={{ width: 140 }} />
-                            {canViewSalary && <col style={{ width: 160 }} />}
+                            <col style={{ width: 170 }} />
+                            <col style={{ width: 170 }} />
+                            <col style={{ width: 170 }} />
+                            <col style={{ width: 170 }} />
+                            <col style={{ width: 170 }} />
+                            {canViewSalary && <col style={{ width: 170 }} />}
                             <col style={{ width: 44 }} />
                           </colgroup>
                           <tbody>
                             <tr>
-                              <td className="py-fn-3 pl-[18px] pr-0 align-middle">
+                              <td className="py-fn-4 pl-[18px] pr-0 align-middle">
                                 <Checkbox
                                   checked={
                                     allOnPageSelected
@@ -475,15 +482,14 @@ interface ThProps {
 }
 
 function Th({ children, align = 'left', sortable, active, dir, onSort }: ThProps) {
-  // Header spec from docs/design/shared/primitives.jsx InsetTable +
-  // screens/employees.jsx ThCol: 11px / weight 500 / uppercase /
-  // tracking 0.08em / muted color / 12px x 12px padding. First and
-  // last header cells get edge-inset 18px / 14px padding via row-level
-  // overrides; standard cells use 12px both sides.
+  // Header spec: 11px / weight 500 / UPPERCASE / tracking 0.10em
+  // / muted color / 16px vertical · 12px horizontal padding. The
+  // 16px vertical aligns the header pill height with the row
+  // rhythm (row inner-pad is also 16-18px).
   return (
     <td
       className={cn(
-        'text-fn-fg-muted px-fn-3 py-fn-3 font-fn-medium text-[11px] uppercase tracking-[0.08em]',
+        'text-fn-fg-muted px-fn-3 py-fn-4 font-fn-medium text-[11px] uppercase tracking-[0.1em]',
         align === 'right' ? 'text-right' : 'text-left',
       )}
     >
@@ -553,7 +559,7 @@ function EmployeeRow({
       )}
     >
       <td
-        className={cn('py-fn-3 pl-[18px] pr-0 align-middle', cellBorder)}
+        className={cn('py-fn-4_5 pl-[18px] pr-0 align-middle', cellBorder)}
         onClick={(e) => e.stopPropagation()}
       >
         <Checkbox
@@ -563,9 +569,11 @@ function EmployeeRow({
         />
       </td>
       <td className={cn('px-fn-3 align-middle', cellBorder)}>
-        {/* Inner wrapper holds the row-rhythm pad (12px top/bottom) so
-            the cell border tracks the row, not the avatar block. */}
-        <div className="gap-fn-3 py-fn-3 flex items-center">
+        {/* Inner wrapper drives the row-rhythm pad (18px top/bottom)
+            so the cell border tracks the row, not the avatar block.
+            18px + 36 avatar + 18 = 72px row height, matches the
+            design reference. */}
+        <div className="gap-fn-3 py-fn-4_5 flex items-center">
           <EmployeeAvatar fullName={employee.fullName} photoUrl={employee.photoUrl} size="md" />
           <div className="min-w-0">
             <div
@@ -582,28 +590,28 @@ function EmployeeRow({
           </div>
         </div>
       </td>
-      <td className={cn('px-fn-3 py-fn-3 align-middle', cellBorder)}>
+      <td className={cn('px-fn-3 py-fn-4_5 align-middle', cellBorder)}>
         <span className="text-fn-fg-muted font-mono text-[12px] tabular-nums">{employee.eid}</span>
       </td>
-      <td className={cn('text-fn-fg-muted px-fn-3 py-fn-3 align-middle text-[13px]', cellBorder)}>
+      <td className={cn('text-fn-fg-muted px-fn-3 py-fn-4_5 align-middle text-[13px]', cellBorder)}>
         {employee.department.name}
       </td>
-      <td className={cn('text-fn-fg-muted px-fn-3 py-fn-3 align-middle text-[13px]', cellBorder)}>
+      <td className={cn('text-fn-fg-muted px-fn-3 py-fn-4_5 align-middle text-[13px]', cellBorder)}>
         {employee.designation.name}
       </td>
-      <td className={cn('px-fn-3 py-fn-3 align-middle', cellBorder)}>
+      <td className={cn('px-fn-3 py-fn-4_5 align-middle', cellBorder)}>
         <StatusPill status={employee.status} dot />
       </td>
       <td
         className={cn(
-          'text-fn-fg-muted px-fn-3 py-fn-3 align-middle text-[13px] tabular-nums',
+          'text-fn-fg-muted px-fn-3 py-fn-4_5 align-middle text-[13px] tabular-nums',
           cellBorder,
         )}
       >
         {formatJoinDate(employee.joinDate)}
       </td>
       {canViewSalary && (
-        <td className={cn('px-fn-3 py-fn-3 text-right align-middle', cellBorder)}>
+        <td className={cn('px-fn-3 py-fn-4_5 text-right align-middle', cellBorder)}>
           {employee.salaryPkr != null ? (
             <>
               <div className="text-fn-fg font-fn-semibold text-[13px] tabular-nums">
@@ -621,7 +629,7 @@ function EmployeeRow({
         </td>
       )}
       <td
-        className={cn('py-fn-3 pl-fn-1 pr-[14px] text-right align-middle', cellBorder)}
+        className={cn('py-fn-4_5 pl-fn-1 pr-[14px] text-right align-middle', cellBorder)}
         onClick={(e) => e.stopPropagation()}
       >
         <RowKebabMenu employee={employee} canArchive={canArchive} />
