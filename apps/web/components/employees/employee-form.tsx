@@ -114,7 +114,7 @@ export function EmployeeForm({ mode, employee }: EmployeeFormProps) {
 
   return (
     <Form {...form}>
-      <form noValidate onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-6">
+      <form noValidate onSubmit={form.handleSubmit(onSubmit)} className="gap-fn-6 flex flex-col">
         <Section title="Personal information">
           <GridTwo>
             <FormField
@@ -231,7 +231,7 @@ export function EmployeeForm({ mode, employee }: EmployeeFormProps) {
                       value={field.value ?? ''}
                       onChange={(e) => field.onChange(e.target.value || null)}
                       placeholder="12345-1234567-1"
-                      className="font-tabular"
+                      className="tabular-nums"
                     />
                   </FormControl>
                   <FormMessage />
@@ -429,7 +429,7 @@ export function EmployeeForm({ mode, employee }: EmployeeFormProps) {
                           field.onChange(raw === '' ? null : Number(raw));
                         }}
                         placeholder="e.g. 150000"
-                        className="font-tabular"
+                        className="tabular-nums"
                       />
                     </FormControl>
                     <FormMessage />
@@ -440,7 +440,7 @@ export function EmployeeForm({ mode, employee }: EmployeeFormProps) {
                 control={form.control}
                 name="hasPayoneer"
                 render={({ field }) => (
-                  <FormItem className="flex items-center gap-2 pt-7">
+                  <FormItem className="gap-fn-2 pt-fn-7 flex items-center">
                     <Checkbox
                       checked={field.value === true}
                       onCheckedChange={(v) => field.onChange(v === true)}
@@ -453,7 +453,7 @@ export function EmployeeForm({ mode, employee }: EmployeeFormProps) {
           </Section>
         )}
 
-        <div className="border-fn-divider flex items-center justify-end gap-2 border-t pt-4">
+        <div className="border-fn-divider gap-fn-2 pt-fn-4 flex items-center justify-end border-t">
           <Button type="button" variant="secondary" onClick={() => router.back()}>
             Cancel
           </Button>
@@ -474,19 +474,19 @@ export function EmployeeForm({ mode, employee }: EmployeeFormProps) {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm border p-6">
-      <h2 className="text-fn-fg mb-4 text-[14px] font-semibold tracking-tight">{title}</h2>
+    <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm p-fn-6 border">
+      <h2 className="text-fn-fg mb-fn-4 font-fn-semibold tracking-fn-tight text-[14px]">{title}</h2>
       {children}
     </div>
   );
 }
 
 function GridTwo({ children }: { children: React.ReactNode }) {
-  return <div className="grid grid-cols-1 gap-4 md:grid-cols-2">{children}</div>;
+  return <div className="gap-fn-4 grid grid-cols-1 md:grid-cols-2">{children}</div>;
 }
 
 function RequiredMark() {
-  return <span className="text-fn-danger ml-0.5">*</span>;
+  return <span className="text-fn-danger ml-fn-0_5">*</span>;
 }
 
 function dateValue(value: Date | string | null | undefined): string {

@@ -13,7 +13,7 @@ export function AppShell({
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar breadcrumbs={breadcrumbs} />
-        <main className="min-w-0 flex-1 p-7">{children}</main>
+        <main className="p-fn-7 min-w-0 flex-1">{children}</main>
       </div>
     </div>
   );

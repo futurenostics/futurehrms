@@ -57,8 +57,8 @@ export function ProfileHeader({
   }
 
   return (
-    <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm border p-6">
-      <div className="flex flex-wrap items-start gap-5">
+    <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm p-fn-6 border">
+      <div className="gap-fn-5 flex flex-wrap items-start">
         <div className="relative">
           <EmployeeAvatar fullName={employee.fullName} photoUrl={employee.photoUrl} size="xl" />
           {canUploadPhoto && (
@@ -67,10 +67,10 @@ export function ProfileHeader({
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploadMutation.isPending}
-                className="border-fn-border-strong bg-fn-bg-panel text-fn-fg-muted shadow-fn-sm hover:bg-fn-bg-subtle hover:text-fn-fg absolute -bottom-1 -right-1 inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border transition-colors disabled:opacity-60"
+                className="border-fn-border-strong bg-fn-bg-panel text-fn-fg-muted shadow-fn-sm hover:bg-fn-bg-subtle hover:text-fn-fg -bottom-fn-1 -right-fn-1 h-fn-7 w-fn-7 rounded-fn-full absolute inline-flex cursor-pointer items-center justify-center border transition-colors disabled:opacity-60"
                 aria-label="Upload photo"
               >
-                <Camera className="h-3.5 w-3.5" />
+                <Camera className="h-fn-3_5 w-fn-3_5" />
               </button>
               <input
                 ref={fileInputRef}
@@ -83,24 +83,24 @@ export function ProfileHeader({
           )}
         </div>
 
-        <div className="flex min-w-0 flex-1 flex-col gap-2">
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-fn-fg text-[22px] font-semibold tracking-tight">
+        <div className="gap-fn-2 flex min-w-0 flex-1 flex-col">
+          <div className="gap-fn-3 flex flex-wrap items-center">
+            <h1 className="text-fn-fg font-fn-semibold tracking-fn-tight text-[22px]">
               {employee.fullName}
             </h1>
             <StatusPill status={employee.status} />
             {employee.isArchived && (
-              <span className="bg-fn-bg-inset text-fn-fg-faint inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider">
+              <span className="bg-fn-bg-inset text-fn-fg-faint rounded-fn-full px-fn-2 py-fn-0_5 font-fn-semibold tracking-fn-uppercase-tight inline-flex items-center text-[10.5px] uppercase">
                 Archived
               </span>
             )}
           </div>
           <div className="text-fn-fg-muted text-[13.5px]">
             {employee.designation.name} · {employee.department.name} ·{' '}
-            <span className="font-tabular">{employee.eid}</span>
+            <span className="tabular-nums">{employee.eid}</span>
           </div>
 
-          <dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1.5 text-[12.5px] sm:grid-cols-4">
+          <dl className="mt-fn-2 gap-x-fn-6 gap-y-fn-1_5 grid grid-cols-2 text-[12.5px] sm:grid-cols-4">
             <Fact label="Joined" value={formatDate(employee.joinDate)} />
             <Fact label="Tenure" value={tenure} />
             <Fact
@@ -109,7 +109,7 @@ export function ProfileHeader({
                 employee.manager ? (
                   <Link
                     href={`/employees/${employee.manager.id}`}
-                    className="text-fn-fg font-medium hover:underline"
+                    className="text-fn-fg font-fn-medium hover:underline"
                   >
                     {employee.manager.fullName}
                   </Link>
@@ -122,7 +122,7 @@ export function ProfileHeader({
           </dl>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="gap-fn-2 flex flex-wrap items-center">
           {canEdit && (
             <Button asChild variant="outline" size="sm">
               <Link href={`/employees/${employee.id}/edit`}>Edit</Link>
@@ -132,10 +132,10 @@ export function ProfileHeader({
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm">
-                  Actions <MoreHorizontal className="h-3.5 w-3.5" />
+                  Actions <MoreHorizontal className="h-fn-3_5 w-fn-3_5" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuContent align="end" className="w-fn-52">
                 {canChangeStatus && (
                   <DropdownMenuItem onClick={onChangeStatus}>Change status…</DropdownMenuItem>
                 )}
@@ -169,8 +169,8 @@ export function ProfileHeader({
 
 function Fact({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-0.5">
-      <dt className="text-fn-fg-faint text-[11px] font-semibold uppercase tracking-wider">
+    <div className="gap-fn-0_5 flex flex-col">
+      <dt className="text-fn-fg-faint font-fn-semibold tracking-fn-uppercase-tight text-[11px] uppercase">
         {label}
       </dt>
       <dd className="text-fn-fg">{value}</dd>

@@ -22,7 +22,7 @@ export function KpiStrip() {
 
   if (isLoading || isError || !data) {
     return (
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="gap-fn-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
           <KpiSkeleton key={i} />
         ))}
@@ -32,7 +32,7 @@ export function KpiStrip() {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="gap-fn-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           icon={Users}
           label="Total headcount"
@@ -97,22 +97,22 @@ interface KpiCardProps {
 
 function KpiCard({ icon: Icon, label, value, info, delta }: KpiCardProps) {
   return (
-    <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm border px-6 py-[22px]">
+    <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm px-fn-6 border py-[22px]">
       {/* Row 1 — icon tile + label + info trigger on the right */}
-      <div className="flex items-center gap-2.5">
+      <div className="gap-fn-2_5 flex items-center">
         <span
-          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px]"
+          className="h-fn-7 w-fn-7 inline-flex shrink-0 items-center justify-center rounded-[7px]"
           style={{ background: 'var(--fn-icon-tile)', color: 'var(--fn-icon-tile-fg)' }}
         >
-          <Icon className="h-3.5 w-3.5" strokeWidth={2} />
+          <Icon className="h-fn-3_5 w-fn-3_5" strokeWidth={2} />
         </span>
-        <span className="text-fn-fg text-[15px] font-medium">{label}</span>
+        <span className="text-fn-fg font-fn-medium text-[15px]">{label}</span>
         <Tooltip>
           <TooltipTrigger asChild>
             <button
               type="button"
               aria-label={`About ${label}`}
-              className="text-fn-fg-faint hover:text-fn-fg-muted focus-visible:ring-fn-accent ml-auto inline-flex h-[15px] w-[15px] shrink-0 cursor-help items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+              className="text-fn-fg-faint hover:text-fn-fg-muted focus-visible:ring-fn-accent rounded-fn-full ml-auto inline-flex h-[15px] w-[15px] shrink-0 cursor-help items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
             >
               <Info className="h-[15px] w-[15px]" strokeWidth={1.75} />
             </button>
@@ -124,8 +124,8 @@ function KpiCard({ icon: Icon, label, value, info, delta }: KpiCardProps) {
       </div>
 
       {/* Row 2 — large light-weight value + inline trend pill */}
-      <div className="mt-[18px] flex items-center gap-3">
-        <span className="text-fn-fg font-display text-[34px] font-normal tabular-nums leading-none tracking-[-0.03em]">
+      <div className="gap-fn-3 mt-[18px] flex items-center">
+        <span className="text-fn-fg font-display font-fn-normal leading-fn-unit text-[34px] tabular-nums tracking-[-0.03em]">
           {value}
         </span>
         {delta && <DeltaPill delta={delta} />}
@@ -142,9 +142,9 @@ function DeltaPill({ delta }: { delta: NonNullable<KpiCardProps['delta']> }) {
       <TrendPill tone={tone}>
         {text}
         {delta.value >= 0 ? (
-          <ArrowUpRight className="h-3 w-3" strokeWidth={2.25} />
+          <ArrowUpRight className="h-fn-3 w-fn-3" strokeWidth={2.25} />
         ) : (
-          <ArrowDownRight className="h-3 w-3" strokeWidth={2.25} />
+          <ArrowDownRight className="h-fn-3 w-fn-3" strokeWidth={2.25} />
         )}
       </TrendPill>
     );
@@ -152,7 +152,7 @@ function DeltaPill({ delta }: { delta: NonNullable<KpiCardProps['delta']> }) {
   return (
     <TrendPill tone={delta.tone}>
       {delta.text}
-      <ArrowUpRight className="h-3 w-3" strokeWidth={2.25} />
+      <ArrowUpRight className="h-fn-3 w-fn-3" strokeWidth={2.25} />
     </TrendPill>
   );
 }
@@ -190,7 +190,7 @@ function TrendPill({ tone, children }: { tone: DeltaTone; children: React.ReactN
   return (
     <span
       className={cn(
-        'rounded-fn-xs inline-flex items-center gap-1 px-[9px] py-[2px] text-[12px] font-semibold tabular-nums leading-[1.55] tracking-[-0.005em]',
+        'rounded-fn-xs gap-fn-1 font-fn-semibold inline-flex items-center px-[9px] py-[2px] text-[12px] tabular-nums leading-[1.55] tracking-[-0.005em]',
       )}
       style={{
         background: t.bg,
@@ -205,15 +205,15 @@ function TrendPill({ tone, children }: { tone: DeltaTone; children: React.ReactN
 
 function KpiSkeleton() {
   return (
-    <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm border px-6 py-[22px]">
-      <div className="flex items-center gap-2.5">
-        <Skeleton className="h-7 w-7 rounded-[7px]" />
-        <Skeleton className="h-3.5 w-28" />
-        <Skeleton className="ml-auto h-[15px] w-[15px] rounded-full" />
+    <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm px-fn-6 border py-[22px]">
+      <div className="gap-fn-2_5 flex items-center">
+        <Skeleton className="h-fn-7 w-fn-7 rounded-[7px]" />
+        <Skeleton className="h-fn-3_5 w-fn-28" />
+        <Skeleton className="rounded-fn-full ml-auto h-[15px] w-[15px]" />
       </div>
-      <div className="mt-[18px] flex items-center gap-3">
-        <Skeleton className="h-8 w-16" />
-        <Skeleton className="rounded-fn-xs h-5 w-16" />
+      <div className="gap-fn-3 mt-[18px] flex items-center">
+        <Skeleton className="h-fn-8 w-fn-16" />
+        <Skeleton className="rounded-fn-xs h-fn-5 w-fn-16" />
       </div>
     </div>
   );

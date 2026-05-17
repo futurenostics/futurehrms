@@ -14,16 +14,16 @@ export interface BreadcrumbItem {
 
 export function Topbar({ breadcrumbs }: { breadcrumbs: BreadcrumbItem[] }) {
   return (
-    <header className="border-fn-border bg-fn-bg-panel flex h-[52px] shrink-0 items-center gap-4 border-b px-6">
-      <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-[13px]">
+    <header className="border-fn-border bg-fn-bg-panel gap-fn-4 px-fn-6 flex h-[52px] shrink-0 items-center border-b">
+      <nav aria-label="Breadcrumb" className="gap-fn-1_5 flex items-center text-[13px]">
         {breadcrumbs.map((crumb, i) => {
           const last = i === breadcrumbs.length - 1;
           return (
-            <div key={`${crumb.label}-${i}`} className="flex items-center gap-1.5">
-              <span className={cn(last ? 'text-fn-fg font-medium' : 'text-fn-fg-muted')}>
+            <div key={`${crumb.label}-${i}`} className="gap-fn-1_5 flex items-center">
+              <span className={cn(last ? 'text-fn-fg font-fn-medium' : 'text-fn-fg-muted')}>
                 {crumb.label}
               </span>
-              {!last && <ChevronRight className="text-fn-fg-faint h-3.5 w-3.5" />}
+              {!last && <ChevronRight className="text-fn-fg-faint h-fn-3_5 w-fn-3_5" />}
             </div>
           );
         })}
@@ -33,12 +33,12 @@ export function Topbar({ breadcrumbs }: { breadcrumbs: BreadcrumbItem[] }) {
 
       <button
         type="button"
-        className="rounded-fn-sm border-fn-border bg-fn-bg-subtle text-fn-fg-muted hover:border-fn-border-strong hidden h-8 w-60 items-center gap-2 border px-2.5 text-[12.5px] sm:flex"
+        className="rounded-fn-sm border-fn-border bg-fn-bg-subtle text-fn-fg-muted hover:border-fn-border-strong h-fn-8 w-fn-60 gap-fn-2 px-fn-2_5 hidden items-center border text-[12.5px] sm:flex"
         aria-label="Search"
       >
-        <Search className="h-3.5 w-3.5" />
+        <Search className="h-fn-3_5 w-fn-3_5" />
         <span className="flex-1 text-left">Search</span>
-        <kbd className="rounded-fn-xs border-fn-border bg-fn-bg-panel text-fn-fg-faint border px-1.5 py-0.5 font-mono text-[10.5px]">
+        <kbd className="rounded-fn-xs border-fn-border bg-fn-bg-panel text-fn-fg-faint px-fn-1_5 py-fn-0_5 border font-mono text-[10.5px]">
           ⌘K
         </kbd>
       </button>
@@ -50,13 +50,13 @@ export function Topbar({ breadcrumbs }: { breadcrumbs: BreadcrumbItem[] }) {
           <TooltipTrigger asChild>
             <button
               type="button"
-              className="rounded-fn-sm text-fn-fg-muted hover:bg-fn-bg-inset relative flex h-8 w-8 items-center justify-center"
+              className="rounded-fn-sm text-fn-fg-muted hover:bg-fn-bg-inset h-fn-8 w-fn-8 relative flex items-center justify-center"
               aria-label="Notifications"
             >
-              <Bell className="h-4 w-4" />
+              <Bell className="h-fn-4 w-fn-4" />
               <span
                 aria-hidden
-                className="border-fn-bg-panel bg-fn-accent absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full border-[1.5px]"
+                className="border-fn-bg-panel bg-fn-accent right-fn-1_5 top-fn-1_5 h-fn-1_5 w-fn-1_5 rounded-fn-full absolute border-[1.5px]"
               />
             </button>
           </TooltipTrigger>

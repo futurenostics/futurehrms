@@ -21,10 +21,10 @@ export function ThemeToggle() {
           <button
             type="button"
             onClick={() => setTheme(isDark ? 'light' : 'dark')}
-            className="rounded-fn-sm text-fn-fg-muted hover:bg-fn-bg-inset flex h-8 w-8 items-center justify-center"
+            className="rounded-fn-sm text-fn-fg-muted hover:bg-fn-bg-inset h-fn-8 w-fn-8 flex items-center justify-center"
             aria-label={label}
           >
-            <Icon className="h-4 w-4" />
+            <Icon className="h-fn-4 w-fn-4" />
           </button>
         </TooltipTrigger>
         <TooltipContent>{label}</TooltipContent>

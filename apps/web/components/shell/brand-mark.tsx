@@ -15,9 +15,9 @@ export function BrandMark({
   className?: string;
 }) {
   return (
-    <div className={cn('inline-flex items-center gap-2.5', className)}>
+    <div className={cn('gap-fn-2_5 inline-flex items-center', className)}>
       <div
-        className="rounded-fn-xs bg-fn-fg text-fn-fg-invert relative inline-flex items-center justify-center font-semibold"
+        className="rounded-fn-xs bg-fn-fg text-fn-fg-invert font-fn-semibold relative inline-flex items-center justify-center"
         style={{
           width: size + 6,
           height: size + 6,
@@ -29,12 +29,12 @@ export function BrandMark({
         <span className="-translate-y-px">F</span>
         <span
           aria-hidden
-          className="bg-fn-accent absolute bottom-0.5 right-0.5 h-1 w-1 rounded-full"
+          className="bg-fn-accent bottom-fn-0_5 right-fn-0_5 h-fn-1 w-fn-1 rounded-fn-full absolute"
         />
       </div>
       {showWordmark && (
         <span
-          className="text-fn-fg font-semibold tracking-tight"
+          className="text-fn-fg font-fn-semibold tracking-fn-tight"
           style={{ fontSize: size, letterSpacing: '-0.025em' }}
         >
           Futurenostics

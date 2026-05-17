@@ -97,8 +97,8 @@ export function ChangeStatusDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1.5">
+        <div className="gap-fn-3 flex flex-col">
+          <div className="gap-fn-1_5 flex flex-col">
             <Label htmlFor="status">New status</Label>
             <Select value={statusId} onValueChange={setStatusId}>
               <SelectTrigger id="status">
@@ -106,7 +106,7 @@ export function ChangeStatusDialog({
               </SelectTrigger>
               <SelectContent>
                 {options.length === 0 && (
-                  <div className="text-fn-fg-muted px-2 py-2 text-[12.5px]">
+                  <div className="text-fn-fg-muted px-fn-2 py-fn-2 text-[12.5px]">
                     No valid transitions from {employee.status.name}.
                   </div>
                 )}
@@ -118,7 +118,7 @@ export function ChangeStatusDialog({
               </SelectContent>
             </Select>
           </div>
-          <div className="flex flex-col gap-1.5">
+          <div className="gap-fn-1_5 flex flex-col">
             <Label htmlFor="effective">Effective date</Label>
             <Input
               id="effective"
@@ -127,7 +127,7 @@ export function ChangeStatusDialog({
               onChange={(e) => setEffectiveDate(e.target.value)}
             />
           </div>
-          <div className="flex flex-col gap-1.5">
+          <div className="gap-fn-1_5 flex flex-col">
             <Label htmlFor="remarks">Remarks (optional)</Label>
             <Input
               id="remarks"

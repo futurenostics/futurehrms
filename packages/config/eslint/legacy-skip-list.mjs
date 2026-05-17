@@ -29,23 +29,23 @@ export const legacySkipList = [
   // 'app/(auth)/layout.tsx' — remediated in Sub-phase D.
   // 'app/(auth)/login/forgot-password-dialog.tsx' — remediated in Sub-phase D.
   // 'app/(auth)/login/login-card.tsx' — remediated in Sub-phase D.
-  'components/brand/logo.tsx',
-  'components/employees/dialogs/change-manager-dialog.tsx',
-  'components/employees/dialogs/change-salary-dialog.tsx',
-  'components/employees/dialogs/change-status-dialog.tsx',
-  'components/employees/employee-avatar.tsx',
-  'components/employees/employee-form.tsx',
-  'components/employees/kpi-strip.tsx',
-  'components/employees/profile-header.tsx',
-  'components/employees/status-pill.tsx',
-  'components/employees/widgets/total-employees-widget.tsx',
-  'components/shell/app-shell.tsx',
-  'components/shell/brand-mark.tsx',
-  'components/shell/currency-toggle.tsx',
-  'components/shell/sidebar.tsx',
-  'components/shell/theme-toggle.tsx',
-  'components/shell/topbar.tsx',
-  'components/shell/user-menu.tsx',
+  // 'components/brand/logo.tsx' — remediated in Sub-phase D.
+  // 'components/employees/dialogs/change-manager-dialog.tsx' — remediated in Sub-phase D.
+  // 'components/employees/dialogs/change-salary-dialog.tsx' — remediated in Sub-phase D.
+  // 'components/employees/dialogs/change-status-dialog.tsx' — remediated in Sub-phase D.
+  // 'components/employees/employee-avatar.tsx' — remediated in Sub-phase D.
+  // 'components/employees/employee-form.tsx' — remediated in Sub-phase D.
+  // 'components/employees/kpi-strip.tsx' — remediated in Sub-phase D.
+  // 'components/employees/profile-header.tsx' — remediated in Sub-phase D.
+  // 'components/employees/status-pill.tsx' — remediated in Sub-phase D.
+  // 'components/employees/widgets/total-employees-widget.tsx' — remediated in Sub-phase D.
+  // 'components/shell/app-shell.tsx' — remediated in Sub-phase D.
+  // 'components/shell/brand-mark.tsx' — remediated in Sub-phase D.
+  // 'components/shell/currency-toggle.tsx' — remediated in Sub-phase D.
+  // 'components/shell/sidebar.tsx' — remediated in Sub-phase D.
+  // 'components/shell/theme-toggle.tsx' — remediated in Sub-phase D.
+  // 'components/shell/topbar.tsx' — remediated in Sub-phase D.
+  // 'components/shell/user-menu.tsx' — remediated in Sub-phase D.
   'components/ui/avatar.tsx',
   'components/ui/badge.tsx',
   'components/ui/button.tsx',

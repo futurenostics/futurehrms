@@ -43,20 +43,20 @@ export function UserMenu() {
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="rounded-fn-full bg-fn-accent-soft text-fn-accent-soft-fg hover:bg-fn-accent-soft/80 flex h-8 w-8 items-center justify-center text-[12px] font-semibold"
+          className="rounded-fn-full bg-fn-accent-soft text-fn-accent-soft-fg hover:bg-fn-accent-soft/80 h-fn-8 w-fn-8 font-fn-semibold flex items-center justify-center text-[12px]"
           aria-label="Account menu"
         >
           {initials}
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
+      <DropdownMenuContent align="end" className="w-fn-56">
         <DropdownMenuLabel>
-          <div className="space-y-0.5 normal-case tracking-normal">
-            <div className="text-fn-fg text-[13px] font-semibold">
+          <div className="space-y-fn-0_5 tracking-fn-normal normal-case">
+            <div className="text-fn-fg font-fn-semibold text-[13px]">
               {user?.fullName ?? user?.email ?? 'Account'}
             </div>
             {user?.email && (
-              <div className="text-fn-fg-muted text-[11.5px] font-normal">{user.email}</div>
+              <div className="text-fn-fg-muted font-fn-normal text-[11.5px]">{user.email}</div>
             )}
           </div>
         </DropdownMenuLabel>

@@ -86,8 +86,8 @@ export function ChangeManagerDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1.5">
+        <div className="gap-fn-3 flex flex-col">
+          <div className="gap-fn-1_5 flex flex-col">
             <Label htmlFor="manager">New manager</Label>
             <Select value={managerId} onValueChange={setManagerId}>
               <SelectTrigger id="manager">
@@ -103,7 +103,7 @@ export function ChangeManagerDialog({
               </SelectContent>
             </Select>
           </div>
-          <div className="flex flex-col gap-1.5">
+          <div className="gap-fn-1_5 flex flex-col">
             <Label htmlFor="remarks">Remarks (optional)</Label>
             <Input
               id="remarks"

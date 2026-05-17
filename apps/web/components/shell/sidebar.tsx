@@ -92,7 +92,7 @@ function CollapseToggle({ collapsed, onClick }: { collapsed: boolean; onClick: (
           aria-label={label}
           aria-expanded={!collapsed}
           className={cn(
-            'absolute z-[2] inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-full',
+            'h-fn-6 w-fn-6 rounded-fn-full absolute z-[2] inline-flex cursor-pointer items-center justify-center',
             'border-fn-border-strong bg-fn-bg-panel text-fn-fg-muted shadow-fn-sm border',
             'hover:bg-fn-bg-subtle hover:text-fn-fg transition-colors',
             'focus-visible:ring-fn-accent focus-visible:ring-offset-fn-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
@@ -138,7 +138,7 @@ function NavList({
   collapsed: boolean;
 }) {
   return (
-    <nav className="flex-1 overflow-y-auto overflow-x-hidden py-2" aria-label="Sections">
+    <nav className="py-fn-2 flex-1 overflow-y-auto overflow-x-hidden" aria-label="Sections">
       <ul className="flex flex-col">
         {items.map((item) => (
           <li key={item.key}>
@@ -192,11 +192,11 @@ function ExpandedLink({ item, active }: { item: NavItem; active: boolean }) {
       href={item.href}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'relative flex h-10 items-center gap-3 overflow-hidden text-[13.5px] transition-colors duration-100',
+        'h-fn-10 gap-fn-3 relative flex items-center overflow-hidden text-[13.5px] transition-colors duration-100',
         'pl-[22px] pr-[18px]',
         active
-          ? 'bg-fn-accent-soft text-fn-accent-soft-fg font-semibold'
-          : 'text-fn-fg-muted hover:bg-fn-bg-inset hover:text-fn-fg font-medium',
+          ? 'bg-fn-accent-soft text-fn-accent-soft-fg font-fn-semibold'
+          : 'text-fn-fg-muted hover:bg-fn-bg-inset hover:text-fn-fg font-fn-medium',
       )}
       style={{ letterSpacing: '-0.005em' }}
     >
@@ -204,11 +204,11 @@ function ExpandedLink({ item, active }: { item: NavItem; active: boolean }) {
       <Icon className={cn('h-[17px] w-[17px] shrink-0', active ? 'opacity-100' : 'opacity-85')} />
       <span className="flex-1 truncate whitespace-nowrap">{item.label}</span>
       {item.count != null && !item.badge && (
-        <span className="font-tabular text-fn-fg-faint text-[11px]">{item.count}</span>
+        <span className="text-fn-fg-faint text-[11px] tabular-nums">{item.count}</span>
       )}
       {item.badge && (
         <span
-          className="bg-fn-accent text-fn-accent-fg inline-flex items-center justify-center rounded-full"
+          className="bg-fn-accent text-fn-accent-fg rounded-fn-full inline-flex items-center justify-center"
           style={{
             fontSize: 10.5,
             fontWeight: 600,
@@ -238,7 +238,7 @@ const RailLink = React.forwardRef<HTMLAnchorElement, RailLinkProps>(
         aria-current={active ? 'page' : undefined}
         aria-label={item.label}
         className={cn(
-          'relative flex h-10 cursor-pointer items-center justify-center transition-colors duration-100',
+          'h-fn-10 relative flex cursor-pointer items-center justify-center transition-colors duration-100',
           'focus-visible:ring-fn-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset',
           active
             ? 'bg-fn-accent-soft text-fn-accent-soft-fg'
@@ -252,7 +252,7 @@ const RailLink = React.forwardRef<HTMLAnchorElement, RailLinkProps>(
         {item.badge && (
           <span
             aria-hidden
-            className="bg-fn-accent absolute rounded-full"
+            className="bg-fn-accent rounded-fn-full absolute"
             style={{
               top: 6,
               right: 12,
@@ -308,19 +308,19 @@ function UserBlock({
             <UserAvatarTrigger initials={initials} ariaLabel={`${displayName} · ${displayRole}`} />
           </TooltipTrigger>
           <TooltipContent side="right" sideOffset={8}>
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[12px] font-semibold leading-tight">{displayName}</span>
+            <div className="gap-fn-0_5 flex flex-col">
+              <span className="font-fn-semibold leading-fn-tight text-[12px]">{displayName}</span>
               <span className="text-[11px] opacity-80">{displayRole}</span>
             </div>
           </TooltipContent>
         </Tooltip>
       ) : (
         <>
-          <Avatar className="h-8 w-8 shrink-0">
-            <AvatarFallback className="text-[12px] font-semibold">{initials}</AvatarFallback>
+          <Avatar className="h-fn-8 w-fn-8 shrink-0">
+            <AvatarFallback className="font-fn-semibold text-[12px]">{initials}</AvatarFallback>
           </Avatar>
           <div className="min-w-0 flex-1">
-            <div className="text-fn-fg truncate whitespace-nowrap text-[13px] font-semibold">
+            <div className="text-fn-fg font-fn-semibold truncate whitespace-nowrap text-[13px]">
               {displayName}
             </div>
             <div className="text-fn-fg-faint truncate whitespace-nowrap text-[11.5px]">
@@ -334,7 +334,7 @@ function UserBlock({
                 aria-label="Account settings"
                 className="text-fn-fg-faint hover:text-fn-fg rounded-fn-xs focus-visible:ring-fn-accent cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2"
               >
-                <SettingsIcon className="h-3.5 w-3.5" />
+                <SettingsIcon className="h-fn-3_5 w-fn-3_5" />
               </Link>
             </TooltipTrigger>
             <TooltipContent side="top" sideOffset={6}>
@@ -356,14 +356,14 @@ const UserAvatarTrigger = React.forwardRef<
     type="button"
     aria-label={ariaLabel}
     className={cn(
-      'rounded-fn-full inline-flex h-8 w-8 cursor-pointer items-center justify-center',
+      'rounded-fn-full h-fn-8 w-fn-8 inline-flex cursor-pointer items-center justify-center',
       'focus-visible:ring-fn-accent focus-visible:ring-offset-fn-bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
       className,
     )}
     {...rest}
   >
-    <Avatar className="h-8 w-8 shrink-0">
-      <AvatarFallback className="text-[12px] font-semibold">{initials}</AvatarFallback>
+    <Avatar className="h-fn-8 w-fn-8 shrink-0">
+      <AvatarFallback className="font-fn-semibold text-[12px]">{initials}</AvatarFallback>
     </Avatar>
   </button>
 ));

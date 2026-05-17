@@ -6,9 +6,9 @@ interface LogoProps {
 }
 
 const sizeMap = {
-  sm: { tile: 'h-7 w-7 rounded-fn-xs text-[15px]', wordmark: 'text-[14px]' },
-  md: { tile: 'h-9 w-9 rounded-fn-sm text-[18px]', wordmark: 'text-[16px]' },
-  lg: { tile: 'h-12 w-12 rounded-fn-md text-[24px]', wordmark: 'text-[18px]' },
+  sm: { tile: 'h-fn-7 w-fn-7 rounded-fn-xs text-[15px]', wordmark: 'text-[14px]' },
+  md: { tile: 'h-fn-9 w-fn-9 rounded-fn-sm text-[18px]', wordmark: 'text-[16px]' },
+  lg: { tile: 'h-fn-12 w-fn-12 rounded-fn-md text-[24px]', wordmark: 'text-[18px]' },
 };
 
 /**
@@ -19,24 +19,32 @@ const sizeMap = {
 export function Logo({ className, size = 'md' }: LogoProps) {
   const styles = sizeMap[size];
   return (
-    <div className={cn('inline-flex items-center gap-2.5', className)}>
+    <div className={cn('gap-fn-2_5 inline-flex items-center', className)}>
+      {/* Brand mark stays white on the accent gradient in both themes;
+          fn-fg-invert would flip to dark in dark mode and disappear. */}
       <div
         className={cn(
-          'shadow-fn-sm relative inline-flex items-center justify-center font-semibold text-white',
+          // eslint-disable-next-line fn-tokens/no-default-utilities
+          'shadow-fn-sm font-fn-semibold relative inline-flex items-center justify-center text-white',
           styles.tile,
         )}
         style={{
           background: 'linear-gradient(135deg, var(--fn-accent) 0%, oklch(0.42 0.20 280) 100%)',
         }}
       >
-        <span className="font-display tracking-tight">F</span>
+        <span className="font-display tracking-fn-tight">F</span>
         <span
-          className="absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full"
+          className="-bottom-fn-0_5 -right-fn-0_5 h-fn-1_5 w-fn-1_5 rounded-fn-full absolute"
           style={{ background: 'oklch(0.94 0.06 175)' }}
           aria-hidden
         />
       </div>
-      <span className={cn('font-display text-fn-fg font-semibold tracking-tight', styles.wordmark)}>
+      <span
+        className={cn(
+          'font-display text-fn-fg font-fn-semibold tracking-fn-tight',
+          styles.wordmark,
+        )}
+      >
         Futurenostics
       </span>
     </div>

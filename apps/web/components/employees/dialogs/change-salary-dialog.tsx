@@ -81,14 +81,14 @@ export function ChangeSalaryDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-3">
+        <div className="gap-fn-3 flex flex-col">
           {current != null && (
-            <div className="rounded-fn-md border-fn-border bg-fn-bg-subtle text-fn-fg-muted border px-3 py-2 text-[12.5px]">
+            <div className="rounded-fn-md border-fn-border bg-fn-bg-subtle text-fn-fg-muted px-fn-3 py-fn-2 border text-[12.5px]">
               Current salary:{' '}
-              <span className="font-tabular text-fn-fg font-medium">{formatPkr(current)}</span>
+              <span className="text-fn-fg font-fn-medium tabular-nums">{formatPkr(current)}</span>
             </div>
           )}
-          <div className="flex flex-col gap-1.5">
+          <div className="gap-fn-1_5 flex flex-col">
             <Label htmlFor="newSalary">New salary (PKR)</Label>
             <Input
               id="newSalary"
@@ -97,11 +97,11 @@ export function ChangeSalaryDialog({
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="e.g. 250000"
-              className="font-tabular"
+              className="tabular-nums"
             />
             {valid && delta != null && (
               <div
-                className={`font-tabular text-[11.5px] ${delta >= 0 ? 'text-fn-success-soft-fg' : 'text-fn-danger-soft-fg'}`}
+                className={`text-[11.5px] tabular-nums ${delta >= 0 ? 'text-fn-success-soft-fg' : 'text-fn-danger-soft-fg'}`}
               >
                 {delta >= 0 ? '+' : ''}
                 {formatPkr(delta)}
@@ -109,7 +109,7 @@ export function ChangeSalaryDialog({
               </div>
             )}
           </div>
-          <div className="flex flex-col gap-1.5">
+          <div className="gap-fn-1_5 flex flex-col">
             <Label htmlFor="effective">Effective date</Label>
             <Input
               id="effective"
@@ -118,7 +118,7 @@ export function ChangeSalaryDialog({
               onChange={(e) => setEffectiveDate(e.target.value)}
             />
           </div>
-          <div className="flex flex-col gap-1.5">
+          <div className="gap-fn-1_5 flex flex-col">
             <Label htmlFor="remarks">Reason (optional)</Label>
             <Input
               id="remarks"

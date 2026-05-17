@@ -29,11 +29,11 @@ export function StatusPill({
   dot?: boolean;
 }) {
   return (
-    <Badge variant={STATUS_VARIANT[status.slug] ?? 'default'} className={cn(dot && 'gap-1.5')}>
+    <Badge variant={STATUS_VARIANT[status.slug] ?? 'default'} className={cn(dot && 'gap-fn-1_5')}>
       {dot && (
         <span
           aria-hidden
-          className="inline-block h-1.5 w-1.5 rounded-full"
+          className="h-fn-1_5 w-fn-1_5 rounded-fn-full inline-block"
           style={{ background: STATUS_DOT_COLOR[status.slug] ?? 'currentColor' }}
         />
       )}

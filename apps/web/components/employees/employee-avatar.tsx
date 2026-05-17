@@ -10,10 +10,10 @@ interface EmployeeAvatarProps {
 }
 
 const SIZE_CLASS: Record<NonNullable<EmployeeAvatarProps['size']>, string> = {
-  sm: 'h-7 w-7 text-[10px]',
-  md: 'h-9 w-9 text-[12.5px]',
-  lg: 'h-14 w-14 text-[16px]',
-  xl: 'h-20 w-20 text-[20px]',
+  sm: 'h-fn-7 w-fn-7 text-[10px]',
+  md: 'h-fn-9 w-fn-9 text-[12.5px]',
+  lg: 'h-fn-14 w-fn-14 text-[16px]',
+  xl: 'h-fn-20 w-fn-20 text-[20px]',
 };
 
 // Inline-style radius wins over the shadcn Avatar base's `rounded-fn-full`
@@ -60,7 +60,7 @@ export function EmployeeAvatar({
     >
       {photoUrl && <AvatarImage src={photoUrl} alt={fullName} style={{ borderRadius: radius }} />}
       <AvatarFallback
-        className="font-semibold tracking-tight"
+        className="font-fn-semibold tracking-fn-tight"
         style={{
           background: colors.background,
           color: colors.color,
