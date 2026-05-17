@@ -875,8 +875,14 @@ function PreviewFrame({
 function emptyDefaults(): EmployeeCreateInput {
   return {
     fullName: '',
+    firstName: '',
+    lastName: '',
+    pronouns: null,
     email: '',
+    personalEmail: null,
     phone: null,
+    personalPhone: null,
+    address: null,
     dateOfBirth: null,
     gender: null,
     cnic: null,
@@ -885,24 +891,39 @@ function emptyDefaults(): EmployeeCreateInput {
     designationId: '',
     statusId: '',
     contractType: 'FullTime',
+    employmentRecord: null,
     managerId: null,
     salaryPkr: null,
+    salaryEffectiveDate: null,
     salaryProcessedExternally: false,
     hasPayoneer: false,
     payoneerAccountId: null,
+    payoneerEmail: null,
+    eligibleForCommissions: false,
+    commissionRate: null,
+    bankName: null,
+    bankBranch: null,
+    iban: null,
     internshipEndDate: null,
     probationEndDate: null,
     biannualReviewEnabled: false,
     annualReviewEnabled: true,
     emergencyContact: null,
+    systemRole: 'employee',
   };
 }
 
 function toDefaults(employee: EmployeePublic): EmployeeCreateInput {
   return {
     fullName: employee.fullName,
+    firstName: employee.firstName ?? '',
+    lastName: employee.lastName ?? '',
+    pronouns: employee.pronouns ?? null,
     email: employee.email,
+    personalEmail: employee.personalEmail ?? null,
     phone: employee.phone,
+    personalPhone: employee.personalPhone ?? null,
+    address: employee.address ?? null,
     dateOfBirth: employee.dateOfBirth ? new Date(employee.dateOfBirth) : null,
     gender: employee.gender,
     cnic: null, // masked CNIC is never round-tripped; blank preserves existing
@@ -911,16 +932,27 @@ function toDefaults(employee: EmployeePublic): EmployeeCreateInput {
     designationId: employee.designation.id,
     statusId: employee.status.id,
     contractType: employee.contractType,
+    employmentRecord: employee.employmentRecord ?? null,
     managerId: employee.manager?.id ?? null,
     salaryPkr: employee.salaryPkr ?? null,
+    salaryEffectiveDate: employee.salaryEffectiveDate
+      ? new Date(employee.salaryEffectiveDate)
+      : null,
     salaryProcessedExternally: employee.salaryProcessedExternally ?? false,
     hasPayoneer: employee.hasPayoneer,
     payoneerAccountId: employee.payoneerAccountId ?? null,
+    payoneerEmail: employee.payoneerEmail ?? null,
+    eligibleForCommissions: employee.eligibleForCommissions ?? false,
+    commissionRate: employee.commissionRate ?? null,
+    bankName: employee.bankName ?? null,
+    bankBranch: employee.bankBranch ?? null,
+    iban: employee.iban ?? null,
     internshipEndDate: employee.internshipEndDate ? new Date(employee.internshipEndDate) : null,
     probationEndDate: employee.probationEndDate ? new Date(employee.probationEndDate) : null,
     biannualReviewEnabled: false,
     annualReviewEnabled: true,
     emergencyContact: employee.emergencyContact ?? null,
+    systemRole: employee.systemRole ?? 'employee',
   };
 }
 
