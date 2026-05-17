@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/data-table';
 import { StatusPill } from '@/components/employees/status-pill';
 import { EmployeeAvatar } from '@/components/employees/employee-avatar';
+import { EmployeeFormSheet } from '@/components/employees/employee-form-sheet';
 import { KpiStrip } from '@/components/employees/kpi-strip';
 import { useEmployeeStats, useInfiniteEmployees, useReferences } from '@/lib/queries/employees';
 import { usePermissions } from '@/hooks/use-permissions';
@@ -89,6 +90,13 @@ export default function EmployeesListPage() {
 
   const [view, setView] = React.useState<ViewMode>('list');
   const [selected, setSelected] = React.useState<string[]>([]);
+
+  // EmployeeFormSheet state — null when closed; a discriminated union when
+  // open so we know which mode to render. URL-state sync (back button,
+  // direct-loaded ?sheet=create) lands in a later commit.
+  const [sheetState, setSheetState] = React.useState<
+    { mode: 'create' } | { mode: 'edit'; employee: EmployeePublic } | null
+  >(null);
 
   React.useEffect(() => {
     const id = window.setTimeout(() => setDebouncedSearch(search), 250);
@@ -235,10 +243,8 @@ export default function EmployeesListPage() {
                 </Button>
               )}
               {canCreate && (
-                <Button asChild size="md">
-                  <Link href="/employees/new">
-                    <Plus className="h-fn-4 w-fn-4" /> New employee
-                  </Link>
+                <Button size="md" onClick={() => setSheetState({ mode: 'create' })}>
+                  <Plus className="h-fn-4 w-fn-4" /> New employee
                 </Button>
               )}
             </div>
@@ -394,6 +400,19 @@ export default function EmployeesListPage() {
           onClear={() => setSelected([])}
           onExport={() => toast.info('Bulk export will land with the reports module.')}
           onArchive={() => toast.info('Bulk archive will land alongside the per-row workflow.')}
+        />
+
+        {/* The Create / Edit sheet lives at the page level so its open
+            state survives DataTable re-renders and scroll resets. The
+            list query auto-refreshes on save via onSuccess + the mutation's
+            invalidation. */}
+        <EmployeeFormSheet
+          open={sheetState !== null}
+          onOpenChange={(next) => {
+            if (!next) setSheetState(null);
+          }}
+          mode={sheetState?.mode ?? 'create'}
+          employee={sheetState?.mode === 'edit' ? sheetState.employee : undefined}
         />
       </AppShell>
     </TooltipProvider>
