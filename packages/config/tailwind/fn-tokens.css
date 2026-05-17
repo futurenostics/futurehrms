@@ -511,7 +511,14 @@
   --inset-shadow-*: initial;
   --drop-shadow-*: initial;
   --container-*: initial;
-  --breakpoint-*: initial;
+  /*
+   * --breakpoint-* stays default (640 sm · 768 md · 1024 lg · 1280 xl
+   * · 1536 2xl). Breakpoints are viewport widths — a platform
+   * convention, not a design token. Setting them to initial here
+   * disables every sm:* / md:* / lg:* variant in the codebase
+   * (broke grid-cols, sidebar visibility, login two-column layout,
+   * KPI strip horizontal flow, etc.).
+   */
   --default-font-family: initial;
   --default-mono-font-family: initial;
 }

@@ -1,0 +1,195 @@
+- generic [active] [ref=e1]:
+    - generic [ref=e2]:
+        - complementary "Primary navigation" [ref=e3]:
+            - button "Collapse sidebar" [expanded] [ref=e4] [cursor=pointer]:
+                - img [ref=e5]
+            - generic [ref=e8]:
+                - generic [ref=e10]: F
+                - generic [ref=e12]: Futurenostics
+            - navigation "Sections" [ref=e13]:
+                - list [ref=e14]:
+                    - listitem [ref=e15]:
+                        - link "Dashboard" [ref=e16] [cursor=pointer]:
+                            - /url: /dashboard
+                            - img [ref=e17]
+                            - generic [ref=e20]: Dashboard
+                    - listitem [ref=e21]:
+                        - link "Employees 84" [ref=e22] [cursor=pointer]:
+                            - /url: /employees
+                            - img [ref=e24]
+                            - generic [ref=e29]: Employees
+                            - generic [ref=e30]: '84'
+                    - listitem [ref=e31]:
+                        - link "Org Chart" [ref=e32] [cursor=pointer]:
+                            - /url: /employees/org
+                            - img [ref=e33]
+                            - generic [ref=e38]: Org Chart
+                    - listitem [ref=e39]:
+                        - link "Departments" [ref=e40] [cursor=pointer]:
+                            - /url: /settings/departments
+                            - img [ref=e41]
+                            - generic [ref=e45]: Departments
+                    - listitem [ref=e46]:
+                        - link "Projects 23" [ref=e47] [cursor=pointer]:
+                            - /url: /projects
+                            - img [ref=e48]
+                            - generic [ref=e51]: Projects
+                            - generic [ref=e52]: '23'
+                    - listitem [ref=e53]:
+                        - link "Monthly Processing" [ref=e54] [cursor=pointer]:
+                            - /url: /commissions/processing
+                            - img [ref=e55]
+                            - generic [ref=e57]: Monthly Processing
+                    - listitem [ref=e58]:
+                        - link "Approvals 2" [ref=e59] [cursor=pointer]:
+                            - /url: /commissions/approvals
+                            - img [ref=e60]
+                            - generic [ref=e63]: Approvals
+                            - generic [ref=e64]: '2'
+                    - listitem [ref=e65]:
+                        - link "Commission Rules" [ref=e66] [cursor=pointer]:
+                            - /url: /commissions/rules
+                            - img [ref=e67]
+                            - generic [ref=e71]: Commission Rules
+                    - listitem [ref=e72]:
+                        - link "Payouts" [ref=e73] [cursor=pointer]:
+                            - /url: /payroll
+                            - img [ref=e74]
+                            - generic [ref=e76]: Payouts
+                    - listitem [ref=e77]:
+                        - link "Reminder Rules" [ref=e78] [cursor=pointer]:
+                            - /url: /hr/rules
+                            - img [ref=e79]
+                            - generic [ref=e84]: Reminder Rules
+                    - listitem [ref=e85]:
+                        - link "Evaluations 4" [ref=e86] [cursor=pointer]:
+                            - /url: /hr/evaluations
+                            - img [ref=e87]
+                            - generic [ref=e89]: Evaluations
+                            - generic [ref=e90]: '4'
+                    - listitem [ref=e91]:
+                        - link "Reports" [ref=e92] [cursor=pointer]:
+                            - /url: /reports
+                            - img [ref=e93]
+                            - generic [ref=e95]: Reports
+                    - listitem [ref=e96]:
+                        - link "Roles & Permissions" [ref=e97] [cursor=pointer]:
+                            - /url: /settings/roles
+                            - img [ref=e98]
+                            - generic [ref=e100]: Roles & Permissions
+                    - listitem [ref=e101]:
+                        - link "General" [ref=e102] [cursor=pointer]:
+                            - /url: /settings
+                            - img [ref=e103]
+                            - generic [ref=e106]: General
+            - generic [ref=e107]:
+                - generic [ref=e109]: A
+                - generic [ref=e110]:
+                    - generic [ref=e111]: admin@futurenostics.local
+                    - generic [ref=e112]: Super Admin
+                - link "Account settings" [ref=e113] [cursor=pointer]:
+                    - /url: /settings
+                    - img [ref=e114]
+        - generic [ref=e117]:
+            - banner [ref=e118]:
+                - navigation "Breadcrumb" [ref=e119]:
+                    - generic [ref=e120]:
+                        - generic [ref=e121]: HR Core
+                        - img [ref=e122]
+                    - generic [ref=e124]:
+                        - generic [ref=e125]: Employees
+                        - img [ref=e126]
+                    - generic [ref=e129]: New
+                - generic [ref=e130]:
+                    - button "USD" [pressed] [ref=e131]
+                    - button "PKR" [ref=e132]
+                - button "Notifications" [ref=e133]:
+                    - img [ref=e134]
+                - button "Switch to dark mode" [ref=e138]:
+                    - img [ref=e139]
+                - button "Account menu" [ref=e141]: A
+            - main [ref=e142]:
+                - generic [ref=e143]:
+                    - generic [ref=e144]:
+                        - heading "Add employee" [level=1] [ref=e145]
+                        - paragraph [ref=e146]: Create a new employee record. The EID is assigned automatically.
+                    - generic [ref=e147]:
+                        - generic [ref=e148]:
+                            - heading "Personal information" [level=2] [ref=e149]
+                            - generic [ref=e150]:
+                                - generic [ref=e151]:
+                                    - generic [ref=e152]: Full name*
+                                    - textbox "Full name*" [ref=e153]:
+                                        - /placeholder: Asma Ali
+                                - generic [ref=e154]:
+                                    - generic [ref=e155]: Email*
+                                    - textbox "Email*" [ref=e156]:
+                                        - /placeholder: asma.ali@futurenostics.com
+                                - generic [ref=e157]:
+                                    - text: Phone
+                                    - textbox "Phone" [ref=e158]:
+                                        - /placeholder: +92 300 1234567
+                                - generic [ref=e159]:
+                                    - text: Date of birth
+                                    - textbox "Date of birth" [ref=e160]
+                                - generic [ref=e161]:
+                                    - text: Gender
+                                    - combobox "Gender" [ref=e162] [cursor=pointer]:
+                                        - generic: Not specified
+                                        - img [ref=e163]
+                                    - combobox [ref=e165]
+                                - generic [ref=e166]:
+                                    - text: CNIC
+                                    - textbox "CNIC" [ref=e167]:
+                                        - /placeholder: 12345-1234567-1
+                        - generic [ref=e168]:
+                            - heading "Employment details" [level=2] [ref=e169]
+                            - generic [ref=e170]:
+                                - generic [ref=e171]:
+                                    - generic [ref=e172]: Department*
+                                    - combobox "Department*" [ref=e173] [cursor=pointer]:
+                                        - generic: Pick a department
+                                        - img [ref=e174]
+                                    - combobox [ref=e176]
+                                - generic [ref=e177]:
+                                    - generic [ref=e178]: Designation*
+                                    - combobox "Designation*" [disabled] [ref=e179]:
+                                        - generic: Pick a department first
+                                        - img [ref=e180]
+                                    - combobox [disabled] [ref=e182]
+                                - generic [ref=e183]:
+                                    - generic [ref=e184]: Status*
+                                    - combobox "Status*" [ref=e185] [cursor=pointer]:
+                                        - generic: Pick a status
+                                        - img [ref=e186]
+                                    - combobox [ref=e188]
+                                - generic [ref=e189]:
+                                    - generic [ref=e190]: Contract type*
+                                    - combobox "Contract type*" [ref=e191] [cursor=pointer]:
+                                        - generic: FullTime
+                                        - img [ref=e192]
+                                    - combobox [ref=e194]
+                                - generic [ref=e195]:
+                                    - generic [ref=e196]: Join date*
+                                    - textbox "Join date*" [ref=e197]: 2026-05-17
+                                - generic [ref=e198]:
+                                    - text: Probation end
+                                    - textbox "Probation end" [ref=e199]
+                        - generic [ref=e200]:
+                            - heading "Compensation" [level=2] [ref=e201]
+                            - generic [ref=e202]:
+                                - generic [ref=e203]:
+                                    - text: Starting salary (PKR)
+                                    - textbox "Starting salary (PKR)" [ref=e204]:
+                                        - /placeholder: e.g. 150000
+                                - generic [ref=e205]:
+                                    - checkbox [ref=e206] [cursor=pointer]
+                                    - checkbox
+                                    - generic [ref=e207]: Has Payoneer account
+                        - generic [ref=e208]:
+                            - button "Cancel" [ref=e209] [cursor=pointer]
+                            - button "Create employee" [ref=e210] [cursor=pointer]
+    - region "Notifications alt+T"
+    - button "Open Next.js Dev Tools" [ref=e216] [cursor=pointer]:
+        - img [ref=e217]
+    - alert [ref=e220]
