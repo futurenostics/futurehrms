@@ -322,6 +322,21 @@ export default function EmployeesListPage() {
                * visible, name + email clipped to nothing — the bug the
                * user surfaced).
                */}
+              {/*
+               * Single-table layout. An earlier iteration used a nested
+               * inset table inside <th colSpan={9}> to get the rounded
+               * grey header pill — but the nested-table approach is
+               * fragile across browsers: Chrome and Firefox compute
+               * table-fixed column widths slightly differently when a
+               * full-width inner table sits inside a th, producing
+               * sub-pixel column-edge drift that visibly misaligns the
+               * header checkbox vs the row checkboxes (user-surfaced).
+               *
+               * Single table with bg-fn-bg-subtle on each thead td and
+               * first/last cells rounded keeps the same visual pill
+               * but uses ONE colgroup so column edges are guaranteed
+               * identical between header and rows.
+               */}
               <table className="w-full table-fixed border-collapse text-[13px]">
                 <colgroup>
                   <col style={{ width: 48 }} />
@@ -335,80 +350,55 @@ export default function EmployeesListPage() {
                   <col style={{ width: 36 }} />
                 </colgroup>
                 <thead>
-                  <tr>
-                    <th colSpan={canViewSalary ? 9 : 8} className="p-0">
-                      <div className="rounded-fn-sm bg-fn-bg-subtle mt-fn-1">
-                        <table className="w-full table-fixed border-collapse">
-                          <colgroup>
-                            <col style={{ width: 48 }} />
-                            <col />
-                            <col style={{ width: 110 }} />
-                            <col style={{ width: 150 }} />
-                            <col style={{ width: 160 }} />
-                            <col style={{ width: 130 }} />
-                            <col style={{ width: 140 }} />
-                            {canViewSalary && <col style={{ width: 160 }} />}
-                            <col style={{ width: 36 }} />
-                          </colgroup>
-                          <tbody>
-                            <tr>
-                              <td className="py-fn-4 pl-[18px] pr-0 align-middle">
-                                <Checkbox
-                                  checked={
-                                    allOnPageSelected
-                                      ? true
-                                      : someOnPageSelected
-                                        ? 'indeterminate'
-                                        : false
-                                  }
-                                  onCheckedChange={() => toggleSelectAll()}
-                                  aria-label={allOnPageSelected ? 'Deselect all' : 'Select all'}
-                                />
-                              </td>
-                              <Th
-                                sortable
-                                active={sortBy === 'fullName'}
-                                dir={sortDir}
-                                onSort={() => toggleSort('fullName')}
-                              >
-                                Employee
-                              </Th>
-                              <Th
-                                sortable
-                                active={sortBy === 'eid'}
-                                dir={sortDir}
-                                onSort={() => toggleSort('eid')}
-                              >
-                                EID
-                              </Th>
-                              <Th>Department</Th>
-                              <Th>Designation</Th>
-                              <Th>Status</Th>
-                              <Th
-                                sortable
-                                active={sortBy === 'joinDate'}
-                                dir={sortDir}
-                                onSort={() => toggleSort('joinDate')}
-                              >
-                                Join date
-                              </Th>
-                              {canViewSalary && (
-                                <Th
-                                  align="right"
-                                  sortable
-                                  active={sortBy === 'salaryPkr'}
-                                  dir={sortDir}
-                                  onSort={() => toggleSort('salaryPkr')}
-                                >
-                                  Salary / mo
-                                </Th>
-                              )}
-                              <td />
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </th>
+                  <tr className="[&>td]:bg-fn-bg-subtle [&>td:first-child]:rounded-l-fn-sm [&>td:last-child]:rounded-r-fn-sm">
+                    <td className="py-fn-4 pl-[18px] pr-0 align-middle">
+                      <Checkbox
+                        checked={
+                          allOnPageSelected ? true : someOnPageSelected ? 'indeterminate' : false
+                        }
+                        onCheckedChange={() => toggleSelectAll()}
+                        aria-label={allOnPageSelected ? 'Deselect all' : 'Select all'}
+                      />
+                    </td>
+                    <Th
+                      sortable
+                      active={sortBy === 'fullName'}
+                      dir={sortDir}
+                      onSort={() => toggleSort('fullName')}
+                    >
+                      Employee
+                    </Th>
+                    <Th
+                      sortable
+                      active={sortBy === 'eid'}
+                      dir={sortDir}
+                      onSort={() => toggleSort('eid')}
+                    >
+                      EID
+                    </Th>
+                    <Th>Department</Th>
+                    <Th>Designation</Th>
+                    <Th>Status</Th>
+                    <Th
+                      sortable
+                      active={sortBy === 'joinDate'}
+                      dir={sortDir}
+                      onSort={() => toggleSort('joinDate')}
+                    >
+                      Join date
+                    </Th>
+                    {canViewSalary && (
+                      <Th
+                        align="right"
+                        sortable
+                        active={sortBy === 'salaryPkr'}
+                        dir={sortDir}
+                        onSort={() => toggleSort('salaryPkr')}
+                      >
+                        Salary / mo
+                      </Th>
+                    )}
+                    <td />
                   </tr>
                 </thead>
                 <tbody>
