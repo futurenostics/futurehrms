@@ -71,7 +71,7 @@ export const navGroups: NavGroup[] = [
         key: 'processing',
         label: 'Monthly Processing',
         icon: Calculator,
-        href: '/commissions/processing',
+        href: '/monthly-processing',
       },
       {
         key: 'approvals',
@@ -80,7 +80,7 @@ export const navGroups: NavGroup[] = [
         href: '/commissions/approvals',
         badge: '2',
       },
-      { key: 'rules', label: 'Commission Rules', icon: Scale, href: '/commissions/rules' },
+      { key: 'rules', label: 'Commission Rules', icon: Scale, href: '/commission-rules' },
       { key: 'payroll', label: 'Payouts', icon: CreditCard, href: '/payroll' },
     ],
   },
