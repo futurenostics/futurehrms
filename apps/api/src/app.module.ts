@@ -17,6 +17,7 @@ import { PermissionGuard } from './core/auth/guards/permission.guard';
 import { TimelineModule } from './core/timeline/timeline.module';
 import { EmployeesModule } from './modules/employees/employees.module';
 import { ProjectsModule } from './modules/projects/projects.module';
+import { CommissionsModule } from './modules/commissions/commissions.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -35,6 +36,7 @@ import { HealthController } from './health.controller';
     // Domain modules
     EmployeesModule,
     ProjectsModule,
+    CommissionsModule,
   ],
   controllers: [HealthController],
   providers: [

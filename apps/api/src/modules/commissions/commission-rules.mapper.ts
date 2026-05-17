@@ -1,0 +1,53 @@
+/**
+ * CommissionRule → CommissionRulePublic mapper.
+ */
+import { Prisma } from '@prisma/client';
+import type {
+  CommissionRulePublic,
+  CommissionRuleStatus,
+  PoolMode,
+  RolePercentages,
+} from '@futurenostics/types';
+
+export const COMMISSION_RULE_INCLUDE = {
+  category: true,
+  _count: { select: { projects: { where: { deletedAt: null } } } },
+} satisfies Prisma.CommissionRuleInclude;
+
+export type CommissionRuleRowForMapping = Prisma.CommissionRuleGetPayload<{
+  include: typeof COMMISSION_RULE_INCLUDE;
+}>;
+
+export function toCommissionRulePublic(row: CommissionRuleRowForMapping): CommissionRulePublic {
+  const now = new Date();
+  const isCurrentlyActive =
+    row.status === 'active' &&
+    row.effectiveFrom <= now &&
+    (row.effectiveTo === null || row.effectiveTo > now);
+
+  return {
+    id: row.id,
+    department: row.department,
+    category: {
+      id: row.category.id,
+      slug: row.category.slug,
+      name: row.category.name,
+      color: row.category.color,
+    },
+    version: row.version,
+    poolMode: row.poolMode as PoolMode,
+    poolValue: Number(row.poolValue),
+    rolePercentages: row.rolePercentages as RolePercentages,
+    disbursementSchedule: (row.disbursementSchedule as Record<string, unknown> | null) ?? null,
+    effectiveFrom: row.effectiveFrom.toISOString(),
+    effectiveTo: row.effectiveTo?.toISOString() ?? null,
+    status: row.status as CommissionRuleStatus,
+    pendingReason: row.pendingReason,
+    isCurrentlyActive,
+    projectCount: row._count.projects,
+    createdAt: row.createdAt.toISOString(),
+    createdById: row.createdById,
+    publishedAt: row.publishedAt?.toISOString() ?? null,
+    publishedById: row.publishedById,
+  };
+}
