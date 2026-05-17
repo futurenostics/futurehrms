@@ -48,6 +48,7 @@ import {
   TabsSection,
   ToastSection,
 } from './_sections/tier-5';
+import { FormSection, TableSection } from './_sections/tier-6-7';
 
 export const metadata = {
   title: 'Style Guide — Futurenostics',
@@ -81,18 +82,54 @@ const TOC = [
   },
   {
     label: 'Tier 2 · Form atoms',
-    items: [{ id: 'primitive-button', label: 'Button' }],
+    items: [
+      { id: 'primitive-button', label: 'Button' },
+      { id: 'primitive-input', label: 'Input' },
+      { id: 'primitive-textarea', label: 'Textarea' },
+      { id: 'primitive-checkbox', label: 'Checkbox' },
+      { id: 'primitive-radio-group', label: 'RadioGroup' },
+      { id: 'primitive-switch', label: 'Switch' },
+      { id: 'primitive-select', label: 'Select' },
+      { id: 'primitive-combobox', label: 'Combobox' },
+    ],
   },
   {
-    label: 'Primitives — coming next',
+    label: 'Tier 3 · Display atoms',
     items: [
-      { id: 'tier-2-rest', label: 'Tier 2 rest · Input / Textarea / Switch / etc.' },
-      { id: 'tier-3', label: 'Tier 3 · Display atoms' },
-      { id: 'tier-4', label: 'Tier 4 · Containers' },
-      { id: 'tier-5', label: 'Tier 5 · Compound' },
-      { id: 'tier-6', label: 'Tier 6 · Form composition' },
-      { id: 'tier-7', label: 'Tier 7 · Data — Table' },
+      { id: 'primitive-badge', label: 'Badge' },
+      { id: 'primitive-avatar', label: 'Avatar' },
+      { id: 'primitive-tooltip', label: 'Tooltip' },
+      { id: 'primitive-icon-tile', label: 'IconTile' },
     ],
+  },
+  {
+    label: 'Tier 4 · Containers',
+    items: [
+      { id: 'primitive-card', label: 'Card' },
+      { id: 'primitive-popover', label: 'Popover' },
+      { id: 'primitive-dialog', label: 'Dialog' },
+      { id: 'primitive-sheet', label: 'Sheet' },
+      { id: 'primitive-dropdown-menu', label: 'DropdownMenu' },
+    ],
+  },
+  {
+    label: 'Tier 5 · Compound',
+    items: [
+      { id: 'primitive-tabs', label: 'Tabs' },
+      { id: 'primitive-alert', label: 'Alert' },
+      { id: 'primitive-progress', label: 'Progress' },
+      { id: 'primitive-empty-state', label: 'EmptyState' },
+      { id: 'primitive-skeleton', label: 'Skeleton' },
+      { id: 'primitive-toast', label: 'Toast' },
+    ],
+  },
+  {
+    label: 'Tier 6 · Form composition',
+    items: [{ id: 'primitive-form', label: 'Form / Field / Control' }],
+  },
+  {
+    label: 'Tier 7 · Data',
+    items: [{ id: 'primitive-table', label: 'Table' }],
   },
 ];
 
@@ -152,7 +189,7 @@ function Sidebar() {
         <div className="text-fn-fg font-fn-semibold text-fn-md tracking-fn-display-tight">
           Style guide
         </div>
-        <div className="text-fn-fg-faint text-fn-sm-plus mt-fn-0_5">v0 · foundations only</div>
+        <div className="text-fn-fg-faint text-fn-sm-plus mt-fn-0_5">v1 · all tiers</div>
       </div>
       <nav className="gap-fn-6 px-fn-3 pb-fn-7 flex flex-col">
         {TOC.map((group) => (
@@ -527,6 +564,8 @@ function PrimitivesSection() {
       <EmptyStateSection />
       <SkeletonSection />
       <ToastSection />
+      <FormSection />
+      <TableSection />
       <div className="bg-fn-bg-panel border-fn-border rounded-fn-xs p-fn-6 border">
         <p className="text-fn-fg-muted text-fn-base leading-fn-normal max-w-[640px]">
           Tier 1 atoms (Label · Separator · Spinner) are now live. Coming next: Tier 2 Form atoms —
