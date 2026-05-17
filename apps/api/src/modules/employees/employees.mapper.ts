@@ -15,8 +15,14 @@ export interface EmployeeRowForMapping {
   id: string;
   eid: string;
   fullName: string;
+  firstName: string | null;
+  lastName: string | null;
+  pronouns: string | null;
   email: string;
+  personalEmail: string | null;
   phone: string | null;
+  personalPhone: string | null;
+  address: string | null;
   dateOfBirth: Date | null;
   gender: string | null;
   cnic: string | null;
@@ -25,6 +31,7 @@ export interface EmployeeRowForMapping {
   designation: { id: string; name: string };
   status: { id: string; name: string; slug: string };
   contractType: string;
+  employmentRecord: string | null;
   manager:
     | (Omit<EmployeeRowForMapping, 'manager' | 'reports'> & {
         eid: string;
@@ -32,14 +39,26 @@ export interface EmployeeRowForMapping {
         id: string;
       })
     | null;
+  systemRoleSlug: string | null;
   salaryPkr: { toString: () => string } | number | null;
+  salaryEffectiveDate: Date | null;
   salaryProcessedExternally: boolean;
   hasPayoneer: boolean;
   payoneerAccountId: string | null;
+  payoneerEmail: string | null;
+  eligibleForCommissions: boolean;
+  commissionRate: string | null;
+  bankName: string | null;
+  bankBranch: string | null;
+  iban: string | null;
   internshipEndDate: Date | null;
   probationEndDate: Date | null;
   lastIncrementDate: Date | null;
   emergencyContact: unknown;
+  noticePeriodStart: Date | null;
+  terminatedAt: Date | null;
+  lastWorkingDay: Date | null;
+  terminationReason: string | null;
   documents: Array<{ kind: string; fileUrl: string; uploadedAt: Date }>;
   _count?: { reports: number };
   createdAt: Date;
@@ -102,8 +121,14 @@ export function toEmployeePublic(
     id: row.id,
     eid: row.eid,
     fullName: row.fullName,
+    firstName: row.firstName,
+    lastName: row.lastName,
+    pronouns: row.pronouns,
     email: row.email,
+    personalEmail: row.personalEmail,
     phone: row.phone,
+    personalPhone: row.personalPhone,
+    address: row.address,
     dateOfBirth: toIsoOrNull(row.dateOfBirth),
     gender: (row.gender as EmployeePublic['gender']) ?? null,
     cnicMasked: maskCnic(row.cnic, viewer),
@@ -113,6 +138,7 @@ export function toEmployeePublic(
     designation: { id: row.designation.id, name: row.designation.name },
     status: row.status,
     contractType: row.contractType as EmployeePublic['contractType'],
+    employmentRecord: (row.employmentRecord as EmployeePublic['employmentRecord']) ?? null,
     manager: row.manager
       ? {
           id: row.manager.id,
@@ -127,6 +153,14 @@ export function toEmployeePublic(
     internshipEndDate: toIsoOrNull(row.internshipEndDate),
     probationEndDate: toIsoOrNull(row.probationEndDate),
     emergencyContact: (row.emergencyContact as EmployeePublic['emergencyContact']) ?? null,
+    systemRole: (row.systemRoleSlug as EmployeePublic['systemRole']) ?? null,
+    bankName: row.bankName,
+    bankBranch: row.bankBranch,
+    iban: row.iban,
+    noticePeriodStart: toIsoOrNull(row.noticePeriodStart),
+    terminatedAt: toIsoOrNull(row.terminatedAt),
+    lastWorkingDay: toIsoOrNull(row.lastWorkingDay),
+    terminationReason: row.terminationReason,
     isArchived: row.deletedAt !== null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -134,8 +168,12 @@ export function toEmployeePublic(
 
   if (showSalary) {
     base.salaryPkr = decimalToNumber(row.salaryPkr);
+    base.salaryEffectiveDate = toIsoOrNull(row.salaryEffectiveDate);
     base.salaryProcessedExternally = row.salaryProcessedExternally;
     base.payoneerAccountId = row.payoneerAccountId ?? null;
+    base.payoneerEmail = row.payoneerEmail ?? null;
+    base.eligibleForCommissions = row.eligibleForCommissions;
+    base.commissionRate = row.commissionRate ?? null;
     base.lastIncrementDate = toIsoOrNull(row.lastIncrementDate);
   }
 

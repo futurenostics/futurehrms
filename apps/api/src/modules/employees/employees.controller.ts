@@ -25,6 +25,8 @@ import {
   employeeCreateSchema,
   employeeListQuerySchema,
   employeeUpdateSchema,
+  moveToNoticeSchema,
+  terminateEmployeeSchema,
 } from '@futurenostics/types';
 import { CurrentUser } from '../../core/auth/decorators/current-user.decorator';
 import { RequirePermission } from '../../core/auth/decorators/require-permission.decorator';
@@ -178,6 +180,28 @@ export class EmployeesController {
   ) {
     const input = changeSalarySchema.parse(body);
     return this.employees.changeSalary(user, id, input);
+  }
+
+  @Post(':id/move-to-notice')
+  @RequirePermission('employees:update')
+  async moveToNotice(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const input = moveToNoticeSchema.parse(body);
+    return this.employees.moveToNotice(user, id, input);
+  }
+
+  @Post(':id/terminate')
+  @RequirePermission('employees:delete')
+  async terminate(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const input = terminateEmployeeSchema.parse(body);
+    return this.employees.terminate(user, id, input);
   }
 
   /* ---------- Photo ---------- */

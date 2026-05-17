@@ -16,9 +16,11 @@ import type {
   EmployeeListResponse,
   EmployeePublic,
   EmployeeUpdateInput,
+  MoveToNoticeInput,
   OrgChartNode,
   ReferencesResponse,
   SalaryHistoryEntry,
+  TerminateEmployeeInput,
   TimelineEntryPublic,
 } from '@futurenostics/types';
 import type { AuthenticatedUser } from '../../core/auth/types';
@@ -354,13 +356,27 @@ export class EmployeesService {
     await this.validateReferences(input);
     await this.assertEmailUnique(input.email, null);
 
+    // The sheet UI surfaces First + Last; the legacy fullName field is
+    // joined from them when present, otherwise the explicit fullName
+    // input is used as-is. Either path produces a non-empty fullName.
+    const firstName = input.firstName?.trim() || null;
+    const lastName = input.lastName?.trim() || null;
+    const joined = [firstName, lastName].filter(Boolean).join(' ');
+    const fullName = joined || input.fullName;
+
     const eid = await nextEid();
     const created = await prisma.employee.create({
       data: {
         eid,
-        fullName: input.fullName,
+        fullName,
+        firstName,
+        lastName,
+        pronouns: input.pronouns ?? null,
         email: input.email.toLowerCase(),
+        personalEmail: input.personalEmail ?? null,
         phone: input.phone ?? null,
+        personalPhone: input.personalPhone ?? null,
+        address: input.address ?? null,
         dateOfBirth: input.dateOfBirth ?? null,
         gender: input.gender ?? null,
         cnic: input.cnic ?? null,
@@ -369,11 +385,20 @@ export class EmployeesService {
         designationId: input.designationId,
         statusId: input.statusId,
         contractType: input.contractType,
+        employmentRecord: input.employmentRecord ?? null,
         managerId: input.managerId ?? null,
+        systemRoleSlug: input.systemRole ?? 'employee',
         salaryPkr: input.salaryPkr ?? null,
+        salaryEffectiveDate: input.salaryEffectiveDate ?? null,
         salaryProcessedExternally: input.salaryProcessedExternally ?? false,
         hasPayoneer: input.hasPayoneer ?? false,
         payoneerAccountId: input.payoneerAccountId ?? null,
+        payoneerEmail: input.payoneerEmail ?? null,
+        eligibleForCommissions: input.eligibleForCommissions ?? false,
+        commissionRate: input.commissionRate ?? null,
+        bankName: input.bankName ?? null,
+        bankBranch: input.bankBranch ?? null,
+        iban: input.iban ?? null,
         internshipEndDate: input.internshipEndDate ?? null,
         probationEndDate: input.probationEndDate ?? null,
         biannualReviewEnabled: input.biannualReviewEnabled ?? false,
@@ -435,18 +460,40 @@ export class EmployeesService {
     const before: Record<string, unknown> = {};
     const after: Record<string, unknown> = {};
 
+    // Map Zod input keys → Prisma column names. `systemRole` is the
+    // public field; it lives as `systemRoleSlug` on the row.
+    const COLUMN_MAP: Record<string, string> = { systemRole: 'systemRoleSlug' };
+    // `fullName` is derived from firstName + lastName when either of
+    // them changes — don't allow the client to write it directly.
+    const DERIVED_KEYS = new Set(['fullName']);
+
     const fields = Object.keys(input) as Array<keyof EmployeeUpdateInput>;
     for (const key of fields) {
+      if (DERIVED_KEYS.has(key)) continue;
       const value = input[key];
       if (value === undefined) continue;
-      const existingValue = (existing as Record<string, unknown>)[key];
-      // Cheap deep-equal via JSON; precise enough for our scalar+Date+Json fields.
+      const column = COLUMN_MAP[key] ?? key;
+      const existingValue = (existing as Record<string, unknown>)[column];
       if (JSON.stringify(existingValue) === JSON.stringify(value)) continue;
       changed.push(key);
       before[key] = existingValue;
       after[key] = value;
-      (data as Record<string, unknown>)[key] =
+      (data as Record<string, unknown>)[column] =
         key === 'email' && typeof value === 'string' ? value.toLowerCase() : value;
+    }
+
+    // If first/last name changed, recompute fullName so the
+    // canonical column stays consistent with what the sheet shows.
+    if (changed.includes('firstName') || changed.includes('lastName')) {
+      const nextFirst = (input.firstName ?? existing.firstName ?? '').trim();
+      const nextLast = (input.lastName ?? existing.lastName ?? '').trim();
+      const nextFullName = [nextFirst, nextLast].filter(Boolean).join(' ') || existing.fullName;
+      if (nextFullName !== existing.fullName) {
+        data.fullName = nextFullName;
+        changed.push('fullName');
+        before.fullName = existing.fullName;
+        after.fullName = nextFullName;
+      }
     }
 
     if (changed.length === 0) {
@@ -504,6 +551,89 @@ export class EmployeesService {
     });
 
     this.events.emit('employee.deleted', { employeeId: id }, { actorId: actor.id });
+  }
+
+  /**
+   * 'Move to Notice' (Danger Zone — left button). Marks the start of
+   * the notice period but does not freeze payroll or revoke login;
+   * those happen on terminate. noticePeriodStart defaults to today.
+   */
+  async moveToNotice(
+    actor: AuthenticatedUser,
+    id: string,
+    input: MoveToNoticeInput,
+  ): Promise<EmployeePublic> {
+    const existing = await prisma.employee.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Employee not found');
+    assertEmployeeReadable(actor, { id: existing.id, departmentId: existing.departmentId });
+    if (existing.terminatedAt) {
+      throw new BadRequestException('Employee is already terminated');
+    }
+
+    const updated = await prisma.employee.update({
+      where: { id },
+      data: { noticePeriodStart: input.noticePeriodStart ?? new Date() },
+      include: EMPLOYEE_PUBLIC_INCLUDE,
+    });
+
+    this.events.emit(
+      'employee.notice.started',
+      {
+        employeeId: id,
+        noticePeriodStart: updated.noticePeriodStart?.toISOString(),
+        remarks: input.remarks,
+      },
+      { actorId: actor.id },
+    );
+
+    const photoUrl = await this.resolveOnePhotoUrl(updated);
+    return toEmployeePublic(updated as unknown as EmployeeRowForMapping, actor, photoUrl);
+  }
+
+  /**
+   * Terminate employment (Danger Zone — right button). Sets
+   * terminatedAt + lastWorkingDay + reason + notes. The 'Only a
+   * Super Admin can reverse this' guard from the design lives in
+   * RBAC at the route layer — this method is reachable today only by
+   * users with `employees:terminate`; restoring termination is not
+   * exposed.
+   */
+  async terminate(
+    actor: AuthenticatedUser,
+    id: string,
+    input: TerminateEmployeeInput,
+  ): Promise<EmployeePublic> {
+    const existing = await prisma.employee.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Employee not found');
+    assertEmployeeReadable(actor, { id: existing.id, departmentId: existing.departmentId });
+    if (existing.terminatedAt) {
+      throw new BadRequestException('Employee is already terminated');
+    }
+
+    const updated = await prisma.employee.update({
+      where: { id },
+      data: {
+        terminatedAt: new Date(),
+        lastWorkingDay: input.lastWorkingDay,
+        terminationReason: input.reason,
+        terminationNotes: input.notes ?? null,
+      },
+      include: EMPLOYEE_PUBLIC_INCLUDE,
+    });
+
+    this.events.emit(
+      'employee.terminated',
+      {
+        employeeId: id,
+        terminatedAt: updated.terminatedAt?.toISOString(),
+        lastWorkingDay: updated.lastWorkingDay?.toISOString(),
+        reason: input.reason,
+      },
+      { actorId: actor.id },
+    );
+
+    const photoUrl = await this.resolveOnePhotoUrl(updated);
+    return toEmployeePublic(updated as unknown as EmployeeRowForMapping, actor, photoUrl);
   }
 
   async changeStatus(
