@@ -63,12 +63,14 @@ export default function ImportPage() {
 
   return (
     <AppShell breadcrumbs={[{ label: 'HR Core' }, { label: 'Employees' }, { label: 'Import' }]}>
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-fn-fg text-[22px] font-semibold tracking-tight">Import employees</h1>
+      <div className="gap-fn-5 mx-auto flex w-full max-w-4xl flex-col">
+        <div className="gap-fn-1 flex flex-col">
+          <h1 className="text-fn-fg font-fn-semibold tracking-fn-tight text-[22px]">
+            Import employees
+          </h1>
           <p className="text-fn-fg-muted text-[13px]">
             Upload a CSV with one employee per row. Headers must match{' '}
-            <code className="rounded-fn-xs bg-fn-bg-inset px-1 py-0.5 font-mono text-[12px]">
+            <code className="rounded-fn-xs bg-fn-bg-inset px-fn-1 py-fn-0_5 font-mono text-[12px]">
               fullName, email, departmentName, designationName, joinDate
             </code>{' '}
             (required). Optional headers:{' '}
@@ -110,26 +112,28 @@ function Stepper({ current }: { current: Step }) {
     { key: 'result', label: 'Result' },
   ];
   return (
-    <ol className="flex items-center gap-3 text-[13px]">
+    <ol className="gap-fn-3 flex items-center text-[13px]">
       {steps.map((s, idx) => {
         const active = s.key === current;
         const done = steps.findIndex((x) => x.key === current) > idx;
         return (
-          <li key={s.key} className="flex items-center gap-3">
+          <li key={s.key} className="gap-fn-3 flex items-center">
             <span
               className={cn(
-                'flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold',
+                'h-fn-6 w-fn-6 rounded-fn-full font-fn-semibold flex items-center justify-center text-[11px]',
                 active && 'bg-fn-accent text-fn-accent-fg',
                 done && 'bg-fn-accent-soft text-fn-accent-soft-fg',
                 !active && !done && 'border-fn-border bg-fn-bg-panel text-fn-fg-muted border',
               )}
             >
-              {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : idx + 1}
+              {done ? <CheckCircle2 className="h-fn-3_5 w-fn-3_5" /> : idx + 1}
             </span>
-            <span className={cn('font-medium', active || done ? 'text-fn-fg' : 'text-fn-fg-muted')}>
+            <span
+              className={cn('font-fn-medium', active || done ? 'text-fn-fg' : 'text-fn-fg-muted')}
+            >
               {s.label}
             </span>
-            {idx < steps.length - 1 && <span className="bg-fn-divider h-px w-8" aria-hidden />}
+            {idx < steps.length - 1 && <span className="bg-fn-divider w-fn-8 h-px" aria-hidden />}
           </li>
         );
       })}
@@ -151,7 +155,7 @@ function UploadStep({
   return (
     <div
       className={cn(
-        'rounded-fn-lg bg-fn-bg-panel flex flex-col items-center justify-center gap-3 border-2 border-dashed p-12 text-center transition-colors',
+        'rounded-fn-lg bg-fn-bg-panel gap-fn-3 p-fn-12 flex flex-col items-center justify-center border-[2px] border-dashed text-center transition-colors',
         dragOver ? 'border-fn-accent bg-fn-accent-soft/30' : 'border-fn-border',
       )}
       onDragOver={(e) => {
@@ -166,13 +170,13 @@ function UploadStep({
       }}
     >
       <div
-        className="rounded-fn-lg flex h-12 w-12 items-center justify-center"
+        className="rounded-fn-lg h-fn-12 w-fn-12 flex items-center justify-center"
         style={{ background: 'var(--fn-icon-tile)', color: 'var(--fn-icon-tile-fg)' }}
       >
-        <Upload className="h-5 w-5" />
+        <Upload className="h-fn-5 w-fn-5" />
       </div>
-      <div className="flex flex-col gap-1">
-        <p className="text-fn-fg text-[14px] font-medium">
+      <div className="gap-fn-1 flex flex-col">
+        <p className="text-fn-fg font-fn-medium text-[14px]">
           {loading ? 'Validating…' : 'Drop your CSV here'}
         </p>
         <p className="text-fn-fg-muted text-[12.5px]">
@@ -205,8 +209,8 @@ function PreviewStep({
   onBack: () => void;
 }) {
   return (
-    <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="gap-fn-4 flex flex-col">
+      <div className="gap-fn-3 grid grid-cols-2 sm:grid-cols-4">
         <Summary label="Total rows" value={preview.total} tone="default" />
         <Summary label="Valid" value={preview.valid} tone="success" />
         <Summary label="Warnings" value={preview.warnings} tone="warning" />
@@ -215,31 +219,33 @@ function PreviewStep({
 
       <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm overflow-hidden border">
         <table className="w-full text-[12.5px]">
-          <thead className="bg-fn-bg-subtle text-fn-fg-faint text-[11px] font-semibold uppercase tracking-wider">
+          <thead className="bg-fn-bg-subtle text-fn-fg-faint font-fn-semibold tracking-fn-uppercase-tight text-[11px] uppercase">
             <tr>
-              <th className="w-12 px-3 py-2 text-left">Row</th>
-              <th className="w-20 px-3 py-2 text-left">Status</th>
-              <th className="px-3 py-2 text-left">Full name</th>
-              <th className="px-3 py-2 text-left">Email</th>
-              <th className="px-3 py-2 text-left">Department</th>
-              <th className="px-3 py-2 text-left">Issues</th>
+              <th className="w-fn-12 px-fn-3 py-fn-2 text-left">Row</th>
+              <th className="w-fn-20 px-fn-3 py-fn-2 text-left">Status</th>
+              <th className="px-fn-3 py-fn-2 text-left">Full name</th>
+              <th className="px-fn-3 py-fn-2 text-left">Email</th>
+              <th className="px-fn-3 py-fn-2 text-left">Department</th>
+              <th className="px-fn-3 py-fn-2 text-left">Issues</th>
             </tr>
           </thead>
           <tbody>
             {preview.rows.map((row) => (
               <tr key={row.rowNumber} className="border-fn-divider border-t align-top">
-                <td className="font-tabular text-fn-fg-muted px-3 py-2">{row.rowNumber}</td>
-                <td className="px-3 py-2">
+                <td className="text-fn-fg-muted px-fn-3 py-fn-2 tabular-nums">{row.rowNumber}</td>
+                <td className="px-fn-3 py-fn-2">
                   <StatusChip status={row.status} />
                 </td>
-                <td className="text-fn-fg px-3 py-2">{row.raw.fullName ?? '—'}</td>
-                <td className="text-fn-fg-muted px-3 py-2">{row.raw.email ?? '—'}</td>
-                <td className="text-fn-fg-muted px-3 py-2">{row.raw.departmentName ?? '—'}</td>
-                <td className="px-3 py-2">
+                <td className="text-fn-fg px-fn-3 py-fn-2">{row.raw.fullName ?? '—'}</td>
+                <td className="text-fn-fg-muted px-fn-3 py-fn-2">{row.raw.email ?? '—'}</td>
+                <td className="text-fn-fg-muted px-fn-3 py-fn-2">
+                  {row.raw.departmentName ?? '—'}
+                </td>
+                <td className="px-fn-3 py-fn-2">
                   {row.errors.length === 0 && row.warnings.length === 0 ? (
                     <span className="text-fn-fg-faint">—</span>
                   ) : (
-                    <ul className="flex flex-col gap-1">
+                    <ul className="gap-fn-1 flex flex-col">
                       {row.errors.map((e, i) => (
                         <li key={`e${i}`} className="text-fn-danger-soft-fg">
                           {e}
@@ -259,18 +265,18 @@ function PreviewStep({
         </table>
       </div>
 
-      <div className="flex items-center justify-between gap-3">
+      <div className="gap-fn-3 flex items-center justify-between">
         <Button variant="secondary" onClick={onBack} disabled={committing}>
           ← Back
         </Button>
-        <div className="flex items-center gap-2">
+        <div className="gap-fn-2 flex items-center">
           {preview.errors > 0 && (
             <a
               href={buildErrorReportUrl(preview)}
               download="employee-import-errors.csv"
-              className="text-fn-accent inline-flex items-center gap-1.5 text-[12.5px] font-medium hover:underline"
+              className="text-fn-accent gap-fn-1_5 font-fn-medium inline-flex items-center text-[12.5px] hover:underline"
             >
-              <Download className="h-3.5 w-3.5" /> Download error report
+              <Download className="h-fn-3_5 w-fn-3_5" /> Download error report
             </a>
           )}
           <Button onClick={onCommit} disabled={committing || preview.valid === 0}>
@@ -296,20 +302,20 @@ function ResultStep({
   onView: () => void;
 }) {
   return (
-    <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm flex flex-col items-center gap-4 border p-10 text-center">
+    <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm gap-fn-4 p-fn-10 flex flex-col items-center border text-center">
       <div
-        className="rounded-fn-lg flex h-12 w-12 items-center justify-center"
+        className="rounded-fn-lg h-fn-12 w-fn-12 flex items-center justify-center"
         style={{ background: 'var(--fn-icon-tile)', color: 'var(--fn-icon-tile-fg)' }}
       >
-        <CheckCircle2 className="h-5 w-5" />
+        <CheckCircle2 className="h-fn-5 w-fn-5" />
       </div>
-      <div className="flex flex-col gap-1">
-        <h2 className="text-fn-fg text-[16px] font-semibold">Import complete</h2>
+      <div className="gap-fn-1 flex flex-col">
+        <h2 className="text-fn-fg font-fn-semibold text-[16px]">Import complete</h2>
         <p className="text-fn-fg-muted text-[13px]">
           {result.created} created · {result.skipped} skipped
         </p>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="gap-fn-2 flex items-center">
         <Button variant="outline" onClick={onNew}>
           Import another file
         </Button>
@@ -335,11 +341,13 @@ function Summary({
     danger: 'text-fn-danger-soft-fg',
   }[tone];
   return (
-    <div className="rounded-fn-md border-fn-border bg-fn-bg-panel border p-4">
-      <div className="text-fn-fg-faint text-[11px] font-semibold uppercase tracking-wider">
+    <div className="rounded-fn-md border-fn-border bg-fn-bg-panel p-fn-4 border">
+      <div className="text-fn-fg-faint font-fn-semibold tracking-fn-uppercase-tight text-[11px] uppercase">
         {label}
       </div>
-      <div className={cn('font-tabular mt-1 text-[22px] font-semibold', toneClasses)}>{value}</div>
+      <div className={cn('mt-fn-1 font-fn-semibold text-[22px] tabular-nums', toneClasses)}>
+        {value}
+      </div>
     </div>
   );
 }
@@ -347,19 +355,19 @@ function Summary({
 function StatusChip({ status }: { status: 'valid' | 'warning' | 'error' }) {
   if (status === 'valid')
     return (
-      <span className="bg-fn-success-soft text-fn-success-soft-fg inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-semibold">
-        <CheckCircle2 className="h-3 w-3" /> Valid
+      <span className="bg-fn-success-soft text-fn-success-soft-fg gap-fn-1 rounded-fn-full px-fn-2 py-fn-0_5 font-fn-semibold inline-flex items-center text-[10.5px]">
+        <CheckCircle2 className="h-fn-3 w-fn-3" /> Valid
       </span>
     );
   if (status === 'warning')
     return (
-      <span className="bg-fn-warning-soft text-fn-warning-soft-fg inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-semibold">
-        <AlertCircle className="h-3 w-3" /> Warning
+      <span className="bg-fn-warning-soft text-fn-warning-soft-fg gap-fn-1 rounded-fn-full px-fn-2 py-fn-0_5 font-fn-semibold inline-flex items-center text-[10.5px]">
+        <AlertCircle className="h-fn-3 w-fn-3" /> Warning
       </span>
     );
   return (
-    <span className="bg-fn-danger-soft text-fn-danger-soft-fg inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-semibold">
-      <XCircle className="h-3 w-3" /> Error
+    <span className="bg-fn-danger-soft text-fn-danger-soft-fg gap-fn-1 rounded-fn-full px-fn-2 py-fn-0_5 font-fn-semibold inline-flex items-center text-[10.5px]">
+      <XCircle className="h-fn-3 w-fn-3" /> Error
     </span>
   );
 }

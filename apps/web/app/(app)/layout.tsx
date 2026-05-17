@@ -25,10 +25,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (isLoading || !user) {
     return (
       <div className="bg-fn-bg flex min-h-screen w-full items-center justify-center">
-        <div className="flex w-full max-w-sm flex-col gap-3 p-6">
-          <Skeleton className="h-4 w-32" />
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-32 w-full" />
+        <div className="gap-fn-3 p-fn-6 flex w-full max-w-sm flex-col">
+          <Skeleton className="h-fn-4 w-fn-32" />
+          <Skeleton className="h-fn-10 w-full" />
+          <Skeleton className="h-fn-32 w-full" />
         </div>
       </div>
     );

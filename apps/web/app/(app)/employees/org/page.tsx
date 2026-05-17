@@ -16,10 +16,10 @@ export default function OrgChartPage() {
 
   return (
     <AppShell breadcrumbs={[{ label: 'HR Core' }, { label: 'Org Chart' }]}>
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
-        <div className="flex items-end justify-between gap-3">
-          <div className="flex flex-col gap-1">
-            <h1 className="text-fn-fg text-[22px] font-semibold tracking-tight">Org Chart</h1>
+      <div className="gap-fn-5 mx-auto flex w-full max-w-6xl flex-col">
+        <div className="gap-fn-3 flex items-end justify-between">
+          <div className="gap-fn-1 flex flex-col">
+            <h1 className="text-fn-fg font-fn-semibold tracking-fn-tight text-[22px]">Org Chart</h1>
             <p className="text-fn-fg-muted text-[13px]">
               The reporting hierarchy across every department you can see. Click a card to open the
               profile.
@@ -27,12 +27,12 @@ export default function OrgChartPage() {
           </div>
         </div>
 
-        <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm border p-6">
-          {isLoading && <Skeleton className="h-72 w-full" />}
+        <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm p-fn-6 border">
+          {isLoading && <Skeleton className="h-fn-72 w-full" />}
           {isError && (
-            <div className="rounded-fn-md border-fn-danger-soft bg-fn-danger-soft/40 text-fn-danger-soft-fg flex items-center justify-between border px-3 py-2 text-[12.5px]">
-              <span className="inline-flex items-center gap-2">
-                <AlertCircle className="h-3.5 w-3.5" />{' '}
+            <div className="rounded-fn-md border-fn-danger-soft bg-fn-danger-soft/40 text-fn-danger-soft-fg px-fn-3 py-fn-2 flex items-center justify-between border text-[12.5px]">
+              <span className="gap-fn-2 inline-flex items-center">
+                <AlertCircle className="h-fn-3_5 w-fn-3_5" />{' '}
                 {(error as Error)?.message ?? 'Failed to load.'}
               </span>
               <Button size="sm" variant="outline" onClick={() => refetch()}>
@@ -41,16 +41,16 @@ export default function OrgChartPage() {
             </div>
           )}
           {!isLoading && !isError && (
-            <div className="flex flex-col gap-6">
+            <div className="gap-fn-6 flex flex-col">
               {(data ?? []).length === 0 && (
-                <div className="flex flex-col items-center gap-2 py-12 text-center">
+                <div className="gap-fn-2 py-fn-12 flex flex-col items-center text-center">
                   <div
-                    className="rounded-fn-lg flex h-12 w-12 items-center justify-center"
+                    className="rounded-fn-lg h-fn-12 w-fn-12 flex items-center justify-center"
                     style={{ background: 'var(--fn-icon-tile)', color: 'var(--fn-icon-tile-fg)' }}
                   >
-                    <Network className="h-5 w-5" />
+                    <Network className="h-fn-5 w-fn-5" />
                   </div>
-                  <p className="text-fn-fg text-[14px] font-medium">No hierarchy to show.</p>
+                  <p className="text-fn-fg font-fn-medium text-[14px]">No hierarchy to show.</p>
                   <p className="text-fn-fg-muted text-[13px]">
                     Add employees with manager links to build out the chart.
                   </p>
@@ -77,40 +77,44 @@ function OrgNode({ node, depth }: OrgNodeProps) {
   const hasReports = node.reports.length > 0;
 
   return (
-    <div className={cn('flex flex-col gap-3', depth === 0 ? 'mt-0' : 'mt-2')}>
-      <div className="flex items-center gap-2">
+    <div className={cn('gap-fn-3 flex flex-col', depth === 0 ? 'mt-0' : 'mt-fn-2')}>
+      <div className="gap-fn-2 flex items-center">
         {hasReports ? (
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            className="rounded-fn-xs text-fn-fg-muted hover:bg-fn-bg-inset hover:text-fn-fg inline-flex h-5 w-5 cursor-pointer items-center justify-center"
+            className="rounded-fn-xs text-fn-fg-muted hover:bg-fn-bg-inset hover:text-fn-fg h-fn-5 w-fn-5 inline-flex cursor-pointer items-center justify-center"
             aria-label={expanded ? 'Collapse' : 'Expand'}
           >
-            {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            {expanded ? (
+              <ChevronDown className="h-fn-3 w-fn-3" />
+            ) : (
+              <ChevronRight className="h-fn-3 w-fn-3" />
+            )}
           </button>
         ) : (
-          <span className="inline-block h-5 w-5" aria-hidden />
+          <span className="h-fn-5 w-fn-5 inline-block" aria-hidden />
         )}
         <Link
           href={`/employees/${node.id}`}
-          className="rounded-fn-md border-fn-border bg-fn-bg-panel hover:border-fn-accent hover:bg-fn-accent-soft/40 flex flex-1 items-center gap-3 border p-3 transition-colors"
+          className="rounded-fn-md border-fn-border bg-fn-bg-panel hover:border-fn-accent hover:bg-fn-accent-soft/40 gap-fn-3 p-fn-3 flex flex-1 items-center border transition-colors"
         >
           <EmployeeAvatar fullName={node.fullName} photoUrl={node.photoUrl} size="sm" />
-          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <div className="text-fn-fg truncate text-[13px] font-medium">{node.fullName}</div>
+          <div className="gap-fn-0_5 flex min-w-0 flex-1 flex-col">
+            <div className="text-fn-fg font-fn-medium truncate text-[13px]">{node.fullName}</div>
             <div className="text-fn-fg-muted truncate text-[11.5px]">
               {node.designation} · {node.department}
             </div>
           </div>
           {hasReports && (
-            <span className="font-tabular text-fn-fg-faint text-[11.5px]">
+            <span className="text-fn-fg-faint text-[11.5px] tabular-nums">
               {node.reports.length} report{node.reports.length === 1 ? '' : 's'}
             </span>
           )}
         </Link>
       </div>
       {hasReports && expanded && (
-        <div className="border-fn-divider ml-7 flex flex-col gap-1 border-l pl-3">
+        <div className="border-fn-divider ml-fn-7 gap-fn-1 pl-fn-3 flex flex-col border-l">
           {node.reports.map((child) => (
             <OrgNode key={child.id} node={child} depth={depth + 1} />
           ))}

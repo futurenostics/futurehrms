@@ -20,12 +20,12 @@
 export const legacySkipList = [
   // 'app/(app)/dashboard/page.tsx' — remediated in Sub-phase D.
   // 'app/(app)/employees/[id]/edit/page.tsx' — remediated in Sub-phase D.
-  'app/(app)/employees/[id]/page.tsx',
-  'app/(app)/employees/import/page.tsx',
+  // 'app/(app)/employees/[id]/page.tsx' — remediated in Sub-phase D.
+  // 'app/(app)/employees/import/page.tsx' — remediated in Sub-phase D.
   // 'app/(app)/employees/new/page.tsx' — remediated in Sub-phase D.
-  'app/(app)/employees/org/page.tsx',
+  // 'app/(app)/employees/org/page.tsx' — remediated in Sub-phase D.
   // 'app/(app)/employees/page.tsx' — remediated in Sub-phase D.
-  'app/(app)/layout.tsx',
+  // 'app/(app)/layout.tsx' — remediated in Sub-phase D.
   // 'app/(auth)/layout.tsx' — remediated in Sub-phase D.
   // 'app/(auth)/login/forgot-password-dialog.tsx' — remediated in Sub-phase D.
   // 'app/(auth)/login/login-card.tsx' — remediated in Sub-phase D.
