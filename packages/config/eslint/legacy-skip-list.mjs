@@ -26,9 +26,9 @@ export const legacySkipList = [
   'app/(app)/employees/org/page.tsx',
   'app/(app)/employees/page.tsx',
   'app/(app)/layout.tsx',
-  'app/(auth)/layout.tsx',
-  'app/(auth)/login/forgot-password-dialog.tsx',
-  'app/(auth)/login/login-card.tsx',
+  // 'app/(auth)/layout.tsx' — remediated in Sub-phase D.
+  // 'app/(auth)/login/forgot-password-dialog.tsx' — remediated in Sub-phase D.
+  // 'app/(auth)/login/login-card.tsx' — remediated in Sub-phase D.
   'components/brand/logo.tsx',
   'components/employees/dialogs/change-manager-dialog.tsx',
   'components/employees/dialogs/change-salary-dialog.tsx',

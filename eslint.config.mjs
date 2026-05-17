@@ -2,6 +2,12 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import prettier from 'eslint-config-prettier';
 import globals from 'globals';
+import fnTokens from './packages/config/eslint/rules/no-default-utilities.mjs';
+import { legacySkipList } from './packages/config/eslint/legacy-skip-list.mjs';
+
+// Next.js route groups `(name)` and dynamic params `[name]` are minimatch
+// special chars. Escape them so legacy-file ignores match literally.
+const escapeGlob = (p) => p.replace(/[()[\]]/g, '\\$&');
 
 export default tseslint.config(
   {
@@ -43,9 +49,35 @@ export default tseslint.config(
       curly: ['error', 'all'],
     },
   },
-  // NOTE: The Foundation Reset design-system lockdown
-  // (fn-tokens/no-default-utilities) lives in apps/web/eslint.config.mjs
-  // because its file globs need to resolve against the apps/web cwd.
+  // Foundation Reset — design system lockdown.
+  //
+  // fn-tokens/no-default-utilities fires for every Tailwind default
+  // utility (spacing, sizing, color, radius, shadow, font-size,
+  // weight, leading, tracking) in className strings inside apps/web.
+  // New code uses fn-* only. Legacy files pre-dating Sub-phase A live
+  // in packages/config/eslint/legacy-skip-list.mjs and shrink as
+  // Sub-phase D progresses.
+  //
+  // The plugin is registered once here so the rule name is known
+  // EVERYWHERE — that lets `eslint-disable-next-line
+  // fn-tokens/no-default-utilities` escape-hatch comments work both
+  // from repo-root invocations (lint-staged, CI) and from apps/web
+  // workspace invocations (`pnpm --filter @futurenostics/web lint`).
+  // The actual enforcement is scoped to the apps/web glob below.
+  {
+    plugins: { 'fn-tokens': fnTokens },
+  },
+  {
+    files: ['apps/web/**/*.{ts,tsx,js,jsx,mjs,cjs}'],
+    ignores: [
+      'apps/web/.next/**',
+      'apps/web/node_modules/**',
+      ...legacySkipList.map((p) => escapeGlob(`apps/web/${p}`)),
+    ],
+    rules: {
+      'fn-tokens/no-default-utilities': 'error',
+    },
+  },
   {
     files: ['**/*.test.ts', '**/*.spec.ts', '**/test/**', '**/__tests__/**'],
     rules: {

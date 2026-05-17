@@ -57,7 +57,7 @@ function safeReturnTo(value: string | null | undefined): string {
 export function LoginCard() {
   return (
     <div
-      className="border-fn-border bg-fn-bg-panel grid w-full max-w-[1280px] grid-cols-1 overflow-hidden rounded-2xl border md:grid-cols-2"
+      className="border-fn-border bg-fn-bg-panel rounded-fn-xl grid w-full max-w-[1280px] grid-cols-1 overflow-hidden border md:grid-cols-2"
       style={{ boxShadow: 'var(--fn-auth-card-shadow)' }}
     >
       <LoginForm />
@@ -154,21 +154,21 @@ function LoginForm() {
   );
 
   return (
-    <div className="bg-fn-bg-panel flex flex-col px-8 py-10 md:px-16 md:py-12">
+    <div className="bg-fn-bg-panel px-fn-8 py-fn-10 md:px-fn-16 md:py-fn-12 flex flex-col">
       <Logo size="sm" />
 
       <div className="mx-auto flex w-full max-w-[380px] flex-1 flex-col justify-center">
         <HeroIcon />
-        <h1 className="text-fn-fg text-center text-[24px] font-semibold tracking-tight">
+        <h1 className="text-fn-fg font-fn-semibold tracking-fn-tight text-center text-[24px]">
           Login to your account!
         </h1>
-        <p className="text-fn-fg-muted mx-auto mt-2 max-w-[320px] text-center text-[13.5px] leading-relaxed">
+        <p className="text-fn-fg-muted mt-fn-2 leading-fn-relaxed mx-auto max-w-[320px] text-center text-[13.5px]">
           Enter your registered email address and password to login.
         </p>
 
         {/* aria-live region is always rendered so the role is announced
             consistently when an error appears or updates. */}
-        <div aria-live="polite" aria-atomic="true" className="mt-6 empty:hidden">
+        <div aria-live="polite" aria-atomic="true" className="mt-fn-6 empty:hidden">
           {error && <ErrorBanner error={error} nowMs={nowMs} />}
         </div>
 
@@ -176,7 +176,7 @@ function LoginForm() {
           <form
             noValidate
             onSubmit={form.handleSubmit(onSubmit)}
-            className={cn('mt-4 flex flex-col gap-4', error ? 'mt-3' : 'mt-8')}
+            className={cn('mt-fn-4 gap-fn-4 flex flex-col', error ? 'mt-fn-3' : 'mt-fn-8')}
           >
             <FormField
               control={form.control}
@@ -186,7 +186,7 @@ function LoginForm() {
                   <FormLabel>Email</FormLabel>
                   <FormControl>
                     <InputWithIcon
-                      icon={<Mail className="text-fn-fg-faint h-4 w-4" />}
+                      icon={<Mail className="text-fn-fg-faint h-fn-4 w-fn-4" />}
                       type="email"
                       autoComplete="email"
                       placeholder="eg. asma.ali@futurenostics.com"
@@ -211,7 +211,7 @@ function LoginForm() {
                   <FormLabel>Password</FormLabel>
                   <FormControl>
                     <InputWithIcon
-                      icon={<Lock className="text-fn-fg-faint h-4 w-4" />}
+                      icon={<Lock className="text-fn-fg-faint h-fn-4 w-fn-4" />}
                       type={showPassword ? 'text' : 'password'}
                       autoComplete="current-password"
                       placeholder="••••••••••••"
@@ -229,9 +229,9 @@ function LoginForm() {
                           className="text-fn-fg-faint hover:text-fn-fg-muted cursor-pointer"
                         >
                           {showPassword ? (
-                            <EyeOff className="h-3.5 w-3.5" />
+                            <EyeOff className="h-fn-3_5 w-fn-3_5" />
                           ) : (
-                            <Eye className="h-3.5 w-3.5" />
+                            <Eye className="h-fn-3_5 w-fn-3_5" />
                           )}
                         </button>
                       }
@@ -243,14 +243,14 @@ function LoginForm() {
               )}
             />
 
-            <div className="mt-0.5 flex items-center justify-between">
+            <div className="mt-fn-0_5 flex items-center justify-between">
               <FormField
                 control={form.control}
                 name="rememberMe"
                 render={({ field }) => (
                   <label
                     htmlFor={rememberCheckboxId}
-                    className="text-fn-fg-muted inline-flex cursor-pointer select-none items-center gap-2 text-[13px]"
+                    className="text-fn-fg-muted gap-fn-2 inline-flex cursor-pointer select-none items-center text-[13px]"
                   >
                     <Checkbox
                       id={rememberCheckboxId}
@@ -265,7 +265,7 @@ function LoginForm() {
               <button
                 type="button"
                 onClick={() => setForgotOpen(true)}
-                className="text-fn-accent-soft-fg focus-visible:ring-fn-accent rounded-fn-xs cursor-pointer text-[13px] font-semibold hover:underline focus-visible:outline-none focus-visible:ring-2"
+                className="text-fn-accent-soft-fg focus-visible:ring-fn-accent rounded-fn-xs font-fn-semibold cursor-pointer text-[13px] hover:underline focus-visible:outline-none focus-visible:ring-2"
               >
                 Forgot Password?
               </button>
@@ -275,31 +275,31 @@ function LoginForm() {
               type="submit"
               size="lg"
               disabled={submitDisabled}
-              className="rounded-fn-sm mt-1.5 h-[46px] text-[14px] font-semibold tracking-tight"
+              className="rounded-fn-sm mt-fn-1_5 font-fn-semibold tracking-fn-tight h-[46px] text-[14px]"
               style={{
                 boxShadow: '0 4px 10px -2px color-mix(in oklch, var(--fn-accent) 45%, transparent)',
               }}
             >
               {isSubmitting ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-fn-4 w-fn-4 animate-spin" />
                   Signing in…
                 </>
               ) : (
                 <>
                   Login
-                  <ArrowRight className="h-4 w-4" />
+                  <ArrowRight className="h-fn-4 w-fn-4" />
                 </>
               )}
             </Button>
 
-            <div className="text-fn-fg-faint mt-1.5 flex items-center gap-3 text-[12px]">
+            <div className="text-fn-fg-faint mt-fn-1_5 gap-fn-3 flex items-center text-[12px]">
               <div className="bg-fn-divider h-px flex-1" />
               Or login with
               <div className="bg-fn-divider h-px flex-1" />
             </div>
 
-            <div className="grid grid-cols-3 gap-2.5">
+            <div className="gap-fn-2_5 grid grid-cols-3">
               <SocialStub kind="google" />
               <SocialStub kind="apple" />
               <SocialStub kind="microsoft" />
@@ -310,7 +310,7 @@ function LoginForm() {
 
       <div className="text-fn-fg-faint flex justify-between text-[11.5px]">
         <span>© 2026 Futurenostics</span>
-        <span className="flex gap-3.5">
+        <span className="gap-fn-3_5 flex">
           <button type="button" className="hover:text-fn-fg-muted cursor-pointer">
             Privacy
           </button>
@@ -334,9 +334,9 @@ function ErrorBanner({ error, nowMs }: { error: LoginError; nowMs: number }) {
   return (
     <div
       role="alert"
-      className="bg-fn-danger-soft text-fn-danger-soft-fg rounded-fn-sm flex items-start gap-2 px-3 py-2.5 text-[12px] leading-snug"
+      className="bg-fn-danger-soft text-fn-danger-soft-fg rounded-fn-sm gap-fn-2 px-fn-3 py-fn-2_5 leading-fn-snug flex items-start text-[12px]"
     >
-      <AlertCircle className="mt-px h-3.5 w-3.5 shrink-0" />
+      <AlertCircle className="h-fn-3_5 w-fn-3_5 mt-px shrink-0" />
       <span>{message}</span>
     </div>
   );
@@ -356,10 +356,10 @@ function formatCooldownSuffix(retryAt: Date | undefined, nowMs: number): string 
 
 function HeroIcon() {
   return (
-    <div className="relative mb-7 flex flex-col items-center">
+    <div className="mb-fn-7 relative flex flex-col items-center">
       <div
         aria-hidden
-        className="pointer-events-none absolute -top-2.5 left-1/2 h-[140px] w-[360px] -translate-x-1/2 opacity-50"
+        className="-top-fn-2_5 pointer-events-none absolute left-1/2 h-[140px] w-[360px] -translate-x-1/2 opacity-50"
         style={{
           backgroundImage: `
             linear-gradient(to right, color-mix(in oklch, var(--fn-accent) 18%, transparent) 1px, transparent 1px),
@@ -371,14 +371,18 @@ function HeroIcon() {
         }}
       />
       <div
-        className="rounded-fn-lg relative z-[1] flex h-16 w-16 items-center justify-center"
+        className="rounded-fn-lg h-fn-16 w-fn-16 relative z-[1] flex items-center justify-center"
         style={{
           background: 'linear-gradient(135deg, var(--fn-accent) 0%, oklch(0.45 0.20 280) 100%)',
           boxShadow:
             '0 12px 24px -6px color-mix(in oklch, var(--fn-accent) 50%, transparent), 0 4px 8px -2px rgba(40, 30, 70, 0.12)',
         }}
       >
-        <LogIn className="h-7 w-7 text-white" strokeWidth={2} />
+        {/* Brand mark stays white in both themes — it sits on the accent-gradient
+            tile which is dark in both modes. fn-fg-invert flips with the theme
+            and wouldn't read against the gradient in dark mode. */}
+        {/* eslint-disable-next-line fn-tokens/no-default-utilities */}
+        <LogIn className="h-fn-7 w-fn-7 text-white" strokeWidth={2} />
       </div>
     </div>
   );
@@ -392,9 +396,11 @@ interface InputWithIconProps extends React.ComponentProps<typeof Input> {
 function InputWithIcon({ icon, suffix, className, ...props }: InputWithIconProps) {
   return (
     <div className="relative">
-      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2">{icon}</span>
-      <Input className={cn('h-[42px] pl-9', suffix ? 'pr-10' : '', className)} {...props} />
-      {suffix && <span className="absolute right-3 top-1/2 -translate-y-1/2">{suffix}</span>}
+      <span className="left-fn-3 pointer-events-none absolute top-1/2 -translate-y-1/2">
+        {icon}
+      </span>
+      <Input className={cn('pl-fn-9 h-[42px]', suffix ? 'pr-fn-10' : '', className)} {...props} />
+      {suffix && <span className="right-fn-3 absolute top-1/2 -translate-y-1/2">{suffix}</span>}
     </div>
   );
 }
@@ -499,10 +505,10 @@ function PromoPanel() {
 
   return (
     <div
-      className="relative hidden flex-col overflow-hidden p-11 md:flex"
+      className="p-fn-11 relative hidden flex-col overflow-hidden md:flex"
       style={{ background: 'var(--fn-auth-promo-bg)' }}
     >
-      <h2 className="text-fn-fg text-center text-[30px] font-semibold tracking-tight">
+      <h2 className="text-fn-fg font-fn-semibold tracking-fn-tight text-center text-[30px]">
         One place for <span style={{ color: 'var(--fn-accent)' }}>everyone</span>
       </h2>
 
@@ -532,11 +538,14 @@ function PromoPanel() {
               background: 'linear-gradient(135deg, var(--fn-accent) 0%, oklch(0.42 0.20 280) 100%)',
             }}
           >
-            <span className="font-display relative text-[36px] font-bold tracking-tight text-white">
+            {/* Same rationale as the LogIn glyph above — brand mark stays
+                white on the accent gradient in both themes. */}
+            {/* eslint-disable-next-line fn-tokens/no-default-utilities */}
+            <span className="font-display font-fn-bold tracking-fn-tight relative text-[36px] text-white">
               F
               <span
                 aria-hidden
-                className="absolute -right-2.5 bottom-1.5 h-2 w-2 rounded-full"
+                className="-right-fn-2_5 bottom-fn-1_5 h-fn-2 w-fn-2 rounded-fn-full absolute"
                 style={{ background: 'oklch(0.94 0.06 175)' }}
               />
             </span>
@@ -584,9 +593,9 @@ function PromoPanel() {
       </div>
 
       <div className="mt-auto">
-        <p className="text-fn-fg-muted text-center text-[14px] italic leading-relaxed">
+        <p className="text-fn-fg-muted leading-fn-relaxed text-center text-[14px] italic">
           Built for{' '}
-          <strong className="text-fn-fg font-semibold not-italic">
+          <strong className="text-fn-fg font-fn-semibold not-italic">
             HR, finance, and engineering
           </strong>{' '}
           — one source of truth for every person, project, and payout.

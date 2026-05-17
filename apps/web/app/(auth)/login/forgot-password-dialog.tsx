@@ -30,23 +30,23 @@ export function ForgotPasswordDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <div className="flex items-center gap-2.5">
+          <div className="gap-fn-2_5 flex items-center">
             <div
-              className="rounded-fn-md flex h-9 w-9 items-center justify-center"
+              className="rounded-fn-md h-fn-9 w-fn-9 flex items-center justify-center"
               style={{
                 background: 'var(--fn-icon-tile)',
                 color: 'var(--fn-icon-tile-fg)',
               }}
             >
-              <Mail className="h-4 w-4" />
+              <Mail className="h-fn-4 w-fn-4" />
             </div>
             <DialogTitle>Password reset</DialogTitle>
           </div>
-          <DialogDescription className="pt-2">
+          <DialogDescription className="pt-fn-2">
             Password resets are currently handled by HR. Email{' '}
             <a
               href="mailto:hr@futurenostics.com"
-              className="text-fn-accent font-medium hover:underline"
+              className="text-fn-accent font-fn-medium hover:underline"
             >
               hr@futurenostics.com
             </a>{' '}
