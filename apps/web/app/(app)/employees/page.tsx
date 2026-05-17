@@ -770,7 +770,7 @@ function EmptyState({ hasFilters, canCreate }: { hasFilters: boolean; canCreate:
       </div>
       {canCreate && (
         <Button asChild variant="outline" size="sm">
-          <Link href="/employees/new">
+          <Link href="/employees?sheet=create">
             <Plus className="h-fn-3_5 w-fn-3_5" /> Add employee
           </Link>
         </Button>
