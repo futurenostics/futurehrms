@@ -16,6 +16,7 @@ import { JwtAuthGuard } from './core/auth/guards/jwt-auth.guard';
 import { PermissionGuard } from './core/auth/guards/permission.guard';
 import { TimelineModule } from './core/timeline/timeline.module';
 import { EmployeesModule } from './modules/employees/employees.module';
+import { ProjectsModule } from './modules/projects/projects.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -33,6 +34,7 @@ import { HealthController } from './health.controller';
     TimelineModule,
     // Domain modules
     EmployeesModule,
+    ProjectsModule,
   ],
   controllers: [HealthController],
   providers: [
