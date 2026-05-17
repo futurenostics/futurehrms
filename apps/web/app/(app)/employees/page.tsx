@@ -310,23 +310,29 @@ export default function EmployeesListPage() {
             {/* Table */}
             <div className="p-fn-3_5">
               {/*
-               * Column widths: Employee flexes to fill remaining space;
-               * every other content column is 170px so EID / Department /
-               * Designation / Status / Join date / Salary read as a
-               * visually even rhythm. First col (checkbox) 48px, last
-               * (kebab) 44px.
+               * Column widths.
+               *
+               * Employee is flex (no width); fixed columns sum to ~834px
+               * in a ~1114px table → Employee gets ~280px, enough for
+               * the 36px avatar + 12px gap + name + email line without
+               * truncation on typical content.
+               *
+               * Earlier iteration had every content column at 170px which
+               * summed to 1112 and starved Employee to 2px (avatars
+               * visible, name + email clipped to nothing — the bug the
+               * user surfaced).
                */}
               <table className="w-full table-fixed border-collapse text-[13px]">
                 <colgroup>
                   <col style={{ width: 48 }} />
                   <col />
-                  <col style={{ width: 170 }} />
-                  <col style={{ width: 170 }} />
-                  <col style={{ width: 170 }} />
-                  <col style={{ width: 170 }} />
-                  <col style={{ width: 170 }} />
-                  {canViewSalary && <col style={{ width: 170 }} />}
-                  <col style={{ width: 44 }} />
+                  <col style={{ width: 110 }} />
+                  <col style={{ width: 150 }} />
+                  <col style={{ width: 160 }} />
+                  <col style={{ width: 130 }} />
+                  <col style={{ width: 140 }} />
+                  {canViewSalary && <col style={{ width: 160 }} />}
+                  <col style={{ width: 36 }} />
                 </colgroup>
                 <thead>
                   <tr>
@@ -336,13 +342,13 @@ export default function EmployeesListPage() {
                           <colgroup>
                             <col style={{ width: 48 }} />
                             <col />
-                            <col style={{ width: 170 }} />
-                            <col style={{ width: 170 }} />
-                            <col style={{ width: 170 }} />
-                            <col style={{ width: 170 }} />
-                            <col style={{ width: 170 }} />
-                            {canViewSalary && <col style={{ width: 170 }} />}
-                            <col style={{ width: 44 }} />
+                            <col style={{ width: 110 }} />
+                            <col style={{ width: 150 }} />
+                            <col style={{ width: 160 }} />
+                            <col style={{ width: 130 }} />
+                            <col style={{ width: 140 }} />
+                            {canViewSalary && <col style={{ width: 160 }} />}
+                            <col style={{ width: 36 }} />
                           </colgroup>
                           <tbody>
                             <tr>
