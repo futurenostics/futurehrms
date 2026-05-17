@@ -152,6 +152,29 @@ All tabular data displays in this app use the `<DataTable>` primitive at `apps/w
 
 See `/style-guide#primitive-data-table` for the full state matrix (default, initial loading, empty, initial error, next-page error, live infinite scroll). The Employees list at `apps/web/app/(app)/employees/page.tsx` is the canonical adoption example.
 
+## Dropdowns
+
+Every dropdown / picker / selectable list in this app uses one of **three primitives** — no bespoke `<select>`, no rolling your own popover-listbox, no inline menus pieced together from buttons and `useState`. Visual spec lives in `docs/design/screens/dropdowns-style-guide/` (screens 194–197 cover Select + Combobox in light/dark).
+
+| Primitive                                                                                                    | Use when                                                                                                                                   | Source                                     |
+| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
+| `Select` (+ `SelectTrigger`, `SelectContent`, `SelectItem`, `SelectGroup`, `SelectLabel`, `SelectSeparator`) | Closed list of options known at render time, single value — countries, statuses, sort orders. No search needed.                            | `apps/web/components/ui/select.tsx`        |
+| `Combobox` / `MultiCombobox`                                                                                 | Searchable list (typically 10+ options, async, or rich rows): employees, departments, designations, managers, tag filters, role assigners. | `apps/web/components/ui/combobox.tsx`      |
+| `DropdownMenu`                                                                                               | Action menus only — kebabs, profile menu, "more actions" buttons. Never use it for value picking.                                          | `apps/web/components/ui/dropdown-menu.tsx` |
+
+Locked trigger shape (matches the design's form-field rhythm):
+
+- `rounded-fn-xs` (6px) on the trigger; content panel uses `rounded-fn-sm` (8px) + `shadow-fn-popover`.
+- `default` trigger is 34px tall (Input parity); `compact` is 28px; `ghost` removes the border for inline edits; `label` prefixes the trigger with a colored eyebrow ("Department: Engineering").
+- Items: 6px rounded inset, `text-fn-base`, optional leading icon and trailing meta slot. Selected item is checkmarked (Select) or backed with `bg-fn-accent-soft/60`.
+- Multi-select trigger shows a chip rail (`bg-fn-accent-soft` + 35%-mix border, matching `Badge`); chips collapse to `+N more` past `maxChips` (default 3); a Clear (×) button appears in the trigger, and a footer with **N selected** + **Clear all** appears in the panel.
+- Empty/no-results uses the `SearchX` illustration tile + "No <thing> match …" copy.
+- Loading uses 4 skeleton rows with an icon-circle + line per row.
+
+If you need behavior a primitive doesn't support (creatable options, async paging, virtualized 10k rows, etc.), **extend the primitive in place** — do not build a parallel implementation. The visual treatment is owned by `select.tsx` / `combobox.tsx`; pages own only options data and the value/values state.
+
+See `/style-guide#primitive-select` and `/style-guide#primitive-combobox` for every state. The Employee form sheet at `apps/web/components/employees/employee-form-sheet.tsx` is the canonical adoption example (11 Combobox call sites — gender, department, designation, manager, contract type, etc.).
+
 ## Asking for clarification
 
 - When something is genuinely ambiguous, ask before deciding.

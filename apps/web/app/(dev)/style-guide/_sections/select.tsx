@@ -4,6 +4,7 @@
 'use client';
 
 import * as React from 'react';
+import { Circle, ShieldCheck, ShieldOff, UserCog } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -14,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Spec } from './label';
 
@@ -92,6 +94,99 @@ export function SelectSection() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="a">Option A</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {/* Variants */}
+      <div className="border-fn-border bg-fn-bg-panel rounded-fn-xs gap-fn-6 p-fn-6 grid grid-cols-1 border md:grid-cols-3">
+        <div className="gap-fn-1_5 flex flex-col">
+          <Label htmlFor="sg-select-compact">Compact (h-28)</Label>
+          <Select>
+            <SelectTrigger id="sg-select-compact" variant="compact">
+              <SelectValue placeholder="Sort by" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="recent">Most recent</SelectItem>
+              <SelectItem value="name">Name A → Z</SelectItem>
+              <SelectItem value="oldest">Oldest first</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="gap-fn-1_5 flex flex-col">
+          <Label htmlFor="sg-select-label">Inline label</Label>
+          <Select defaultValue="eng">
+            <SelectTrigger id="sg-select-label" variant="label" label="Department">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="eng">Engineering</SelectItem>
+              <SelectItem value="ops">Operations</SelectItem>
+              <SelectItem value="hr">HR &amp; People</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="gap-fn-1_5 flex flex-col">
+          <Label htmlFor="sg-select-ghost">Ghost (inline edit)</Label>
+          <Select defaultValue="recent">
+            <SelectTrigger id="sg-select-ghost" variant="ghost">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="recent">Most recent</SelectItem>
+              <SelectItem value="name">Name A → Z</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {/* Rich option types */}
+      <div className="border-fn-border bg-fn-bg-panel rounded-fn-xs gap-fn-6 p-fn-6 grid grid-cols-1 border md:grid-cols-2">
+        <div className="gap-fn-1_5 flex flex-col">
+          <Label htmlFor="sg-select-rich">Rich rows — icon + trailing meta</Label>
+          <Select defaultValue="probation">
+            <SelectTrigger id="sg-select-rich">
+              <SelectValue placeholder="Pick status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem
+                value="all"
+                icon={<Circle className="h-fn-3 w-fn-3 fill-fn-fg-faint text-fn-fg-faint" />}
+                meta={<Badge tone="default">84</Badge>}
+              >
+                All statuses
+              </SelectItem>
+              <SelectItem
+                value="probation"
+                icon={<ShieldCheck className="h-fn-3_5 w-fn-3_5 text-fn-warning" />}
+                meta={<Badge tone="warning">12</Badge>}
+              >
+                Probation
+              </SelectItem>
+              <SelectItem
+                value="permanent"
+                icon={<ShieldCheck className="h-fn-3_5 w-fn-3_5 text-fn-success" />}
+                meta={<Badge tone="success">58</Badge>}
+              >
+                Permanent
+              </SelectItem>
+              <SelectItem
+                value="contractor"
+                icon={<UserCog className="h-fn-3_5 w-fn-3_5 text-fn-info" />}
+                meta={<Badge tone="info">8</Badge>}
+              >
+                Contractor
+              </SelectItem>
+              <SelectItem
+                value="off"
+                icon={<ShieldOff className="h-fn-3_5 w-fn-3_5 text-fn-danger" />}
+                meta={<Badge tone="danger">6</Badge>}
+              >
+                On leave
+              </SelectItem>
             </SelectContent>
           </Select>
         </div>
