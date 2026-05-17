@@ -37,6 +37,7 @@ export function toCommissionRulePublic(row: CommissionRuleRowForMapping): Commis
     version: row.version,
     poolMode: row.poolMode as PoolMode,
     poolValue: Number(row.poolValue),
+    minProjectRevenueUsd: Number(row.minProjectRevenueUsd),
     rolePercentages: row.rolePercentages as RolePercentages,
     disbursementSchedule: (row.disbursementSchedule as Record<string, unknown> | null) ?? null,
     effectiveFrom: row.effectiveFrom.toISOString(),

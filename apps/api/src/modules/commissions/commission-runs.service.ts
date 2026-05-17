@@ -1,0 +1,760 @@
+/**
+ * Commission Run lifecycle service.
+ *
+ * - list / get
+ * - create (manual: caller picks the monthKey + FX rate)
+ * - recalculate (re-runs the calc engine on a draft, wiping line
+ *   items and any manual adjustments — caller must confirm)
+ * - adjustLineItem (draft only — patches leave/manual/isHeld with
+ *   audit-logged delta)
+ * - submitForApproval (draft → pending_approval)
+ * - approve (pending_approval → approved). Soft SoD: approver may
+ *   be the submitter; `approverIsSubmitter` flag captures it for
+ *   the warning banner.
+ * - reject (pending_approval → rejected). rejectReason required.
+ * - lock (approved → locked). Phase 7+ payout step calls this.
+ * - exportCsv (any state — RFC 4180 with the line-item columns
+ *   PNG 09 shows)
+ *
+ * Scoping for reads: HR sees everything; everyone else with
+ * `view_own_breakdown` sees only their own line items inside a run.
+ */
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { prisma } from '@futurenostics/db';
+import { Prisma } from '@prisma/client';
+import {
+  COMMISSION_RUN_TRANSITIONS,
+  type CommissionLineItemAdjustInput,
+  type CommissionRunApproveInput,
+  type CommissionRunCreateInput,
+  type CommissionRunDetail,
+  type CommissionRunListQuery,
+  type CommissionRunListResponse,
+  type CommissionRunRejectInput,
+  type CommissionRunStatus,
+  type CommissionRunSubmitInput,
+  type CommissionRunSummary,
+  type EmployeeCommissionBreakdown,
+  type EmployeeCommissionTrend,
+} from '@futurenostics/types';
+import type { AuthenticatedUser } from '../../core/auth/types';
+import { EventBusService } from '../../core/events/event-bus.service';
+import {
+  calcProjectLineItems,
+  computeFinal,
+  monthLabel,
+  roundUsd,
+  type CalcProject,
+} from './commission-calc';
+import {
+  COMMISSION_RUN_INCLUDE,
+  toCommissionLineItemPublic,
+  toCommissionRunDetail,
+  toCommissionRunSummary,
+} from './commission-runs.mapper';
+
+@Injectable()
+export class CommissionRunsService {
+  private readonly logger = new Logger(CommissionRunsService.name);
+
+  constructor(private readonly events: EventBusService) {}
+
+  /* ---------- Permission helpers ---------- */
+
+  private canViewAllRuns(viewer: AuthenticatedUser): boolean {
+    return viewer.permissions.includes('commissions:view_runs');
+  }
+
+  private requireRunsView(viewer: AuthenticatedUser): void {
+    if (!this.canViewAllRuns(viewer)) {
+      throw new ForbiddenException('commissions:view_runs required');
+    }
+  }
+
+  private require(perm: string, viewer: AuthenticatedUser): void {
+    if (!viewer.permissions.includes(perm)) {
+      throw new ForbiddenException(`${perm} required`);
+    }
+  }
+
+  /* ---------- Status guards ---------- */
+
+  private assertTransition(current: CommissionRunStatus, to: CommissionRunStatus): void {
+    const allowed = COMMISSION_RUN_TRANSITIONS[current] ?? [];
+    if (!allowed.includes(to)) {
+      throw new BadRequestException(
+        `Cannot transition commission run from '${current}' to '${to}'. ` +
+          `Allowed: ${allowed.join(', ') || '<terminal>'}`,
+      );
+    }
+  }
+
+  private assertDraft(status: string): void {
+    if (status !== 'draft') {
+      throw new BadRequestException(
+        `Operation requires draft state — run is '${status}'. ` +
+          `Reject the run back to draft to make further changes.`,
+      );
+    }
+  }
+
+  /* ---------- Reads ---------- */
+
+  async list(
+    viewer: AuthenticatedUser,
+    query: CommissionRunListQuery,
+  ): Promise<CommissionRunListResponse> {
+    this.requireRunsView(viewer);
+    const where: Prisma.CommissionRunWhereInput = {};
+    if (query.status) where.status = query.status;
+    if (query.monthPrefix) where.monthKey = { startsWith: query.monthPrefix };
+
+    const [rows, total] = await Promise.all([
+      prisma.commissionRun.findMany({
+        where,
+        orderBy: { monthKey: 'desc' },
+        skip: query.offset,
+        take: query.limit,
+        include: COMMISSION_RUN_INCLUDE,
+      }),
+      prisma.commissionRun.count({ where }),
+    ]);
+
+    return {
+      items: rows.map(toCommissionRunSummary),
+      total,
+      hasMore: query.offset + rows.length < total,
+    };
+  }
+
+  async findOne(viewer: AuthenticatedUser, id: string): Promise<CommissionRunDetail> {
+    this.requireRunsView(viewer);
+    const row = await prisma.commissionRun.findUnique({
+      where: { id },
+      include: COMMISSION_RUN_INCLUDE,
+    });
+    if (!row) throw new NotFoundException('Commission run not found');
+    return toCommissionRunDetail(row);
+  }
+
+  /* ---------- Calc helpers ---------- */
+
+  /* ---------- Writes ---------- */
+
+  async create(
+    viewer: AuthenticatedUser,
+    input: CommissionRunCreateInput,
+  ): Promise<CommissionRunDetail> {
+    this.require('commissions:create_run', viewer);
+
+    const existing = await prisma.commissionRun.findUnique({
+      where: { monthKey: input.monthKey },
+    });
+    if (existing) {
+      throw new BadRequestException(
+        `A commission run already exists for ${input.monthKey}. ` +
+          `Open run ${existing.id} or recalculate it instead of creating a new one.`,
+      );
+    }
+
+    const created = await prisma.$transaction(async (tx) => {
+      const run = await tx.commissionRun.create({
+        data: {
+          monthKey: input.monthKey,
+          fxRateUsdToPkr: new Prisma.Decimal(input.fxRateUsdToPkr),
+          status: 'draft',
+          createdById: viewer.id,
+          notes: input.notes ?? null,
+        },
+      });
+      await this.calculateAndPopulate(tx, run.id, input.monthKey);
+      return run.id;
+    });
+
+    const fresh = await prisma.commissionRun.findUniqueOrThrow({
+      where: { id: created },
+      include: COMMISSION_RUN_INCLUDE,
+    });
+
+    this.events.emit(
+      'commission.run.created',
+      {
+        runId: fresh.id,
+        monthKey: fresh.monthKey,
+        lineItemCount: fresh.lineItems.length,
+      },
+      { actorId: viewer.id },
+    );
+
+    return toCommissionRunDetail(fresh);
+  }
+
+  /**
+   * Re-run the calc engine on a draft run. Wipes ALL line items
+   * (including manual adjustments) and regenerates from current data.
+   * Caller is responsible for warning the user before this hits.
+   */
+  async recalculate(viewer: AuthenticatedUser, id: string): Promise<CommissionRunDetail> {
+    this.require('commissions:create_run', viewer);
+    const existing = await prisma.commissionRun.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Commission run not found');
+    this.assertDraft(existing.status);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.commissionLineItem.deleteMany({ where: { runId: id } });
+      await this.calculateAndPopulate(tx, id, existing.monthKey);
+    });
+
+    this.events.emit('commission.run.recalculated', { runId: id }, { actorId: viewer.id });
+
+    return this.findOne(viewer, id);
+  }
+
+  /**
+   * Public entry for the scheduler (which doesn't sit inside an
+   * outer transaction). Wraps the internal populate in its own TX.
+   */
+  async populateDraft(runId: string, monthKey: string): Promise<void> {
+    await prisma.$transaction(async (tx) => {
+      await this.calculateAndPopulate(tx, runId, monthKey);
+    });
+  }
+
+  /**
+   * Shared by create + recalculate. Builds line items by running the
+   * calc engine on every active project + pulling carry-forward rows
+   * from the previous run. Writes within the given transaction.
+   */
+  private async calculateAndPopulate(
+    tx: Prisma.TransactionClient,
+    runId: string,
+    monthKey: string,
+  ): Promise<void> {
+    const projects = await this.fetchCalcProjectsTx(tx, monthKey);
+    const lineItemsToWrite: Prisma.CommissionLineItemCreateManyInput[] = [];
+
+    for (const project of projects) {
+      const items = calcProjectLineItems(project, { monthKey });
+      for (const item of items) {
+        lineItemsToWrite.push({
+          runId,
+          projectId: item.projectId,
+          employeeId: item.employeeId,
+          roleName: item.roleName,
+          snapshotPercentage: new Prisma.Decimal(item.snapshotPercentage),
+          baseRevenueUsd: new Prisma.Decimal(item.baseRevenueUsd),
+          monthFractionNumerator: item.monthFractionNumerator,
+          monthFractionDenominator: item.monthFractionDenominator,
+          calculatedAmountUsd: new Prisma.Decimal(item.calculatedAmountUsd),
+          leaveAdjustmentUsd: new Prisma.Decimal(0),
+          manualAdjustmentUsd: new Prisma.Decimal(0),
+          isHeld: false,
+          finalAmountUsd: new Prisma.Decimal(item.calculatedAmountUsd),
+        });
+      }
+    }
+
+    // Carry-forward from the previous run's held items.
+    const held = await this.fetchHeldFromPreviousRunTx(tx, monthKey);
+    const carriedRowIds: string[] = [];
+    const currentRunId = runId;
+    for (const { id: prevLineId, runId: prevRunId, lineItem } of held) {
+      // Recreate the row in the current run, linked back to its origin.
+      lineItemsToWrite.push({
+        runId: currentRunId,
+        projectId: lineItem.projectId,
+        employeeId: lineItem.employeeId,
+        roleName: lineItem.roleName,
+        snapshotPercentage: lineItem.snapshotPercentage,
+        baseRevenueUsd: lineItem.baseRevenueUsd,
+        monthFractionNumerator: lineItem.monthFractionNumerator,
+        monthFractionDenominator: lineItem.monthFractionDenominator,
+        calculatedAmountUsd: lineItem.calculatedAmountUsd,
+        leaveAdjustmentUsd: new Prisma.Decimal(0),
+        manualAdjustmentUsd: new Prisma.Decimal(0),
+        isHeld: false,
+        carryForwardFromRunId: prevRunId,
+        finalAmountUsd: lineItem.finalAmountUsd,
+      });
+      carriedRowIds.push(prevLineId);
+    }
+
+    if (lineItemsToWrite.length > 0) {
+      await tx.commissionLineItem.createMany({
+        data: lineItemsToWrite,
+        skipDuplicates: true,
+      });
+    }
+
+    if (carriedRowIds.length > 0) {
+      await tx.commissionLineItem.updateMany({
+        where: { id: { in: carriedRowIds } },
+        data: { carryForwardToRunId: runId },
+      });
+    }
+  }
+
+  // Transaction-bound versions of the fetch helpers so calculateAndPopulate
+  // reads consistent data inside the same TX.
+  private async fetchCalcProjectsTx(
+    tx: Prisma.TransactionClient,
+    _monthKey: string,
+  ): Promise<CalcProject[]> {
+    const projects = await tx.project.findMany({
+      where: {
+        deletedAt: null,
+        status: { in: ['active', 'in_billing', 'on_hold'] },
+      },
+      include: {
+        commissionRule: true,
+        assignments: { where: { removedAt: null } },
+      },
+    });
+    return projects.map((p) => ({
+      id: p.id,
+      revenueUsd: Number(p.revenueUsd),
+      status: p.status,
+      startDate: p.startDate,
+      expectedCompletionDate: p.expectedCompletionDate,
+      rule: {
+        poolMode: p.commissionRule.poolMode as 'percentage' | 'fixed',
+        poolValue: Number(p.commissionRule.poolValue),
+        minProjectRevenueUsd: Number(p.commissionRule.minProjectRevenueUsd),
+      },
+      assignments: p.assignments.map((a) => ({
+        employeeId: a.employeeId,
+        roleName: a.roleName,
+        percentage: Number(a.percentage),
+      })),
+    }));
+  }
+
+  private async fetchHeldFromPreviousRunTx(
+    tx: Prisma.TransactionClient,
+    currentMonthKey: string,
+  ): Promise<
+    Array<{
+      id: string;
+      runId: string;
+      lineItem: Prisma.CommissionLineItemGetPayload<Record<string, never>>;
+    }>
+  > {
+    const previousMonth = previousMonthKey(currentMonthKey);
+    const prevRun = await tx.commissionRun.findUnique({
+      where: { monthKey: previousMonth },
+      include: {
+        lineItems: { where: { isHeld: true, carryForwardToRunId: null } },
+      },
+    });
+    if (!prevRun) return [];
+    return prevRun.lineItems.map((li) => ({
+      id: li.id,
+      runId: prevRun.id,
+      lineItem: li,
+    }));
+  }
+
+  /* ---------- Adjustments ---------- */
+
+  async adjustLineItem(
+    viewer: AuthenticatedUser,
+    runId: string,
+    lineItemId: string,
+    input: CommissionLineItemAdjustInput,
+  ): Promise<CommissionRunDetail> {
+    this.require('commissions:adjust_line_item', viewer);
+    const run = await prisma.commissionRun.findUnique({ where: { id: runId } });
+    if (!run) throw new NotFoundException('Commission run not found');
+    this.assertDraft(run.status);
+
+    const existing = await prisma.commissionLineItem.findUnique({ where: { id: lineItemId } });
+    if (!existing || existing.runId !== runId) {
+      throw new NotFoundException('Line item not found on this run');
+    }
+
+    const data: Prisma.CommissionLineItemUpdateInput = {};
+    let changed = false;
+    if (input.leaveAdjustmentUsd !== undefined) {
+      data.leaveAdjustmentUsd = new Prisma.Decimal(input.leaveAdjustmentUsd);
+      changed = true;
+    }
+    if (input.manualAdjustmentUsd !== undefined) {
+      data.manualAdjustmentUsd = new Prisma.Decimal(input.manualAdjustmentUsd);
+      changed = true;
+    }
+    if (input.manualAdjustmentNote !== undefined) {
+      data.manualAdjustmentNote = input.manualAdjustmentNote;
+      changed = true;
+    }
+    if (input.isHeld !== undefined) {
+      data.isHeld = input.isHeld;
+      changed = true;
+    }
+    if (!changed) return this.findOne(viewer, runId);
+
+    // Recompute final.
+    const newLeave = input.leaveAdjustmentUsd ?? Number(existing.leaveAdjustmentUsd);
+    const newManual = input.manualAdjustmentUsd ?? Number(existing.manualAdjustmentUsd);
+    const finalAmountUsd = computeFinal({
+      calculatedAmountUsd: Number(existing.calculatedAmountUsd),
+      leaveAdjustmentUsd: newLeave,
+      manualAdjustmentUsd: newManual,
+    });
+    data.finalAmountUsd = new Prisma.Decimal(finalAmountUsd);
+
+    await prisma.commissionLineItem.update({ where: { id: lineItemId }, data });
+
+    this.events.emit(
+      'commission.line_item.adjusted',
+      {
+        runId,
+        lineItemId,
+        employeeId: existing.employeeId,
+        projectId: existing.projectId,
+        priorFinalUsd: Number(existing.finalAmountUsd),
+        newFinalUsd: finalAmountUsd,
+      },
+      { actorId: viewer.id },
+    );
+
+    return this.findOne(viewer, runId);
+  }
+
+  /* ---------- Lifecycle ---------- */
+
+  async submitForApproval(
+    viewer: AuthenticatedUser,
+    id: string,
+    input: CommissionRunSubmitInput,
+  ): Promise<CommissionRunSummary> {
+    this.require('commissions:submit_run', viewer);
+    const existing = await prisma.commissionRun.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Commission run not found');
+    this.assertTransition(existing.status as CommissionRunStatus, 'pending_approval');
+
+    await prisma.commissionRun.update({
+      where: { id },
+      data: {
+        status: 'pending_approval',
+        submittedAt: new Date(),
+        submittedById: viewer.id,
+        notes: input.notes ?? existing.notes,
+      },
+    });
+
+    this.events.emit(
+      'commission.run.submitted_for_approval',
+      { runId: id, monthKey: existing.monthKey },
+      { actorId: viewer.id },
+    );
+
+    return this.summary(id);
+  }
+
+  async approve(
+    viewer: AuthenticatedUser,
+    id: string,
+    input: CommissionRunApproveInput,
+  ): Promise<CommissionRunSummary> {
+    this.require('commissions:approve_run', viewer);
+    const existing = await prisma.commissionRun.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Commission run not found');
+    this.assertTransition(existing.status as CommissionRunStatus, 'approved');
+
+    // Confirmation phrase must match `APPROVE <MONTH YEAR>` for the
+    // run's month (case-sensitive, per PNG 10).
+    const expectedPhrase = `APPROVE ${monthLabel(existing.monthKey).toUpperCase()}`;
+    if (input.confirmationPhrase.trim() !== expectedPhrase) {
+      throw new BadRequestException(`Confirmation phrase mismatch. Expected '${expectedPhrase}'.`);
+    }
+
+    const approverIsSubmitter = existing.submittedById === viewer.id;
+
+    await prisma.commissionRun.update({
+      where: { id },
+      data: {
+        status: 'approved',
+        approvedAt: new Date(),
+        approvedById: viewer.id,
+        approverIsSubmitter,
+        approvalConfirmationPhrase: input.confirmationPhrase.trim(),
+        notes: input.notes ?? existing.notes,
+      },
+    });
+
+    // Emit. The Timeline subscriber listens to this and lands a row
+    // for every affected employee (one per recipient).
+    const lineItems = await prisma.commissionLineItem.findMany({
+      where: { runId: id },
+      select: { employeeId: true, finalAmountUsd: true },
+    });
+    const byEmployee = new Map<string, number>();
+    for (const li of lineItems) {
+      byEmployee.set(
+        li.employeeId,
+        (byEmployee.get(li.employeeId) ?? 0) + Number(li.finalAmountUsd),
+      );
+    }
+    this.events.emit(
+      'commission.run.approved',
+      {
+        runId: id,
+        monthKey: existing.monthKey,
+        monthLabel: monthLabel(existing.monthKey),
+        approverIsSubmitter,
+        recipients: Array.from(byEmployee.entries()).map(([employeeId, totalUsd]) => ({
+          employeeId,
+          totalUsd: roundUsd(totalUsd),
+        })),
+      },
+      { actorId: viewer.id },
+    );
+
+    return this.summary(id);
+  }
+
+  async reject(
+    viewer: AuthenticatedUser,
+    id: string,
+    input: CommissionRunRejectInput,
+  ): Promise<CommissionRunSummary> {
+    this.require('commissions:reject_run', viewer);
+    const existing = await prisma.commissionRun.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Commission run not found');
+    this.assertTransition(existing.status as CommissionRunStatus, 'rejected');
+
+    await prisma.commissionRun.update({
+      where: { id },
+      data: {
+        status: 'rejected',
+        rejectedAt: new Date(),
+        rejectedById: viewer.id,
+        rejectReason: input.reason,
+      },
+    });
+
+    this.events.emit(
+      'commission.run.rejected',
+      { runId: id, monthKey: existing.monthKey, reason: input.reason },
+      { actorId: viewer.id },
+    );
+
+    return this.summary(id);
+  }
+
+  async lock(viewer: AuthenticatedUser, id: string): Promise<CommissionRunSummary> {
+    this.require('commissions:lock_run', viewer);
+    const existing = await prisma.commissionRun.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Commission run not found');
+    this.assertTransition(existing.status as CommissionRunStatus, 'locked');
+
+    await prisma.commissionRun.update({
+      where: { id },
+      data: {
+        status: 'locked',
+        lockedAt: new Date(),
+        lockedById: viewer.id,
+      },
+    });
+
+    this.events.emit(
+      'commission.run.locked',
+      { runId: id, monthKey: existing.monthKey },
+      { actorId: viewer.id },
+    );
+
+    return this.summary(id);
+  }
+
+  /**
+   * Re-open a rejected run for further edits. `rejected` → `draft`.
+   * The rejectReason stays on the row so the next draft pass can
+   * show "previously rejected: <reason>".
+   */
+  async reopenRejected(viewer: AuthenticatedUser, id: string): Promise<CommissionRunSummary> {
+    this.require('commissions:create_run', viewer);
+    const existing = await prisma.commissionRun.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Commission run not found');
+    this.assertTransition(existing.status as CommissionRunStatus, 'draft');
+
+    await prisma.commissionRun.update({
+      where: { id },
+      data: { status: 'draft' },
+    });
+    return this.summary(id);
+  }
+
+  /* ---------- CSV export ---------- */
+
+  async exportCsv(viewer: AuthenticatedUser, id: string): Promise<string> {
+    this.require('commissions:export_run', viewer);
+    const run = await prisma.commissionRun.findUnique({
+      where: { id },
+      include: COMMISSION_RUN_INCLUDE,
+    });
+    if (!run) throw new NotFoundException('Commission run not found');
+
+    const headers = [
+      'Run',
+      'Status',
+      'Employee EID',
+      'Employee Name',
+      'Department',
+      'Project',
+      'Client',
+      'Category',
+      'Role',
+      'Snapshot %',
+      'Base Revenue USD',
+      'Month Fraction',
+      'Calculated USD',
+      'Leave Adjustment USD',
+      'Manual Adjustment USD',
+      'Manual Note',
+      'Held',
+      'Carry-forward from',
+      'Final USD',
+    ];
+    const rows: string[][] = [headers];
+    for (const li of run.lineItems) {
+      rows.push([
+        run.monthKey,
+        run.status,
+        li.employee.eid,
+        li.employee.fullName,
+        li.employee.department?.name ?? '',
+        li.project.name,
+        li.project.clientName,
+        li.project.category.name,
+        li.roleName,
+        String(Number(li.snapshotPercentage)),
+        String(Number(li.baseRevenueUsd)),
+        `${li.monthFractionNumerator}/${li.monthFractionDenominator}`,
+        String(Number(li.calculatedAmountUsd)),
+        String(Number(li.leaveAdjustmentUsd)),
+        String(Number(li.manualAdjustmentUsd)),
+        li.manualAdjustmentNote ?? '',
+        li.isHeld ? 'yes' : 'no',
+        li.carryForwardFromRunId ?? '',
+        String(Number(li.finalAmountUsd)),
+      ]);
+    }
+
+    return rows.map((row) => row.map(csvEscape).join(',')).join('\n');
+  }
+
+  /* ---------- Per-employee breakdowns ---------- */
+
+  async employeeBreakdown(
+    viewer: AuthenticatedUser,
+    employeeId: string,
+    monthKey: string,
+  ): Promise<EmployeeCommissionBreakdown> {
+    // Permission: self OR view_all_breakdowns
+    if (
+      viewer.employeeId !== employeeId &&
+      !viewer.permissions.includes('commissions:view_all_breakdowns')
+    ) {
+      throw new ForbiddenException('commissions:view_all_breakdowns required');
+    }
+
+    const run = await prisma.commissionRun.findUnique({
+      where: { monthKey },
+      include: {
+        lineItems: {
+          where: { employeeId },
+          include: {
+            project: { include: { category: true } },
+            employee: { include: { department: true, designation: true } },
+          },
+        },
+      },
+    });
+
+    const lineItems = run?.lineItems.map(toCommissionLineItemPublic) ?? [];
+    const totalUsd = roundUsd(lineItems.reduce((s, li) => s + li.finalAmountUsd, 0));
+
+    return {
+      employeeId,
+      monthKey,
+      monthLabel: monthLabel(monthKey),
+      totalUsd,
+      lineItems,
+      runId: run?.id ?? null,
+      runStatus: (run?.status as CommissionRunStatus | undefined) ?? null,
+    };
+  }
+
+  async employeeTrend(
+    viewer: AuthenticatedUser,
+    employeeId: string,
+    monthsBack: number,
+  ): Promise<EmployeeCommissionTrend> {
+    if (
+      viewer.employeeId !== employeeId &&
+      !viewer.permissions.includes('commissions:view_all_breakdowns')
+    ) {
+      throw new ForbiddenException('commissions:view_all_breakdowns required');
+    }
+
+    const months: string[] = [];
+    const now = new Date();
+    for (let i = 0; i < monthsBack; i += 1) {
+      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+      months.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`);
+    }
+    months.reverse();
+
+    const runs = await prisma.commissionRun.findMany({
+      where: { monthKey: { in: months }, status: { in: ['approved', 'locked'] } },
+      include: {
+        lineItems: { where: { employeeId }, select: { finalAmountUsd: true } },
+      },
+    });
+
+    const byMonth = new Map(
+      runs.map((r) => [
+        r.monthKey,
+        roundUsd(r.lineItems.reduce((s, li) => s + Number(li.finalAmountUsd), 0)),
+      ]),
+    );
+
+    return {
+      employeeId,
+      points: months.map((m) => ({
+        monthKey: m,
+        monthLabel: monthLabel(m),
+        totalUsd: byMonth.get(m) ?? 0,
+      })),
+    };
+  }
+
+  /* ---------- Internal helpers ---------- */
+
+  private async summary(id: string): Promise<CommissionRunSummary> {
+    const fresh = await prisma.commissionRun.findUniqueOrThrow({
+      where: { id },
+      include: COMMISSION_RUN_INCLUDE,
+    });
+    return toCommissionRunSummary(fresh);
+  }
+}
+
+function csvEscape(value: string): string {
+  if (/["\n,]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
+}
+
+/** 'YYYY-MM' → previous month 'YYYY-MM'. */
+function previousMonthKey(monthKey: string): string {
+  const [year, month] = monthKey.split('-').map(Number);
+  if (!year || !month) throw new Error(`Invalid monthKey: ${monthKey}`);
+  const d = new Date(Date.UTC(year, month - 2, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
