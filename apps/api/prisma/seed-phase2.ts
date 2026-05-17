@@ -10,6 +10,7 @@
  * on `findFirst` by full name to wire ProjectAssignment rows).
  */
 import { PrismaClient, Prisma } from '@prisma/client';
+import { calcProjectLineItems, monthLabel } from '../src/modules/commissions/commission-calc';
 
 interface CategorySpec {
   slug: string;
@@ -561,5 +562,136 @@ export async function seedPhase2(prisma: PrismaClient, superAdminUserId: string)
     });
   }
 
+  await seedCommissionRuns(prisma, superAdminUserId);
+
   console.info('[phase2] Seed complete.');
+}
+
+/* ----------------------------------------------------------------
+ * Sample commission runs.
+ *
+ * Creates two runs for the current month and the previous one:
+ *   - previous month → approved + locked-equivalent (status='approved')
+ *   - current month → draft
+ *
+ * Idempotent: skip if a run already exists for the target monthKey.
+ * Uses the same calculation engine the runtime service does so the
+ * seed exercises the math end-to-end.
+ * ---------------------------------------------------------------- */
+async function seedCommissionRuns(prisma: PrismaClient, superAdminUserId: string): Promise<void> {
+  console.info('[phase2] Seeding sample commission runs...');
+
+  const now = new Date();
+  const thisMonth = monthKeyOf(now);
+  const prevMonth = previousMonthKeyOf(thisMonth);
+
+  // Pull projects + their rule + active assignments for the calc engine.
+  const projects = await prisma.project.findMany({
+    where: { deletedAt: null, status: { in: ['active', 'in_billing', 'on_hold'] } },
+    include: {
+      commissionRule: true,
+      assignments: { where: { removedAt: null } },
+    },
+  });
+  const calcProjects = projects.map((p) => ({
+    id: p.id,
+    revenueUsd: Number(p.revenueUsd),
+    status: p.status,
+    startDate: p.startDate,
+    expectedCompletionDate: p.expectedCompletionDate,
+    rule: {
+      poolMode: p.commissionRule.poolMode as 'percentage' | 'fixed',
+      poolValue: Number(p.commissionRule.poolValue),
+      minProjectRevenueUsd: Number(p.commissionRule.minProjectRevenueUsd),
+    },
+    assignments: p.assignments.map((a) => ({
+      employeeId: a.employeeId,
+      roleName: a.roleName,
+      percentage: Number(a.percentage),
+    })),
+  }));
+
+  async function ensureRun(monthKey: string, status: 'draft' | 'approved'): Promise<void> {
+    const existing = await prisma.commissionRun.findUnique({ where: { monthKey } });
+    if (existing) {
+      console.info(
+        `[phase2] Run for ${monthKey} already exists (status=${existing.status}); skipping`,
+      );
+      return;
+    }
+
+    await prisma.$transaction(async (tx) => {
+      const run = await tx.commissionRun.create({
+        data: {
+          monthKey,
+          fxRateUsdToPkr: new Prisma.Decimal(0.0035),
+          status: 'draft',
+          createdById: superAdminUserId,
+          notes: `Seeded ${monthKey} run.`,
+        },
+      });
+
+      const lineItems: Prisma.CommissionLineItemCreateManyInput[] = [];
+      for (const project of calcProjects) {
+        const items = calcProjectLineItems(project, { monthKey });
+        for (const item of items) {
+          lineItems.push({
+            runId: run.id,
+            projectId: item.projectId,
+            employeeId: item.employeeId,
+            roleName: item.roleName,
+            snapshotPercentage: new Prisma.Decimal(item.snapshotPercentage),
+            baseRevenueUsd: new Prisma.Decimal(item.baseRevenueUsd),
+            monthFractionNumerator: item.monthFractionNumerator,
+            monthFractionDenominator: item.monthFractionDenominator,
+            calculatedAmountUsd: new Prisma.Decimal(item.calculatedAmountUsd),
+            leaveAdjustmentUsd: new Prisma.Decimal(0),
+            manualAdjustmentUsd: new Prisma.Decimal(0),
+            isHeld: false,
+            finalAmountUsd: new Prisma.Decimal(item.calculatedAmountUsd),
+          });
+        }
+      }
+      if (lineItems.length > 0) {
+        await tx.commissionLineItem.createMany({ data: lineItems, skipDuplicates: true });
+      }
+
+      // Optionally take the run through submit + approve to land an
+      // approved sample. Audit log captures the transitions; the
+      // timeline subscriber lands the per-employee rows via the
+      // commission.run.approved event when the API is up — for seed,
+      // we set the lifecycle columns directly.
+      if (status === 'approved') {
+        const expectedPhrase = `APPROVE ${monthLabel(monthKey).toUpperCase()}`;
+        await tx.commissionRun.update({
+          where: { id: run.id },
+          data: {
+            status: 'approved',
+            submittedAt: new Date(),
+            submittedById: superAdminUserId,
+            approvedAt: new Date(),
+            approvedById: superAdminUserId,
+            approverIsSubmitter: true,
+            approvalConfirmationPhrase: expectedPhrase,
+          },
+        });
+      }
+    });
+
+    console.info(`[phase2] Created ${monthKey} run with status=${status}`);
+  }
+
+  await ensureRun(prevMonth, 'approved');
+  await ensureRun(thisMonth, 'draft');
+}
+
+function monthKeyOf(d: Date): string {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function previousMonthKeyOf(monthKey: string): string {
+  const [year, month] = monthKey.split('-').map(Number);
+  if (!year || !month) throw new Error(`Invalid monthKey: ${monthKey}`);
+  const d = new Date(Date.UTC(year, month - 2, 1));
+  return monthKeyOf(d);
 }
