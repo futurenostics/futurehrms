@@ -308,45 +308,33 @@ export default function EmployeesListPage() {
             </div>
 
             {/* Table */}
-            <div className="p-fn-3_5">
-              {/*
-               * Column widths.
-               *
-               * Employee is flex (no width); fixed columns sum to ~834px
-               * in a ~1114px table → Employee gets ~280px, enough for
-               * the 36px avatar + 12px gap + name + email line without
-               * truncation on typical content.
-               *
-               * Earlier iteration had every content column at 170px which
-               * summed to 1112 and starved Employee to 2px (avatars
-               * visible, name + email clipped to nothing — the bug the
-               * user surfaced).
-               */}
-              {/*
-               * Single-table layout. An earlier iteration used a nested
-               * inset table inside <th colSpan={9}> to get the rounded
-               * grey header pill — but the nested-table approach is
-               * fragile across browsers: Chrome and Firefox compute
-               * table-fixed column widths slightly differently when a
-               * full-width inner table sits inside a th, producing
-               * sub-pixel column-edge drift that visibly misaligns the
-               * header checkbox vs the row checkboxes (user-surfaced).
-               *
-               * Single table with bg-fn-bg-subtle on each thead td and
-               * first/last cells rounded keeps the same visual pill
-               * but uses ONE colgroup so column edges are guaranteed
-               * identical between header and rows.
-               */}
-              <table className="w-full table-fixed border-collapse text-[13px]">
+            {/*
+             * Column widths — locked to docs/design/screens/employees.jsx
+             * lines 104-114. Nine columns:
+             *   48 / flex / 130 / 130 / 130 / 130 / 130 / 110 / 36
+             * Fixed columns sum to 844px; Employee takes the rest.
+             *
+             * `min-w-[1080px]` on the table guarantees a ~236px Employee
+             * column floor; below that viewport the overflow-x-auto
+             * wrapper produces a horizontal scrollbar instead of letting
+             * fixed columns collapse and content overlap into neighbours.
+             *
+             * Single-table layout (vs nested inset table inside a
+             * th colSpan): one colgroup means column edges are
+             * guaranteed identical between header and body rows, so the
+             * header checkbox cannot drift against the row checkboxes.
+             */}
+            <div className="p-fn-3_5 overflow-x-auto">
+              <table className="w-full min-w-[1080px] table-fixed border-collapse text-[13px]">
                 <colgroup>
                   <col style={{ width: 48 }} />
                   <col />
-                  <col style={{ width: 110 }} />
-                  <col style={{ width: 150 }} />
-                  <col style={{ width: 160 }} />
                   <col style={{ width: 130 }} />
-                  <col style={{ width: 140 }} />
-                  {canViewSalary && <col style={{ width: 160 }} />}
+                  <col style={{ width: 130 }} />
+                  <col style={{ width: 130 }} />
+                  <col style={{ width: 130 }} />
+                  <col style={{ width: 130 }} />
+                  {canViewSalary && <col style={{ width: 110 }} />}
                   <col style={{ width: 36 }} />
                 </colgroup>
                 <thead>
