@@ -104,7 +104,7 @@ export const commissionsManifest: ModuleManifest = {
       requires: 'commissions:approve_run',
     },
   ],
-  auditedEntities: ['CommissionRule'],
+  auditedEntities: ['CommissionRule', 'CommissionRun', 'CommissionLineItem'],
   defaultRolePermissions: [
     { roleSlug: 'employee', actions: ['view_own_breakdown'] },
     { roleSlug: 'team_lead', actions: ['view_own_breakdown'] },

@@ -54,6 +54,12 @@ export const envSchema = z.object({
   // Seed
   SEED_ADMIN_EMAIL: z.string().email().default('admin@futurenostics.local'),
   SEED_ADMIN_PASSWORD: z.string().min(8).default('ChangeMe!Now123'),
+
+  // Commissions
+  // Default USD→PKR FX rate stamped on scheduler-created draft runs.
+  // HR can override per-run before submitting for approval. Stored as
+  // a string in env so float precision is explicit.
+  COMMISSION_DEFAULT_FX_RATE: z.coerce.number().positive().optional().default(0.0035),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;
