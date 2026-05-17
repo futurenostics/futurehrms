@@ -289,6 +289,45 @@ export default function OrgChartPage() {
     setZoom(nextZoom);
   }
 
+  // Select a node and pan the canvas so its card lands in the centre
+  // of the viewport. Used by the search effect and by the clickable
+  // manager / direct-report rows in the details panel. If any ancestor
+  // of the target is collapsed the card isn't in the DOM, so we first
+  // uncollapse every ancestor on the path-to-root.
+  const rootsRef = React.useRef(roots);
+  React.useEffect(() => {
+    rootsRef.current = roots;
+  }, [roots]);
+  const focusNode = React.useCallback((id: string) => {
+    setSelectedId(id);
+    const path = findPathInRoots(rootsRef.current, id);
+    if (path) {
+      // Ancestors only — keep the target's own collapse state alone so
+      // clicking a node doesn't force its own subtree open.
+      const ancestorIds = path.slice(0, -1).map((n) => n.id);
+      setCollapsed((prev) => {
+        if (!ancestorIds.some((aid) => prev.has(aid))) return prev;
+        const next = new Set(prev);
+        for (const aid of ancestorIds) next.delete(aid);
+        return next;
+      });
+    }
+    // wait for layout + transform commit before measuring
+    window.setTimeout(() => {
+      const vp = viewportRef.current;
+      const card = vp?.querySelector<HTMLElement>(`[data-node-id="${id}"]`);
+      if (!vp || !card) return;
+      const vpRect = vp.getBoundingClientRect();
+      const cardRect = card.getBoundingClientRect();
+      const cardCx = cardRect.left + cardRect.width / 2 - vpRect.left;
+      const cardCy = cardRect.top + cardRect.height / 2 - vpRect.top;
+      setPan((p) => ({
+        x: p.x + (vp.clientWidth / 2 - cardCx),
+        y: p.y + (vp.clientHeight / 2 - cardCy),
+      }));
+    }, 80);
+  }, []);
+
   // Pan to the first matching card whenever the search changes, so
   // the user doesn't have to drag around hunting for who they typed.
   // We also auto-select it so the right-side details panel updates.
@@ -327,7 +366,25 @@ export default function OrgChartPage() {
     // change would yank the canvas back during a drag.
   }, [search, dept, roots]);
 
+  // When collapsing/expanding a branch the inner tree reflows; because
+  // the canvas is transform-translated (not scrolled), the just-clicked
+  // card can shift well off-screen at higher zooms. We snapshot the
+  // card's screen position before the toggle and, after React commits
+  // the new layout, nudge `pan` so the same card stays anchored.
+  const pendingAnchorRef = React.useRef<{ id: string; x: number; y: number } | null>(null);
+
   function toggleCollapse(id: string) {
+    const vp = viewportRef.current;
+    const card = vp?.querySelector<HTMLElement>(`[data-node-id="${id}"]`);
+    if (vp && card) {
+      const vpRect = vp.getBoundingClientRect();
+      const cardRect = card.getBoundingClientRect();
+      pendingAnchorRef.current = {
+        id,
+        x: cardRect.left + cardRect.width / 2 - vpRect.left,
+        y: cardRect.top + cardRect.height / 2 - vpRect.top,
+      };
+    }
     setCollapsed((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -335,6 +392,23 @@ export default function OrgChartPage() {
       return next;
     });
   }
+
+  React.useLayoutEffect(() => {
+    const anchor = pendingAnchorRef.current;
+    if (!anchor) return;
+    pendingAnchorRef.current = null;
+    const vp = viewportRef.current;
+    const card = vp?.querySelector<HTMLElement>(`[data-node-id="${anchor.id}"]`);
+    if (!vp || !card) return;
+    const vpRect = vp.getBoundingClientRect();
+    const rect = card.getBoundingClientRect();
+    const newX = rect.left + rect.width / 2 - vpRect.left;
+    const newY = rect.top + rect.height / 2 - vpRect.top;
+    const dx = anchor.x - newX;
+    const dy = anchor.y - newY;
+    if (dx === 0 && dy === 0) return;
+    setPan((p) => ({ x: p.x + dx, y: p.y + dy }));
+  }, [collapsed]);
 
   const totalHeadcount = React.useMemo(() => totalNodes(roots), [roots]);
   const depth = React.useMemo(
@@ -489,7 +563,11 @@ export default function OrgChartPage() {
                   ariaLabel={fullWidth ? 'Show details panel' : 'Expand to full width'}
                   bordered
                 >
-                  <Maximize2 className="h-fn-3_5 w-fn-3_5" />
+                  {fullWidth ? (
+                    <Minimize2 className="h-fn-3_5 w-fn-3_5" />
+                  ) : (
+                    <Maximize2 className="h-fn-3_5 w-fn-3_5" />
+                  )}
                 </ToolbarIconBtn>
               </div>
             </div>
@@ -632,6 +710,7 @@ export default function OrgChartPage() {
                 path={selectedPath ?? []}
                 directReports={selected.reports}
                 totalReports={countDescendants(selected)}
+                onFocusNode={focusNode}
               />
             )}
           </aside>
@@ -853,11 +932,13 @@ function DetailPanel({
   path,
   directReports,
   totalReports,
+  onFocusNode,
 }: {
   node: OrgChartNode;
   path: OrgChartNode[];
   directReports: OrgChartNode[];
   totalReports: number;
+  onFocusNode: (id: string) => void;
 }) {
   const hue = hueFor(node.department);
   const manager = path.length > 1 ? path[path.length - 2] : null;
@@ -909,7 +990,11 @@ function DetailPanel({
           <div className="text-fn-fg-faint font-fn-semibold tracking-fn-uppercase-tight mb-fn-2 text-[11px] uppercase">
             Reports to
           </div>
-          <div className="bg-fn-bg-subtle border-fn-border rounded-fn-xs px-fn-3 py-fn-2_5 gap-fn-2_5 flex items-center border">
+          <button
+            type="button"
+            onClick={() => onFocusNode(manager.id)}
+            className="bg-fn-bg-subtle border-fn-border hover:border-fn-fg-faint hover:bg-fn-bg-panel rounded-fn-xs px-fn-3 py-fn-2_5 gap-fn-2_5 flex w-full cursor-pointer items-center border text-left transition-colors"
+          >
             <span
               aria-hidden
               className="rounded-fn-xs font-fn-semibold h-fn-7 w-fn-7 inline-flex shrink-0 items-center justify-center"
@@ -928,7 +1013,7 @@ function DetailPanel({
               </div>
               <div className="text-fn-fg-faint truncate text-[11px]">{manager.designation}</div>
             </div>
-          </div>
+          </button>
         </div>
       )}
 
@@ -937,22 +1022,28 @@ function DetailPanel({
           <div className="text-fn-fg-faint font-fn-semibold tracking-fn-uppercase-tight mb-fn-2 text-[11px] uppercase">
             Direct reports · {directReports.length}
           </div>
-          <ul className="gap-fn-1_5 flex flex-col">
+          <ul className="gap-fn-0_5 flex flex-col">
             {directReports.map((r) => (
-              <li key={r.id} className="gap-fn-2_5 flex items-center text-[12.5px]">
-                <span
-                  aria-hidden
-                  className="rounded-fn-xs font-fn-semibold h-fn-6 w-fn-6 inline-flex shrink-0 items-center justify-center"
-                  style={{
-                    background: `oklch(0.92 0.07 ${hueFor(r.department)})`,
-                    color: `oklch(0.38 0.16 ${hueFor(r.department)})`,
-                    fontSize: 10,
-                  }}
+              <li key={r.id}>
+                <button
+                  type="button"
+                  onClick={() => onFocusNode(r.id)}
+                  className="rounded-fn-xs px-fn-2 py-fn-1_5 gap-fn-2_5 hover:bg-fn-bg-subtle flex w-full cursor-pointer items-center text-left text-[12.5px] transition-colors"
                 >
-                  {initialsOf(r.fullName)}
-                </span>
-                <span className="text-fn-fg font-fn-medium flex-1 truncate">{r.fullName}</span>
-                <span className="text-fn-fg-faint shrink-0 text-[11px]">{r.designation}</span>
+                  <span
+                    aria-hidden
+                    className="rounded-fn-xs font-fn-semibold h-fn-6 w-fn-6 inline-flex shrink-0 items-center justify-center"
+                    style={{
+                      background: `oklch(0.92 0.07 ${hueFor(r.department)})`,
+                      color: `oklch(0.38 0.16 ${hueFor(r.department)})`,
+                      fontSize: 10,
+                    }}
+                  >
+                    {initialsOf(r.fullName)}
+                  </span>
+                  <span className="text-fn-fg font-fn-medium flex-1 truncate">{r.fullName}</span>
+                  <span className="text-fn-fg-faint shrink-0 text-[11px]">{r.designation}</span>
+                </button>
               </li>
             ))}
           </ul>
