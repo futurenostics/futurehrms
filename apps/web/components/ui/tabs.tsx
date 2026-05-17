@@ -13,7 +13,7 @@ const TabsList = React.forwardRef<
   <TabsPrimitive.List
     ref={ref}
     className={cn(
-      'border-fn-divider text-fn-fg-muted inline-flex h-9 items-center gap-4 border-b',
+      'border-fn-divider text-fn-fg-muted h-fn-9 gap-fn-4 inline-flex items-center border-b',
       className,
     )}
     {...props}
@@ -28,7 +28,10 @@ const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      'relative -mb-px h-9 border-b-2 border-transparent text-[13px] font-medium transition-colors',
+      // Design spec: 2px underline becomes accent on active state.
+      // border-b-2 isn't on the fn-* scale (which is 1px-only), so
+      // arbitrary border-b-[2px] notation.
+      'h-fn-9 text-fn-base font-fn-medium relative -mb-px border-b-[2px] border-transparent transition-colors',
       'hover:text-fn-fg',
       'data-[state=active]:border-fn-accent data-[state=active]:text-fn-fg',
       'focus-visible:ring-fn-accent focus-visible:ring-offset-fn-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
@@ -47,7 +50,7 @@ const TabsContent = React.forwardRef<
   <TabsPrimitive.Content
     ref={ref}
     className={cn(
-      'focus-visible:ring-fn-accent mt-4 focus-visible:outline-none focus-visible:ring-2',
+      'focus-visible:ring-fn-accent mt-fn-4 focus-visible:outline-none focus-visible:ring-2',
       className,
     )}
     {...props}

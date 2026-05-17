@@ -40,6 +40,14 @@ import {
   PopoverSection,
   SheetSection,
 } from './_sections/tier-4';
+import {
+  AlertSection,
+  EmptyStateSection,
+  ProgressSection,
+  SkeletonSection,
+  TabsSection,
+  ToastSection,
+} from './_sections/tier-5';
 
 export const metadata = {
   title: 'Style Guide — Futurenostics',
@@ -513,6 +521,12 @@ function PrimitivesSection() {
       <DialogSection />
       <SheetSection />
       <DropdownMenuSection />
+      <TabsSection />
+      <AlertSection />
+      <ProgressSection />
+      <EmptyStateSection />
+      <SkeletonSection />
+      <ToastSection />
       <div className="bg-fn-bg-panel border-fn-border rounded-fn-xs p-fn-6 border">
         <p className="text-fn-fg-muted text-fn-base leading-fn-normal max-w-[640px]">
           Tier 1 atoms (Label · Separator · Spinner) are now live. Coming next: Tier 2 Form atoms —

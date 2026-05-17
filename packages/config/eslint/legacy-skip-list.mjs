@@ -61,7 +61,7 @@ export const legacySkipList = [
   // 'components/ui/separator.tsx' — remediated in Sub-phase B Tier 1.
   // 'components/ui/sheet.tsx' — remediated in Sub-phase B Tier 4.
   'components/ui/table.tsx',
-  'components/ui/tabs.tsx',
+  // 'components/ui/tabs.tsx' — remediated in Sub-phase B Tier 5.
   // 'components/ui/tooltip.tsx' — remediated in Sub-phase B Tier 3.
 ];
 
