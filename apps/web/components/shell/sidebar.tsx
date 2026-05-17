@@ -203,19 +203,15 @@ function ExpandedLink({ item, active }: { item: NavItem; active: boolean }) {
       {active && <ActiveBar />}
       <Icon className={cn('h-[17px] w-[17px] shrink-0', active ? 'opacity-100' : 'opacity-85')} />
       <span className="flex-1 truncate whitespace-nowrap">{item.label}</span>
+      {/* Count: plain faint 11px text, no background. Informational
+          ("there are 84 employees") rather than actionable. */}
       {item.count != null && !item.badge && (
         <span className="text-fn-fg-faint text-[11px] tabular-nums">{item.count}</span>
       )}
+      {/* Badge: accent-coloured pill. Actionable ("2 things waiting for
+          approval") — demands attention. */}
       {item.badge && (
-        <span
-          className="bg-fn-accent text-fn-accent-fg rounded-fn-full inline-flex items-center justify-center"
-          style={{
-            fontSize: 10.5,
-            fontWeight: 600,
-            lineHeight: 1,
-            padding: '1px 6px',
-          }}
-        >
+        <span className="bg-fn-accent text-fn-accent-fg rounded-fn-full font-fn-semibold leading-fn-unit inline-flex items-center justify-center px-[6px] py-[1px] text-[10.5px]">
           {item.badge}
         </span>
       )}
