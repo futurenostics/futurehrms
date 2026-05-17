@@ -214,3 +214,148 @@ URL state for table filters and search is in scope (Employees writes
 search/filters to the URL — actually it doesn't yet; that's a small
 follow-up). Scroll position is NOT persisted to the URL — it would
 fight with the IntersectionObserver and produce surprising jumps.
+
+
+## Phase 2 — Commissions module — Business rules
+
+These decisions were locked with the user on 2026-05-17 before Phase 2
+Session 1. Each is the authoritative source for the corresponding
+schema or business-logic choice. The design-source-of-truth for this
+phase is `docs/design/screens/commissions-design/` — `commissions.jsx`,
+`commission-rule-form.jsx`, `projects.jsx`, and `approval-inbox.jsx`
+are explicitly *out of date* and must not be referenced.
+
+### CommissionRule key
+
+A rule is keyed by `(department, categoryId, version)` where
+`department` may be the literal string `*` to mean "org-wide
+fallback". Resolution at project-create time:
+
+1. Look for an active rule matching `(project.department, project.categoryId)`.
+2. If none found, fall back to `('*', project.categoryId)`.
+3. If still none, the project cannot be created — surface a validation
+   error pointing the user at Commission Rules.
+
+Rationale: PNG 11 shows separate rule rows per dept × category and
+the master prompt's Phase 2 spec says rules are "grouped by department
+× category", but in practice many categories have the same defaults
+across departments — the `*` fallback avoids the user having to
+re-enter the same numbers per department.
+
+### Role taxonomy
+
+Roles are **configurable per rule** (any string). They are stored
+inside `CommissionRule.rolePercentages: Json` (`{ "winner": 58,
+"communicator": 30, "eligible_team": 12 }`). The schema enforces
+nothing about role names — Winner / Communicator / Eligible team are
+seed data conventions, not enums. This matches the design's intent
+that future categories may need different roles (e.g. B2B's
+"Channel partner") without a migration.
+
+### Pool model
+
+`CommissionRule.poolMode` is `'percentage' | 'fixed'`:
+
+- `percentage` — `poolValue` is the % of project revenue that flows
+  into the commission pool. Default mode (matches PNG 12 toggle).
+- `fixed` — `poolValue` is a USD amount per project, regardless of
+  revenue. Used by "Internal R&D" and similar categories where
+  there's no client revenue.
+
+The calculation engine branches on `poolMode`; the role split
+(rolePercentages) is identical in both modes.
+
+### Categories taxonomy
+
+`ProjectCategory` is a **first-class DB entity** with parent →
+sub-category nesting, color tag, archived flag, and a pointer to its
+default `CommissionRule`. Matches PNG 09 (the taxonomy editor).
+Sub-categories (Johnny, Michele under Upwork) are supported via
+`ProjectCategory.parentId`. The taxonomy editor UI ships in Phase 2.
+
+### Project status taxonomy
+
+Seven states:
+
+| State          | Meaning                                                                                  |
+| -------------- | ---------------------------------------------------------------------------------------- |
+| `draft`        | Saved but not yet launched. No commissions accrue.                                       |
+| `active`       | Role assignments set, commissions can accrue but billing hasn't started.                 |
+| `in_billing`   | Client invoicing in flight; commissions are being calculated each month.                 |
+| `on_hold`      | Paused (held mid-month for any reason). Carry-forward applies.                           |
+| `completed`    | Fully billed. No further line items will be generated.                                   |
+| `cancelled`    | Project cancelled. Future line items void; past line items remain in approved runs.      |
+| `refunded`     | Completed-then-refunded. Past line items get a negative adjustment in the next run.      |
+
+Status transitions are validated server-side. The `change-status`
+endpoint enforces the allowed transitions and audit-logs every change.
+
+### Snapshot scope on Project
+
+`Project.commissionRuleId` is an FK to a specific `CommissionRule`
+row (a specific *version*). Since rule versions are immutable
+(publishing a new version creates a new row, never mutates the old
+one), this FK is a stable contract — future reads will always see the
+exact percentages and pool model that were active at project-create
+time.
+
+We do NOT snapshot the rule body into JSON on the Project. Trade-off:
+every read joins to `commission_rule`, but data isn't duplicated and
+there's no risk of snapshot drift if a backfill ever needs to fix a
+historical rule row.
+
+Per-project overrides (custom %s for a specific project) are stored
+in `ProjectAssignment` rows — one row per (project, employee, role)
+tuple, each with its own `percentage`. The Project also carries
+`hasOverride: boolean` + `overrideReason: string?` so audit can tell
+overridden projects from default-percentage projects at a glance.
+
+### Approve & lock dialog (PNG 10) — Phase 2 rendering
+
+The dialog renders the Payslip-PDF / Disbursement-email / Payoneer-
+export rows as **disabled rows with a "Phase 7" pill**. The actual
+state change (run.status: pending → approved + audit log) DOES fire.
+The disabled rows make it visually obvious to users that those
+downstream actions are *not yet wired*, while keeping the visual
+match with the design intact.
+
+When Phase 7 (PKR Payroll) ships, those rows become active and the
+pill drops. The dialog markup will be the same component.
+
+### Default % seed
+
+The seed reproduces PNG 11 + PNG 12 verbatim:
+
+| Department    | Category         | Pool % | Winner | Communicator | Eligible team |
+| ------------- | ---------------- | -----: | -----: | -----------: | ------------: |
+| Engineering   | External         |   24%  |   50%  |          30%  |          20%  |
+| Engineering   | Upwork           |   38%  |   58%  |          30%  |          12%  |
+| Engineering   | B2B              |   29%  |   70%  |          30%  |           0%  |
+| Business Dev  | External         |   28%  |   *(read amounts: BD Mgr 85%, Lead 12%, Assoc 3%)* | | |
+| Business Dev  | Upwork           |   32%  |   *(read amounts: BD Mgr 85%, Lead 10%, Assoc 5%)* | | |
+| Business Dev  | B2B              |   —    |   *pending — escalated to leadership* | | |
+| Operations    | External         |   12%  |   60%  |          40%  |           0%  |
+| Operations    | Upwork           |   15%  |   60%  |          30%  |          10%  |
+
+Gaps (BD/B2B, anything not pictured) become `status: 'pending'` rule
+rows that render in the rules grid with the "Awaiting decision"
+treatment from PNG 11 so the user can fill them in via the UI.
+
+### Decisions deferred to Session 2
+
+The following decisions block Session 2's calculation engine and
+will be asked when reached:
+
+- Exact disbursement schedule format (single-shot vs monthly
+  fractions vs milestone-based)
+- Leave-prorated math (working-day denominator, half-day rounding)
+- Carry-forward mechanics (how a held project's pool rolls into the
+  next month's run)
+- Approval workflow specifics (separation of duties enforcement,
+  confirmation phrase, single vs multi-approver)
+- Override policy (who can override, note required, second approval)
+- Cancellation / termination handling specifics
+- Role reassignment policy (do future months reflect changes)
+- Minimum project value threshold
+- FX rate pinning per run
+- Tax display (gross vs net)
