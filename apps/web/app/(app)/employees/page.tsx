@@ -504,7 +504,12 @@ function Th({ children, align = 'left', sortable, active, dir, onSort }: ThProps
         onClick={sortable ? onSort : undefined}
         disabled={!sortable}
         className={cn(
-          'inline-flex items-center gap-[5px] transition-colors',
+          // uppercase + tracking duplicated from the <td> wrapper because
+          // browser UA styles set `text-transform: none` on <button>,
+          // which blocks the td's inheritance. Same reason font-size and
+          // letter-spacing get repeated — the button is its own
+          // text-rendering context.
+          'font-fn-medium inline-flex items-center gap-[5px] text-[11px] uppercase tracking-[0.1em] transition-colors',
           align === 'right' && 'flex-row-reverse',
           sortable && 'hover:text-fn-fg cursor-pointer',
           active && 'text-fn-fg',
