@@ -67,6 +67,16 @@ export function EmployeeFormSheet({
   employee,
   onSuccess,
 }: EmployeeFormSheetProps) {
+  // Unsaved-changes guard — if the user has dirtied the form, intercept
+  // the close (X / backdrop / Escape / Cancel) and require confirmation
+  // via a native window.confirm. Lightweight, framework-free, and
+  // matches the browser's beforeunload semantics users already know.
+  const formDirtyRef = React.useRef(false);
+  const requestClose = React.useCallback(() => {
+    if (!formDirtyRef.current || window.confirm('Discard your unsaved changes?')) {
+      onOpenChange(false);
+    }
+  }, [onOpenChange]);
   const router = useRouter();
   const perms = usePermissions();
   const refs = useReferences();
@@ -94,6 +104,12 @@ export function EmployeeFormSheet({
   React.useEffect(() => {
     if (open) form.reset(defaults);
   }, [open, defaults, form]);
+
+  // Keep the dirty ref in sync so the close guard reads the current
+  // form state without re-creating the callback on every keystroke.
+  React.useEffect(() => {
+    formDirtyRef.current = form.formState.isDirty;
+  }, [form.formState.isDirty]);
 
   const watch = form.watch();
   const departmentId = watch.departmentId;
@@ -165,8 +181,28 @@ export function EmployeeFormSheet({
       : `Editing ${employee?.eid ?? '—'} · changes are audit-logged`;
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" width="lg" className="flex flex-col p-0">
+    <Sheet
+      open={open}
+      onOpenChange={(next) => {
+        if (next) onOpenChange(true);
+        else requestClose();
+      }}
+    >
+      <SheetContent
+        side="right"
+        width="lg"
+        className="flex flex-col p-0"
+        // Intercept the built-in X / Escape / overlay-click handlers so
+        // the unsaved-changes confirmation fires before the sheet closes.
+        onEscapeKeyDown={(e) => {
+          e.preventDefault();
+          requestClose();
+        }}
+        onPointerDownOutside={(e) => {
+          if (formDirtyRef.current) e.preventDefault();
+          requestClose();
+        }}
+      >
         {/* ── Sticky header ────────────────────────────────────────── */}
         <SheetHeader className="gap-fn-3 flex-row items-center">
           <span
@@ -520,7 +556,7 @@ export function EmployeeFormSheet({
             </span>
           </div>
           <div className="gap-fn-2 ml-auto flex items-center">
-            <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+            <Button variant="ghost" size="sm" onClick={requestClose}>
               Cancel
             </Button>
             <Button

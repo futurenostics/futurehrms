@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   ChevronDown,
   Download,
@@ -37,7 +37,12 @@ import { StatusPill } from '@/components/employees/status-pill';
 import { EmployeeAvatar } from '@/components/employees/employee-avatar';
 import { EmployeeFormSheet } from '@/components/employees/employee-form-sheet';
 import { KpiStrip } from '@/components/employees/kpi-strip';
-import { useEmployeeStats, useInfiniteEmployees, useReferences } from '@/lib/queries/employees';
+import {
+  useEmployee,
+  useEmployeeStats,
+  useInfiniteEmployees,
+  useReferences,
+} from '@/lib/queries/employees';
 import { usePermissions } from '@/hooks/use-permissions';
 import { cn } from '@/lib/utils';
 
@@ -67,6 +72,8 @@ const API_TO_SORT_KEY: Record<EmployeeSortBy, string> = {
 
 export default function EmployeesListPage() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const perms = usePermissions();
   const referencesQuery = useReferences();
   const statsQuery = useEmployeeStats();
@@ -91,12 +98,55 @@ export default function EmployeesListPage() {
   const [view, setView] = React.useState<ViewMode>('list');
   const [selected, setSelected] = React.useState<string[]>([]);
 
-  // EmployeeFormSheet state — null when closed; a discriminated union when
-  // open so we know which mode to render. URL-state sync (back button,
-  // direct-loaded ?sheet=create) lands in a later commit.
-  const [sheetState, setSheetState] = React.useState<
-    { mode: 'create' } | { mode: 'edit'; employee: EmployeePublic } | null
-  >(null);
+  // EmployeeFormSheet state — derived from the URL so the browser back
+  // button closes the sheet, deep links work, and the open state is
+  // shareable. ?sheet=create opens the create mode; ?sheet=edit&id=…
+  // opens edit mode and fetches the employee by id (the row data isn't
+  // available on hard reload).
+  const sheetParam = searchParams.get('sheet');
+  const sheetEditId = sheetParam === 'edit' ? searchParams.get('id') : null;
+  const sheetEditEmployeeQuery = useEmployee(sheetEditId);
+
+  // Local "intent" state lets us hand the already-loaded row to the
+  // sheet immediately when the user opens edit from a kebab — avoids a
+  // round-trip via useEmployee for the common case.
+  const [pendingEditEmployee, setPendingEditEmployee] = React.useState<EmployeePublic | null>(null);
+
+  const sheetState: { mode: 'create' } | { mode: 'edit'; employee: EmployeePublic } | null =
+    React.useMemo(() => {
+      if (sheetParam === 'create') return { mode: 'create' };
+      if (sheetParam === 'edit') {
+        const employee =
+          pendingEditEmployee && pendingEditEmployee.id === sheetEditId
+            ? pendingEditEmployee
+            : (sheetEditEmployeeQuery.data ?? null);
+        return employee ? { mode: 'edit', employee } : null;
+      }
+      return null;
+    }, [sheetParam, sheetEditId, pendingEditEmployee, sheetEditEmployeeQuery.data]);
+
+  function openSheet(next: 'create' | { id: string; employee?: EmployeePublic }) {
+    const params = new URLSearchParams(searchParams);
+    if (next === 'create') {
+      params.set('sheet', 'create');
+      params.delete('id');
+      setPendingEditEmployee(null);
+    } else {
+      params.set('sheet', 'edit');
+      params.set('id', next.id);
+      setPendingEditEmployee(next.employee ?? null);
+    }
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+  }
+
+  function closeSheet() {
+    const params = new URLSearchParams(searchParams);
+    params.delete('sheet');
+    params.delete('id');
+    const qs = params.toString();
+    router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    setPendingEditEmployee(null);
+  }
 
   React.useEffect(() => {
     const id = window.setTimeout(() => setDebouncedSearch(search), 250);
@@ -183,7 +233,10 @@ export default function EmployeesListPage() {
     (employee: EmployeePublic): DataTableRowAction[] => {
       const items: DataTableRowAction[] = [
         { label: 'View profile', onClick: () => router.push(`/employees/${employee.id}`) },
-        { label: 'Edit details', onClick: () => setSheetState({ mode: 'edit', employee }) },
+        {
+          label: 'Edit details',
+          onClick: () => openSheet({ id: employee.id, employee }),
+        },
         {
           label: 'Change status',
           onClick: () => router.push(`/employees/${employee.id}?action=change-status`),
@@ -243,7 +296,7 @@ export default function EmployeesListPage() {
                 </Button>
               )}
               {canCreate && (
-                <Button size="md" onClick={() => setSheetState({ mode: 'create' })}>
+                <Button size="md" onClick={() => openSheet('create')}>
                   <Plus className="h-fn-4 w-fn-4" /> New employee
                 </Button>
               )}
@@ -409,7 +462,7 @@ export default function EmployeesListPage() {
         <EmployeeFormSheet
           open={sheetState !== null}
           onOpenChange={(next) => {
-            if (!next) setSheetState(null);
+            if (!next) closeSheet();
           }}
           mode={sheetState?.mode ?? 'create'}
           employee={sheetState?.mode === 'edit' ? sheetState.employee : undefined}

@@ -65,7 +65,20 @@ export default function EmployeeProfilePage() {
   const [changeManagerOpen, setChangeManagerOpen] = React.useState(false);
   const [changeSalaryOpen, setChangeSalaryOpen] = React.useState(false);
   const [archiveOpen, setArchiveOpen] = React.useState(false);
-  const [editOpen, setEditOpen] = React.useState(false);
+
+  // Edit-sheet open state derived from ?sheet=edit so the browser back
+  // button closes the sheet and the URL is shareable.
+  const editOpen = searchParams.get('sheet') === 'edit';
+  const setEditOpen = React.useCallback(
+    (next: boolean) => {
+      const params = new URLSearchParams(searchParams);
+      if (next) params.set('sheet', 'edit');
+      else params.delete('sheet');
+      const qs = params.toString();
+      router.push(qs ? `?${qs}` : window.location.pathname, { scroll: false });
+    },
+    [router, searchParams],
+  );
   const archiveMutation = useDeleteEmployee(id ?? '');
 
   function setTab(next: TabKey) {
