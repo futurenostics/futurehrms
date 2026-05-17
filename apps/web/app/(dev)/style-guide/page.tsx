@@ -27,6 +27,7 @@ import { SpinnerSection } from './_sections/spinner';
 import { ButtonSection } from './_sections/button';
 import { InputSection } from './_sections/input';
 import { TextareaSection } from './_sections/textarea';
+import { CheckboxSection } from './_sections/checkbox';
 
 export const metadata = {
   title: 'Style Guide — Futurenostics',
@@ -486,6 +487,7 @@ function PrimitivesSection() {
       <ButtonSection />
       <InputSection />
       <TextareaSection />
+      <CheckboxSection />
       <div className="bg-fn-bg-panel border-fn-border rounded-fn-xs p-fn-6 border">
         <p className="text-fn-fg-muted text-fn-base leading-fn-normal max-w-[640px]">
           Tier 1 atoms (Label · Separator · Spinner) are now live. Coming next: Tier 2 Form atoms —
