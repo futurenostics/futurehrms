@@ -13,6 +13,7 @@ import {
   type EmployeePublic,
   type Gender,
 } from '@futurenostics/types';
+import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -161,8 +162,35 @@ export function EmployeeFormSheet({
   }
 
   function handleSubmitClick() {
-    void form.handleSubmit(onSubmit)();
+    void form.handleSubmit(onSubmit, () => {
+      // Trigger the validation-error banner via a re-render. The
+      // handler runs only when validation fails; setting state here
+      // surfaces the field list at the top of the body.
+      setShowValidationBanner(true);
+    })();
   }
+
+  // Validation error banner — set true on a failed submit attempt,
+  // cleared once the form becomes valid again.
+  const [showValidationBanner, setShowValidationBanner] = React.useState(false);
+  React.useEffect(() => {
+    if (form.formState.isValid) setShowValidationBanner(false);
+  }, [form.formState.isValid]);
+  // Reset when the sheet reopens.
+  React.useEffect(() => {
+    if (open) setShowValidationBanner(false);
+  }, [open]);
+
+  // Audit-significant edit banners. Only render in edit mode; only when
+  // the user has actually dirtied the field; never on initial open.
+  const showManagerBanner = mode === 'edit' && Boolean(form.formState.dirtyFields.managerId);
+  const showStatusBanner = mode === 'edit' && Boolean(form.formState.dirtyFields.statusId);
+  const showSalaryBanner = mode === 'edit' && Boolean(form.formState.dirtyFields.salaryPkr);
+
+  const erroredFieldLabels = React.useMemo(() => {
+    if (!showValidationBanner) return [];
+    return Object.keys(form.formState.errors).map((k) => FIELD_LABELS[k] ?? k);
+  }, [showValidationBanner, form.formState.errors]);
 
   // Reset designation when department changes — the options are filtered
   // by department so the prior value will be invalid.
@@ -246,6 +274,32 @@ export function EmployeeFormSheet({
 
         {/* ── Scrollable body ──────────────────────────────────────── */}
         <SheetBody className="pt-fn-1_5 pb-fn-6 flex flex-col">
+          {/* Inline alert banners — same visual treatment as the OT Rules
+              overlap warning. Order: validation error first (blocking),
+              then info banners about audit-significant changes. */}
+          {showValidationBanner && erroredFieldLabels.length > 0 && (
+            <Alert tone="danger" title="Some fields need attention" className="mt-fn-1 mb-fn-2">
+              {`Required or invalid: ${erroredFieldLabels.join(', ')}`}
+            </Alert>
+          )}
+          {showManagerBanner && (
+            <Alert tone="info" className="mt-fn-1 mb-fn-2">
+              Changing manager creates a timeline entry visible to HR and the old / new managers.
+            </Alert>
+          )}
+          {showStatusBanner && (
+            <Alert tone="info" className="mt-fn-1 mb-fn-2">
+              Changing status records a transition event. Some transitions (e.g. probation →
+              permanent) have downstream effects on review schedules.
+            </Alert>
+          )}
+          {showSalaryBanner && (
+            <Alert tone="warning" className="mt-fn-1 mb-fn-2">
+              Salary changes create a new SalaryHistory entry and an audit-log entry. Be sure the
+              effective date and amount are correct before saving.
+            </Alert>
+          )}
+
           {/* Section 1 — Basics */}
           <SheetSection
             icon={<User className="h-fn-3_5 w-fn-3_5" />}
