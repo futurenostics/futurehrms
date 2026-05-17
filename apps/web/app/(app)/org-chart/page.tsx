@@ -9,11 +9,15 @@ import {
   Maximize2,
   Minimize2,
   Minus,
+  Move,
   Network,
   Plus,
+  RotateCcw,
   Search,
   UserPlus,
   Users,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import type { OrgChartNode } from '@futurenostics/types';
 import { AppShell } from '@/components/shell/app-shell';
@@ -151,11 +155,118 @@ export default function OrgChartPage() {
   const [search, setSearch] = React.useState('');
   const [dept, setDept] = React.useState<string>('All');
   const [compact, setCompact] = React.useState(false);
+  const [fullWidth, setFullWidth] = React.useState(false);
 
   // Default the selected node to the first root once data arrives.
   React.useEffect(() => {
     if (!selectedId && roots[0]) setSelectedId(roots[0].id);
   }, [roots, selectedId]);
+
+  // --- Pan + zoom state for the tree canvas. The tree itself lives
+  // inside an absolutely-positioned wrapper that we translate / scale;
+  // the viewport is the outer canvas div. Drag anywhere on the canvas
+  // background to pan; wheel + Cmd/Ctrl-wheel to zoom; the toolbar
+  // buttons jump to common zoom levels.
+  const [zoom, setZoom] = React.useState(1);
+  const [pan, setPan] = React.useState({ x: 0, y: 0 });
+  const viewportRef = React.useRef<HTMLDivElement | null>(null);
+  const innerRef = React.useRef<HTMLDivElement | null>(null);
+  const dragState = React.useRef<{
+    active: boolean;
+    startX: number;
+    startY: number;
+    baseX: number;
+    baseY: number;
+  } | null>(null);
+  const [isPanning, setIsPanning] = React.useState(false);
+
+  const clampZoom = (z: number) => Math.max(0.4, Math.min(2, z));
+
+  const recenter = React.useCallback(() => {
+    const vp = viewportRef.current;
+    const inner = innerRef.current;
+    if (!vp || !inner) return;
+    // wait a tick so children have laid out
+    requestAnimationFrame(() => {
+      const innerW = inner.scrollWidth;
+      const vpW = vp.clientWidth;
+      setPan({ x: Math.max(0, (vpW - innerW) / 2), y: 24 });
+      setZoom(1);
+    });
+  }, []);
+
+  React.useEffect(() => {
+    if (!isLoading && roots.length > 0) recenter();
+  }, [isLoading, roots, recenter, fullWidth]);
+
+  function onCanvasMouseDown(e: React.MouseEvent) {
+    // Only start a pan if the user grabbed the canvas background — not
+    // a card click. Cards are interactive elements; the wrapper itself
+    // is the pan-handle.
+    if ((e.target as HTMLElement).closest('[data-card]')) return;
+    if ((e.target as HTMLElement).closest('button')) return;
+    e.preventDefault();
+    dragState.current = {
+      active: true,
+      startX: e.clientX,
+      startY: e.clientY,
+      baseX: pan.x,
+      baseY: pan.y,
+    };
+    setIsPanning(true);
+  }
+
+  React.useEffect(() => {
+    function onMove(e: MouseEvent) {
+      const d = dragState.current;
+      if (!d?.active) return;
+      setPan({ x: d.baseX + (e.clientX - d.startX), y: d.baseY + (e.clientY - d.startY) });
+    }
+    function onUp() {
+      if (dragState.current) dragState.current.active = false;
+      setIsPanning(false);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, []);
+
+  function onCanvasWheel(e: React.WheelEvent) {
+    // Cmd/Ctrl + wheel (or pinch) → zoom around the cursor position.
+    // Plain wheel pans (so trackpad two-finger scroll moves the canvas).
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const vp = viewportRef.current;
+      if (!vp) return;
+      const rect = vp.getBoundingClientRect();
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
+      const nextZoom = clampZoom(zoom * (e.deltaY > 0 ? 0.92 : 1.08));
+      const ratio = nextZoom / zoom;
+      setPan({ x: cx - (cx - pan.x) * ratio, y: cy - (cy - pan.y) * ratio });
+      setZoom(nextZoom);
+    } else {
+      e.preventDefault();
+      setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }));
+    }
+  }
+
+  function zoomBy(factor: number) {
+    const vp = viewportRef.current;
+    if (!vp) {
+      setZoom((z) => clampZoom(z * factor));
+      return;
+    }
+    const cx = vp.clientWidth / 2;
+    const cy = vp.clientHeight / 2;
+    const nextZoom = clampZoom(zoom * factor);
+    const ratio = nextZoom / zoom;
+    setPan({ x: cx - (cx - pan.x) * ratio, y: cy - (cy - pan.y) * ratio });
+    setZoom(nextZoom);
+  }
 
   function toggleCollapse(id: string) {
     setCollapsed((prev) => {
@@ -263,7 +374,7 @@ export default function OrgChartPage() {
         </div>
 
         {/* Main grid */}
-        <div className="gap-fn-4 grid grid-cols-1 lg:grid-cols-[1fr_320px]">
+        <div className={cn('gap-fn-4 grid grid-cols-1', !fullWidth && 'lg:grid-cols-[1fr_320px]')}>
           {/* Canvas card */}
           <div className="rounded-fn-sm border-fn-border bg-fn-bg-panel overflow-hidden border">
             <div className="border-fn-divider gap-fn-3 px-fn-5 py-fn-4 flex flex-wrap items-center justify-between border-b">
@@ -281,7 +392,7 @@ export default function OrgChartPage() {
                   </Badge>
                 </div>
               </div>
-              <div className="gap-fn-2 flex items-center">
+              <div className="gap-fn-2 flex flex-wrap items-center">
                 <div className="relative w-[220px]">
                   <Search className="text-fn-fg-faint left-fn-2_5 h-fn-3_5 w-fn-3_5 pointer-events-none absolute top-1/2 -translate-y-1/2" />
                   <Input
@@ -291,34 +402,48 @@ export default function OrgChartPage() {
                     className="pl-fn-8 h-fn-8"
                   />
                 </div>
-                <div className="border-fn-border-strong bg-fn-bg-subtle rounded-fn-xs p-fn-0_5 inline-flex border">
-                  <button
-                    type="button"
-                    onClick={() => setCompact(false)}
-                    className={cn(
-                      'rounded-fn-xs px-fn-2_5 py-fn-1 font-fn-semibold cursor-pointer text-[11.5px] transition-colors',
-                      !compact
-                        ? 'bg-fn-bg-panel text-fn-fg shadow-fn-xs'
-                        : 'text-fn-fg-muted hover:text-fn-fg',
-                    )}
-                    aria-label="Full layout"
-                  >
-                    <Maximize2 className="h-fn-3 w-fn-3 inline-block" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCompact(true)}
-                    className={cn(
-                      'rounded-fn-xs px-fn-2_5 py-fn-1 font-fn-semibold cursor-pointer text-[11.5px] transition-colors',
-                      compact
-                        ? 'bg-fn-bg-panel text-fn-fg shadow-fn-xs'
-                        : 'text-fn-fg-muted hover:text-fn-fg',
-                    )}
-                    aria-label="Compact layout"
-                  >
-                    <Minimize2 className="h-fn-3 w-fn-3 inline-block" />
-                  </button>
+                {/* Zoom cluster */}
+                <div className="border-fn-border-strong bg-fn-bg-subtle rounded-fn-xs p-fn-0_5 gap-fn-0_5 inline-flex items-center border">
+                  <ToolbarIconBtn onClick={() => zoomBy(0.9)} ariaLabel="Zoom out">
+                    <ZoomOut className="h-fn-3_5 w-fn-3_5" />
+                  </ToolbarIconBtn>
+                  <span className="text-fn-fg-muted font-fn-semibold w-[36px] text-center text-[11px] tabular-nums">
+                    {Math.round(zoom * 100)}%
+                  </span>
+                  <ToolbarIconBtn onClick={() => zoomBy(1.1)} ariaLabel="Zoom in">
+                    <ZoomIn className="h-fn-3_5 w-fn-3_5" />
+                  </ToolbarIconBtn>
+                  <span className="bg-fn-border h-fn-4 mx-fn-0_5 w-px" aria-hidden />
+                  <ToolbarIconBtn onClick={recenter} ariaLabel="Fit to screen">
+                    <RotateCcw className="h-fn-3_5 w-fn-3_5" />
+                  </ToolbarIconBtn>
                 </div>
+                {/* Density toggle */}
+                <div className="border-fn-border-strong bg-fn-bg-subtle rounded-fn-xs p-fn-0_5 inline-flex border">
+                  <ToolbarIconBtn
+                    onClick={() => setCompact(false)}
+                    active={!compact}
+                    ariaLabel="Standard density"
+                  >
+                    <Layers className="h-fn-3_5 w-fn-3_5" />
+                  </ToolbarIconBtn>
+                  <ToolbarIconBtn
+                    onClick={() => setCompact(true)}
+                    active={compact}
+                    ariaLabel="Compact density"
+                  >
+                    <Minimize2 className="h-fn-3_5 w-fn-3_5" />
+                  </ToolbarIconBtn>
+                </div>
+                {/* Full-width toggle (hides right sidebar) */}
+                <ToolbarIconBtn
+                  onClick={() => setFullWidth((v) => !v)}
+                  active={fullWidth}
+                  ariaLabel={fullWidth ? 'Show details panel' : 'Expand to full width'}
+                  bordered
+                >
+                  <Maximize2 className="h-fn-3_5 w-fn-3_5" />
+                </ToolbarIconBtn>
               </div>
             </div>
 
@@ -349,19 +474,29 @@ export default function OrgChartPage() {
               </span>
             </div>
 
-            {/* Tree canvas */}
+            {/* Tree canvas — pan + zoom viewport */}
             <div
+              ref={viewportRef}
               className="org-canvas"
+              onMouseDown={onCanvasMouseDown}
+              onWheel={onCanvasWheel}
               style={{
-                padding: '36px 24px',
+                position: 'relative',
+                height: fullWidth ? 'calc(100vh - 280px)' : '560px',
                 background:
                   'radial-gradient(circle at 1px 1px, color-mix(in oklch, var(--fn-fg-faint) 35%, transparent) 1px, transparent 0) 0 0 / 20px 20px var(--fn-bg-subtle)',
-                overflowX: 'auto',
+                overflow: 'hidden',
+                cursor: isPanning ? 'grabbing' : 'grab',
+                userSelect: isPanning ? 'none' : 'auto',
               }}
             >
-              {isLoading && <Skeleton className="h-[320px] w-full" />}
+              {isLoading && (
+                <div className="p-fn-6">
+                  <Skeleton className="h-[320px] w-full" />
+                </div>
+              )}
               {isError && (
-                <div className="text-fn-danger-soft-fg gap-fn-2 py-fn-12 flex items-center justify-center text-[13px]">
+                <div className="text-fn-danger-soft-fg gap-fn-2 py-fn-12 flex h-full items-center justify-center text-[13px]">
                   <AlertCircle className="h-fn-4 w-fn-4" />
                   {(error as Error)?.message ?? 'Failed to load org chart.'}
                   <Button size="sm" variant="outline" onClick={() => refetch()}>
@@ -370,12 +505,26 @@ export default function OrgChartPage() {
                 </div>
               )}
               {!isLoading && !isError && roots.length === 0 && (
-                <div className="text-fn-fg-muted py-fn-12 text-center text-[13px]">
+                <div className="text-fn-fg-muted py-fn-12 flex h-full items-center justify-center text-center text-[13px]">
                   No reporting structure yet. Add employees with manager links to build the chart.
                 </div>
               )}
               {!isLoading && !isError && roots.length > 0 && (
-                <div className="flex justify-center" style={{ minWidth: 'min-content' }}>
+                <div
+                  ref={innerRef}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                    transformOrigin: '0 0',
+                    transition: isPanning ? 'none' : 'transform 120ms ease-out',
+                    display: 'inline-flex',
+                    alignItems: 'flex-start',
+                    padding: '12px 24px',
+                    willChange: 'transform',
+                  }}
+                >
                   {roots.map((root) => (
                     <OrgTree
                       key={root.id}
@@ -391,6 +540,16 @@ export default function OrgChartPage() {
                       highlightedIds={selectedAncestors}
                     />
                   ))}
+                </div>
+              )}
+              {/* Pan/zoom helper overlay (corner hint) */}
+              {!isLoading && !isError && roots.length > 0 && (
+                <div
+                  className="border-fn-border bg-fn-bg-panel/90 text-fn-fg-muted gap-fn-1_5 bottom-fn-3 right-fn-3 rounded-fn-xs px-fn-2_5 py-fn-1 absolute inline-flex items-center border text-[10.5px] backdrop-blur"
+                  style={{ pointerEvents: 'none' }}
+                >
+                  <Move className="h-fn-3 w-fn-3" />
+                  Drag to pan · <span className="font-mono">⌘</span> + wheel to zoom
                 </div>
               )}
             </div>
@@ -543,6 +702,7 @@ function OrgCard({
     <div
       role="button"
       tabIndex={0}
+      data-card
       onClick={onSelect}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -798,6 +958,38 @@ function KpiCell({
   );
 }
 
+function ToolbarIconBtn({
+  onClick,
+  active,
+  ariaLabel,
+  bordered,
+  children,
+}: {
+  onClick: () => void;
+  active?: boolean;
+  ariaLabel: string;
+  bordered?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={ariaLabel}
+      aria-pressed={active}
+      className={cn(
+        'rounded-fn-xs h-fn-7 w-fn-7 inline-flex cursor-pointer items-center justify-center transition-colors',
+        bordered && 'border-fn-border-strong bg-fn-bg-subtle border',
+        active
+          ? 'bg-fn-bg-panel text-fn-fg shadow-fn-xs'
+          : 'text-fn-fg-muted hover:bg-fn-bg-panel hover:text-fn-fg',
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
 function DeptChip({
   name,
   count,
@@ -851,27 +1043,27 @@ function matchesFilters(node: OrgChartNode, search: string, deptFilter: string):
  * + horizontal sibling connector are pure CSS — no SVG.
  */
 const ORG_STYLES = `
-.org-tree { display: inline-flex; flex-direction: column; align-items: center; vertical-align: top; padding: 0 8px; }
+.org-tree { display: inline-flex; flex-direction: column; align-items: center; vertical-align: top; padding: 0 4px; }
 .org-tree-children {
   display: flex; align-items: flex-start; justify-content: center;
-  gap: 0; padding-top: 0; margin-top: 0; position: relative;
+  gap: 0; padding-top: 0; margin-top: 24px; position: relative;
 }
 .org-tree-children::before {
   content: ''; position: absolute;
-  top: -28px; left: 50%; transform: translateX(-50%);
-  width: 2px; height: 28px;
+  top: -24px; left: 50%; transform: translateX(-50%);
+  width: 2px; height: 24px;
   background: var(--fn-border-strong); border-radius: 99px;
 }
 .org-tree-child {
   position: relative;
-  padding-top: 28px;
-  padding-left: 6px;
-  padding-right: 6px;
+  padding-top: 24px;
+  padding-left: 4px;
+  padding-right: 4px;
 }
 .org-tree-child::before {
   content: ''; position: absolute;
   top: 0; left: calc(50% - 1px);
-  width: 2px; height: 28px;
+  width: 2px; height: 24px;
   background: var(--fn-border-strong); border-radius: 99px;
 }
 .org-tree-child.has-sibs::after {
@@ -886,7 +1078,7 @@ const ORG_STYLES = `
 .org-tree-child.only::before {
   content: ''; position: absolute;
   top: 0; left: calc(50% - 1px);
-  width: 2px; height: 28px;
+  width: 2px; height: 24px;
   background: var(--fn-border-strong); border-radius: 99px;
 }
 `;
