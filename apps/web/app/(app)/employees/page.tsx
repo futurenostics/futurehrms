@@ -617,8 +617,13 @@ function EmployeeRow({
           )}
         </td>
       )}
+      {/* Kebab cell — 36px col. The button is 24x24 so it fits inside the
+          col with `pl-0 pr-fn-3` padding (0 + 24 + 12 = 36). The previous
+          28x28 button + pl-fn-1 + pr-[14px] summed to 46, which overflowed
+          back into the salary column and made the kebab visually crowd
+          the salary value. */}
       <td
-        className={cn('py-fn-4_5 pl-fn-1 pr-[14px] text-right align-middle', cellBorder)}
+        className={cn('py-fn-4_5 pr-fn-3 pl-0 text-right align-middle', cellBorder)}
         onClick={(e) => e.stopPropagation()}
       >
         <RowKebabMenu employee={employee} canArchive={canArchive} />
@@ -635,7 +640,7 @@ function RowKebabMenu({ employee, canArchive }: { employee: EmployeePublic; canA
         <button
           type="button"
           aria-label={`Actions for ${employee.fullName}`}
-          className="rounded-fn-xs text-fn-fg-faint hover:bg-fn-bg-inset hover:text-fn-fg-muted focus-visible:ring-fn-accent h-fn-7 w-fn-7 inline-flex cursor-pointer items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2"
+          className="rounded-fn-xs text-fn-fg-faint hover:bg-fn-bg-inset hover:text-fn-fg-muted focus-visible:ring-fn-accent h-fn-6 w-fn-6 inline-flex cursor-pointer items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2"
         >
           <MoreHorizontal className="h-fn-4 w-fn-4" />
         </button>
