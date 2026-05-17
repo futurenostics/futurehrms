@@ -237,10 +237,11 @@ model Employee {
   terminationReason String?
   terminationNotes  String?
 
-  documents          EmployeeDocument[]
-  salaryHistory      SalaryHistory[]
-  timeline           TimelineEntry[]
-  projectAssignments ProjectAssignment[]
+  documents             EmployeeDocument[]
+  salaryHistory         SalaryHistory[]
+  timeline              TimelineEntry[]
+  projectAssignments    ProjectAssignment[]
+  commissionLineItems   CommissionLineItem[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -391,7 +392,8 @@ model Project {
   deletedAt   DateTime?
   createdById String
 
-  assignments ProjectAssignment[]
+  assignments         ProjectAssignment[]
+  commissionLineItems CommissionLineItem[]
 
   @@index([categoryId])
   @@index([departmentId])
@@ -444,6 +446,10 @@ model CommissionRule {
   poolMode  String  // 'percentage' | 'fixed'
   poolValue Decimal @db.Decimal(12, 2)
 
+  // Projects whose revenueUsd is below this threshold get no line
+  // items in the monthly run. 0 = no threshold (the default).
+  minProjectRevenueUsd Decimal @default(0) @db.Decimal(12, 2)
+
   // Roles + splits as JSON. Shape: { winner: 58, communicator: 30, eligible_team: 12 }.
   // Sum should equal 100 in any non-pending row.
   rolePercentages Json
@@ -474,6 +480,129 @@ model CommissionRule {
   @@index([department, categoryId])
   @@index([effectiveFrom, effectiveTo])
   @@index([status])
+}
+
+// ---------- Phase 2 Session 2: Commission Run + Line Item ----------
+//
+// One CommissionRun per (calendar) month per organization. State
+// machine: draft → pending_approval → approved (terminal for Phase 2;
+// `locked` is the Phase-7 step after payout files are generated).
+// `rejected` sends the run back to draft.
+//
+// Line items are the unit of payment: one row per (project,
+// employee, role) tuple per run, with explicit
+// calculation/leave/manual columns that sum to `finalAmountUsd`.
+// Adjustments + leave + carry-forward all flow through the same
+// row so the audit trail and CSV export are uniform.
+
+model CommissionRun {
+  id String @id @default(cuid())
+
+  // 'YYYY-MM' — the month the run is FOR (not when created).
+  monthKey String
+
+  // Pinned FX rate for downstream PKR conversion. Display-only in
+  // Phase 2; Phase 7 reads it to mint payslips.
+  fxRateUsdToPkr Decimal @db.Decimal(14, 6)
+
+  // Status. API enforces: draft | pending_approval | approved |
+  // rejected | locked. `rejected` collapses back to draft; the
+  // rejectReason field is set so the next draft pass shows the
+  // reviewer's note.
+  status String @default("draft")
+
+  // Lifecycle actors + timestamps. Captured per-transition so the
+  // audit trail is dense even outside AuditLog.
+  createdAt    DateTime  @default(now())
+  createdById  String
+  submittedAt  DateTime?
+  submittedById String?
+  approvedAt   DateTime?
+  approvedById String?
+  // True when the submitter and approver are the same person.
+  // Captured per-row so the soft-SoD warning banner doesn't have to
+  // re-derive at display time.
+  approverIsSubmitter Boolean @default(false)
+  rejectedAt   DateTime?
+  rejectedById String?
+  rejectReason String?
+  lockedAt     DateTime?
+  lockedById   String?
+
+  // The typed-phrase confirmation from PNG 10 — captured for audit.
+  approvalConfirmationPhrase String?
+
+  notes String?
+
+  lineItems CommissionLineItem[]
+
+  @@unique([monthKey])
+  @@index([status])
+  @@index([monthKey])
+}
+
+model CommissionLineItem {
+  id String @id @default(cuid())
+
+  runId String
+  run   CommissionRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  // The project + employee + role this line is for. employeeId &
+  // projectId are NOT FK-cascaded — when an employee or project is
+  // soft-deleted, their historical line items must remain readable.
+  projectId  String
+  project    Project   @relation(fields: [projectId], references: [id])
+  employeeId String
+  employee   Employee  @relation(fields: [employeeId], references: [id])
+  roleName   String
+
+  // Snapshot of the assignment percentage at calc time, so future
+  // edits to ProjectAssignment.percentage don't silently shift past
+  // line items.
+  snapshotPercentage Decimal @db.Decimal(5, 2)
+
+  // Snapshot of base inputs at calc time. baseRevenueUsd is the
+  // project's revenue field; monthFractionNumerator /
+  // monthFractionDenominator encode the days-in-month overlap the
+  // PNG-09 `DATE 28/28` column displays.
+  baseRevenueUsd            Decimal @db.Decimal(12, 2)
+  monthFractionNumerator    Int
+  monthFractionDenominator  Int
+
+  // Computed amount before adjustments.
+  calculatedAmountUsd Decimal @db.Decimal(12, 2)
+
+  // Adjustments. Each defaults to 0; HR fills them in during draft
+  // review. The audit-log middleware captures every PATCH on these
+  // columns.
+  leaveAdjustmentUsd   Decimal @default(0) @db.Decimal(12, 2)
+  manualAdjustmentUsd  Decimal @default(0) @db.Decimal(12, 2)
+  manualAdjustmentNote String?
+
+  // Held mid-run — the row's amount is moved to the next run as a
+  // carry-forward line. We mark BOTH directions:
+  //   - the held row in this run gets carryForwardToRunId pointing
+  //     at next month's run (set when next run's draft is created)
+  //   - the next month's carry-forward row gets
+  //     carryForwardFromRunId pointing back here
+  isHeld                Boolean @default(false)
+  carryForwardToRunId   String?
+  carryForwardFromRunId String?
+
+  // Final amount = calculated + leaveAdj + manualAdj. Computed at
+  // write time so the API can serve totals without re-running the
+  // math.
+  finalAmountUsd Decimal @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([runId])
+  @@index([projectId])
+  @@index([employeeId])
+  @@index([carryForwardToRunId])
+  @@index([carryForwardFromRunId])
+  @@unique([runId, projectId, employeeId, roleName])
 }
 
 // ---------- Audit ----------
