@@ -174,3 +174,43 @@ Avatar palette uses a single light-mode set in both themes. The pastels
 are tuned to remain readable on the dark panel; if any user reports a
 contrast issue we'll switch to theme-aware OKLCH variants under
 `--fn-avatar-*` tokens.
+
+## 2026-05-17 — DataTable is the canonical table primitive
+
+Every tabular list in the app (Employees today; Projects, Commissions,
+Payroll, Documents, Leave, Reports, etc. as those modules land) renders
+through `<DataTable>` at `apps/web/components/ui/data-table.tsx`. No
+module gets to build its own bespoke table; functionality gaps are
+closed by extending the primitive. CLAUDE.md carries the rule; this
+entry records the reasoning.
+
+Why a primitive and not a config-driven shadcn re-export:
+
+- Every table in the design uses the same chrome — the rounded grey
+  header pill, the 12px column rhythm, the 48px checkbox/kebab system
+  columns, the per-row hover, the "Showing N of M · End of list"
+  footer. Re-implementing that in every page was producing drift after
+  the second screen.
+- Infinite scroll, selection, and row actions are the same
+  ingredients across every list — they don't need to be re-discovered
+  per module.
+- The primitive is intentionally compositional (cells are React
+  children, not config objects) so it stays flexible without forcing
+  every consumer through a generated DSL.
+
+Pagination is offset+limit on the API (`offset` + `limit` query
+params; response `{ items, total, hasMore }`). Cursor-based pagination
+is a future change — defer until any single list exceeds ~50k rows or
+ordering-sensitivity makes offset unsafe. The migration path is
+isolated to `useInfiniteEmployees` (and any future infinite hooks) +
+the controller's query schema; the primitive itself doesn't care.
+
+Virtualization (`@tanstack/react-virtual` or similar) is deferred.
+Re-evaluate when any single dataset exceeds ~1,000 rows or when
+profiling shows the DOM-row count is causing input lag. Until then,
+the simpler non-virtualized scroll is correct.
+
+URL state for table filters and search is in scope (Employees writes
+search/filters to the URL — actually it doesn't yet; that's a small
+follow-up). Scroll position is NOT persisted to the URL — it would
+fight with the IntersectionObserver and produce surprising jumps.

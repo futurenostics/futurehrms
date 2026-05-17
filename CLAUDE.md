@@ -126,6 +126,17 @@ When you sit down to start a new work block, the first thing you do is verify th
 - Use the established design tokens; never introduce new color values, spacing values, or typography sizes without first adding them to the shared config.
 - shadcn/ui primitives for all interactive components. No custom inline-styled components.
 
+## Tables
+
+All tabular data displays in this app use the `<DataTable>` primitive at `apps/web/components/ui/data-table.tsx`. Do not build custom table markup. If a table needs functionality the primitive doesn't support (column reordering, virtualization, expandable rows, etc.), extend the primitive — do not build a bespoke alternative. The visual treatment (sticky header, column structure via colgroup, design's rounded grey header pill), infinite-scroll mechanics, loading / empty / next-page-error / end-of-list states, selection column, and row-actions kebab column are all owned by the primitive. Pages own only:
+
+- Column definitions (`DataTableColumn<T>[]` — id, header, width, align, sortable, cell renderer).
+- The flattened row data (typically from `useInfiniteQuery` — the page wires `hasMore` / `isFetchingMore` / `onLoadMore` callbacks).
+- Per-row actions (`rowActions(row): DataTableRowAction[]`) and selection state (controlled — parent owns the Set so bulk-action bars can read it).
+- An optional custom empty state and sort callbacks.
+
+See `/style-guide#primitive-data-table` for the full state matrix (default, initial loading, empty, initial error, next-page error, live infinite scroll). The Employees list at `apps/web/app/(app)/employees/page.tsx` is the canonical adoption example.
+
 ## Asking for clarification
 
 - When something is genuinely ambiguous, ask before deciding.
