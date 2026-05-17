@@ -102,8 +102,10 @@ export const employeeSortBySchema = z.enum([
 export type EmployeeSortBy = z.infer<typeof employeeSortBySchema>;
 
 export const employeeListQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(200).default(50),
+  /** Number of rows to skip before returning the next page. */
+  offset: z.coerce.number().int().min(0).default(0),
+  /** Maximum rows in this page. Capped server-side to protect the DB. */
+  limit: z.coerce.number().int().min(1).max(10_000).default(50),
   search: z.string().trim().min(1).optional(),
   departmentId: z.string().optional(),
   statusId: z.string().optional(),
@@ -164,13 +166,12 @@ export const employeePublicSchema = z.object({
 export type EmployeePublic = z.infer<typeof employeePublicSchema>;
 
 export const employeeListResponseSchema = z.object({
-  data: z.array(employeePublicSchema),
-  meta: z.object({
-    page: z.number().int(),
-    pageSize: z.number().int(),
-    total: z.number().int(),
-    totalPages: z.number().int(),
-  }),
+  /** Items in this page, in the requested sort order. */
+  items: z.array(employeePublicSchema),
+  /** Total matching the filters across all pages (ignoring offset/limit). */
+  total: z.number().int(),
+  /** True when more rows are available past this page — i.e. `offset + items.length < total`. */
+  hasMore: z.boolean(),
 });
 export type EmployeeListResponse = z.infer<typeof employeeListResponseSchema>;
 

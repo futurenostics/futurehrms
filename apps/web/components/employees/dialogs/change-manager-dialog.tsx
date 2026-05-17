@@ -34,7 +34,7 @@ export function ChangeManagerDialog({
   onOpenChange: (open: boolean) => void;
   employee: EmployeePublic;
 }) {
-  const candidates = useEmployeesList({ pageSize: 200, sortBy: 'fullName', sortDir: 'asc' });
+  const candidates = useEmployeesList({ limit: 200, sortBy: 'fullName', sortDir: 'asc' });
   const mutation = useChangeManager(employee.id);
 
   const [managerId, setManagerId] = React.useState<string>(employee.manager?.id ?? NONE_VALUE);
@@ -47,7 +47,7 @@ export function ChangeManagerDialog({
     }
   }, [open, employee.manager?.id]);
 
-  const options = candidates.data?.data.filter((e) => e.id !== employee.id && !e.isArchived) ?? [];
+  const options = candidates.data?.items.filter((e) => e.id !== employee.id && !e.isArchived) ?? [];
 
   function submit() {
     if (managerId === (employee.manager?.id ?? NONE_VALUE)) {

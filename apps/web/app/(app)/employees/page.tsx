@@ -85,9 +85,12 @@ export default function EmployeesListPage() {
     setSelected(new Set());
   }, [debouncedSearch, departmentId, statusId, contractType, includeArchived]);
 
+  // Transitional shape — kept until commit 5 swaps the inline table for
+  // the DataTable primitive (and useInfiniteEmployees). Once that lands,
+  // this whole block goes away.
   const query: Partial<EmployeeListQuery> = {
-    page,
-    pageSize: DEFAULT_PAGE_SIZE,
+    offset: (page - 1) * DEFAULT_PAGE_SIZE,
+    limit: DEFAULT_PAGE_SIZE,
     sortBy,
     sortDir,
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
@@ -97,6 +100,8 @@ export default function EmployeesListPage() {
     includeArchived,
   };
   const { data, isLoading, isError, error, refetch, isFetching } = useEmployeesList(query);
+  const totalCount = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / DEFAULT_PAGE_SIZE));
 
   const activeFilterCount =
     (debouncedSearch ? 1 : 0) +
@@ -128,7 +133,7 @@ export default function EmployeesListPage() {
   const selectedDepartment = departments.find((d) => d.id === departmentId);
   const selectedStatus = statuses.find((s) => s.id === statusId);
 
-  const rows = data?.data ?? [];
+  const rows = data?.items ?? [];
   const pageIds = rows.map((r) => r.id);
   const allOnPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
   const someOnPageSelected = pageIds.some((id) => selected.has(id));
@@ -404,7 +409,7 @@ export default function EmployeesListPage() {
                       </td>
                     </tr>
                   )}
-                  {!isLoading && !isError && data && data.data.length === 0 && (
+                  {!isLoading && !isError && data && data.items.length === 0 && (
                     <tr>
                       <td colSpan={canViewSalary ? 9 : 8}>
                         <EmptyState hasFilters={activeFilterCount > 0} canCreate={canCreate} />
@@ -428,13 +433,14 @@ export default function EmployeesListPage() {
               </table>
             </div>
 
-            {/* Pagination */}
-            {data && data.meta.total > 0 && (
+            {/* Pagination — transitional until commit 5 introduces
+                infinite scroll via the DataTable primitive. */}
+            {data && totalCount > 0 && (
               <Pagination
                 page={page}
-                totalPages={data.meta.totalPages}
-                total={data.meta.total}
-                pageSize={data.meta.pageSize}
+                totalPages={totalPages}
+                total={totalCount}
+                pageSize={DEFAULT_PAGE_SIZE}
                 onChange={setPage}
               />
             )}

@@ -84,7 +84,7 @@ export class EmployeesController {
     @Query() rawQuery: Record<string, unknown>,
     @Res({ passthrough: false }) res: Response,
   ) {
-    const query = employeeListQuerySchema.parse({ ...rawQuery, pageSize: 10_000 });
+    const query = employeeListQuerySchema.parse({ ...rawQuery, offset: 0, limit: 10_000 });
     const rows = await this.employees.exportRowsForCsv(user, query);
     const includeSalary = user.permissions.includes('employees:view_salary');
     const csv = buildCsv(rows, includeSalary);

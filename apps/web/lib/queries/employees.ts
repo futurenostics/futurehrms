@@ -1,6 +1,12 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 import type {
   ChangeManagerInput,
   ChangeSalaryInput,
@@ -22,6 +28,8 @@ import { apiFetch } from '@/lib/api-client';
 
 const KEY = {
   list: (query: Partial<EmployeeListQuery>) => ['employees', 'list', query] as const,
+  infinite: (filters: Partial<EmployeeListQuery>) =>
+    ['employees', 'list', 'infinite', filters] as const,
   one: (id: string) => ['employees', 'one', id] as const,
   references: () => ['employees', 'references'] as const,
   salaryHistory: (id: string) => ['employees', id, 'salary-history'] as const,
@@ -41,11 +49,41 @@ function buildQs(query: Partial<EmployeeListQuery>): string {
   return qs ? `?${qs}` : '';
 }
 
+/**
+ * Single-page list — used by drop-downs and pickers that need a bounded
+ * candidate set (e.g. the change-manager dialog). The Employees list page
+ * uses {@link useInfiniteEmployees} instead.
+ */
 export function useEmployeesList(query: Partial<EmployeeListQuery>) {
   return useQuery<EmployeeListResponse>({
     queryKey: KEY.list(query),
     queryFn: () => apiFetch<EmployeeListResponse>(`/api/employees${buildQs(query)}`),
     placeholderData: (previous) => previous,
+  });
+}
+
+/**
+ * Infinite-scroll list — feeds the `<DataTable>` on the Employees list
+ * page. Filter/search/sort changes invalidate via the query key (which
+ * includes the filter object), so changing a filter restarts at offset 0.
+ *
+ * `getNextPageParam` returns `undefined` once the API reports `hasMore:
+ * false`, which is the React-Query signal to stop firing fetchNextPage.
+ */
+export type EmployeeInfiniteFilters = Omit<Partial<EmployeeListQuery>, 'offset' | 'limit'>;
+
+export function useInfiniteEmployees(filters: EmployeeInfiniteFilters, pageSize = 50) {
+  return useInfiniteQuery({
+    queryKey: KEY.infinite({ ...filters, limit: pageSize }),
+    queryFn: ({ pageParam }) =>
+      apiFetch<EmployeeListResponse>(
+        `/api/employees${buildQs({ ...filters, offset: pageParam as number, limit: pageSize })}`,
+      ),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      if (!lastPage.hasMore) return undefined;
+      return allPages.reduce((sum, p) => sum + p.items.length, 0);
+    },
   });
 }
 

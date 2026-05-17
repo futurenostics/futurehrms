@@ -126,17 +126,17 @@ describe('Employees (e2e)', () => {
 
   it('list scope: HR admin sees all 20+, dept manager sees only their dept', async () => {
     const all = await request(app.getHttpServer())
-      .get('/api/employees?pageSize=200')
+      .get('/api/employees?limit=200')
       .set('Authorization', `Bearer ${adminToken}`);
     expect(all.status).toBe(200);
-    expect(all.body.meta.total).toBeGreaterThanOrEqual(20);
+    expect(all.body.total).toBeGreaterThanOrEqual(20);
 
     const scoped = await request(app.getHttpServer())
-      .get('/api/employees?pageSize=200')
+      .get('/api/employees?limit=200')
       .set('Authorization', `Bearer ${asmaToken}`);
     expect(scoped.status).toBe(200);
     const allDepts = new Set<string>(
-      scoped.body.data.map((e: { department: { name: string } }) => e.department.name),
+      scoped.body.items.map((e: { department: { name: string } }) => e.department.name),
     );
     expect([...allDepts]).toEqual(['Engineering']);
   });

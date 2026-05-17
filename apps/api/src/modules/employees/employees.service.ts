@@ -108,10 +108,7 @@ export class EmployeesService {
   async list(viewer: AuthenticatedUser, query: EmployeeListQuery): Promise<EmployeeListResponse> {
     const scope = computeEmployeeReadScope(viewer);
     if (!scope.canRead) {
-      return {
-        data: [],
-        meta: { page: query.page, pageSize: query.pageSize, total: 0, totalPages: 0 },
-      };
+      return { items: [], total: 0, hasMore: false };
     }
 
     const filters: Prisma.EmployeeWhereInput[] = [];
@@ -136,7 +133,6 @@ export class EmployeesService {
       filters.length === 0 ? {} : filters.length === 1 ? filters[0]! : { AND: filters },
     );
 
-    const skip = (query.page - 1) * query.pageSize;
     const orderBy: Prisma.EmployeeOrderByWithRelationInput = {
       [query.sortBy]: query.sortDir,
     };
@@ -147,27 +143,25 @@ export class EmployeesService {
         where,
         include: EMPLOYEE_PUBLIC_INCLUDE,
         orderBy,
-        skip,
-        take: query.pageSize,
+        skip: query.offset,
+        take: query.limit,
       }),
     ]);
 
     const photoUrls = await this.resolvePhotoUrls(rows);
 
-    return {
-      data: rows.map((row) =>
-        toEmployeePublic(
-          row as unknown as EmployeeRowForMapping,
-          viewer,
-          photoUrls.get(row.id) ?? null,
-        ),
+    const items = rows.map((row) =>
+      toEmployeePublic(
+        row as unknown as EmployeeRowForMapping,
+        viewer,
+        photoUrls.get(row.id) ?? null,
       ),
-      meta: {
-        page: query.page,
-        pageSize: query.pageSize,
-        total,
-        totalPages: Math.max(1, Math.ceil(total / query.pageSize)),
-      },
+    );
+
+    return {
+      items,
+      total,
+      hasMore: query.offset + items.length < total,
     };
   }
 
