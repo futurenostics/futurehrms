@@ -18,7 +18,10 @@ const TooltipContent = React.forwardRef<
     className={cn(
       // Design spec: dark fg panel + light fg-invert text, 10px x / 6px y
       // padding, 6px radius, 12px font medium, 4px sideOffset, small arrow.
-      'rounded-fn-xs bg-fn-fg text-fn-fg-invert shadow-fn-md px-fn-2_5 py-fn-1_5 text-fn-base-lo font-fn-medium z-50 overflow-hidden',
+      // `!` prefix on text-fn-fg-invert defeats any cascade leak via
+      // Radix Portal — tooltip renders at <body> level where the
+      // body's `color: var(--fn-fg)` would otherwise win silently.
+      'rounded-fn-xs bg-fn-fg !text-fn-fg-invert shadow-fn-md px-fn-2_5 py-fn-1_5 text-fn-base-lo font-fn-medium z-50 overflow-hidden',
       'animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
       className,
     )}
