@@ -335,7 +335,7 @@ export default function EmployeesListPage() {
                   <col style={{ width: 130 }} />
                   <col style={{ width: 130 }} />
                   {canViewSalary && <col style={{ width: 110 }} />}
-                  <col style={{ width: 36 }} />
+                  <col style={{ width: 48 }} />
                 </colgroup>
                 <thead>
                   <tr className="[&>td]:bg-fn-bg-subtle [&>td:first-child]:rounded-l-fn-sm [&>td:last-child]:rounded-r-fn-sm">
@@ -377,7 +377,6 @@ export default function EmployeesListPage() {
                     </Th>
                     {canViewSalary && (
                       <Th
-                        align="right"
                         sortable
                         active={sortBy === 'salaryPkr'}
                         dir={sortDir}
@@ -600,7 +599,7 @@ function EmployeeRow({
         {formatJoinDate(employee.joinDate)}
       </td>
       {canViewSalary && (
-        <td className={cn('px-fn-3 py-fn-4_5 text-right align-middle', cellBorder)}>
+        <td className={cn('px-fn-3 py-fn-4_5 align-middle', cellBorder)}>
           {employee.salaryPkr != null ? (
             <>
               <div className="text-fn-fg font-fn-semibold text-[13px] tabular-nums">
@@ -617,13 +616,12 @@ function EmployeeRow({
           )}
         </td>
       )}
-      {/* Kebab cell — 36px col. The button is 24x24 so it fits inside the
-          col with `pl-0 pr-fn-3` padding (0 + 24 + 12 = 36). The previous
-          28x28 button + pl-fn-1 + pr-[14px] summed to 46, which overflowed
-          back into the salary column and made the kebab visually crowd
-          the salary value. */}
+      {/* Kebab cell — 48px col, padded with the standard px-fn-3 (12) so
+          the gap from the salary cell's right edge to the kebab button
+          mirrors the gap between every other adjacent column. The 24×24
+          button + 12 + 12 sums to exactly 48 so nothing overflows. */}
       <td
-        className={cn('py-fn-4_5 pr-fn-3 pl-0 text-right align-middle', cellBorder)}
+        className={cn('px-fn-3 py-fn-4_5 align-middle', cellBorder)}
         onClick={(e) => e.stopPropagation()}
       >
         <RowKebabMenu employee={employee} canArchive={canArchive} />
