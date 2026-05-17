@@ -341,21 +341,118 @@ Gaps (BD/B2B, anything not pictured) become `status: 'pending'` rule
 rows that render in the rules grid with the "Awaiting decision"
 treatment from PNG 11 so the user can fill them in via the UI.
 
-### Decisions deferred to Session 2
+### Disbursement schedule
 
-The following decisions block Session 2's calculation engine and
-will be asked when reached:
+**Time-proportional across project duration.** For a given run-month
+M and a project P:
 
-- Exact disbursement schedule format (single-shot vs monthly
-  fractions vs milestone-based)
-- Leave-prorated math (working-day denominator, half-day rounding)
-- Carry-forward mechanics (how a held project's pool rolls into the
-  next month's run)
-- Approval workflow specifics (separation of duties enforcement,
-  confirmation phrase, single vs multi-approver)
-- Override policy (who can override, note required, second approval)
-- Cancellation / termination handling specifics
-- Role reassignment policy (do future months reflect changes)
-- Minimum project value threshold
-- FX rate pinning per run
-- Tax display (gross vs net)
+```
+total_pool        = (poolMode === 'percentage')
+                      ? P.revenueUsd × rule.poolValue / 100
+                      : rule.poolValue
+days_in_M         = calendar days in month M
+overlap_days      = days that fall in both M and [P.startDate, P.expectedCompletionDate]
+total_active_days = days between P.startDate and P.expectedCompletionDate (inclusive)
+month_share       = total_pool × (overlap_days / total_active_days)
+employee_share    = month_share × (assignment.percentage / 100)
+```
+
+If `expectedCompletionDate` is null, the project is treated as
+single-shot: the full pool pays out in the month containing
+`startDate`. The first / last month of a multi-month project gets a
+prorated share when start or end falls mid-month.
+
+The PNG-09 `DATE 28/28` column is `overlap_days / days_in_M` — the
+display of how much of the month the project was active for. It
+ALSO factors into `month_share` for the first / last month.
+
+### Carry-forward
+
+**Explicit.** When a project is held mid-month (`status = on_hold`
+during the run window), its line items are stamped with
+`carryForwardToRunId` pointing at the next run. The next run's
+calculation pulls them in as separate line items with
+`carryForwardFromRunId` set, so the audit trail shows
+"GreenLeaf carry-forward from May" as a distinct row in June's run.
+
+The PNG-09 `Carry-forward` KPI counts line items where
+`carryForwardFromRunId IS NOT NULL` in the current run.
+
+### Leave-prorated
+
+**Manual for Phase 2.** Each `CommissionLineItem` has a
+`leaveAdjustmentUsd` (Decimal, default 0) that HR fills in during
+draft-state review. The PNG-09 leave-adj column shows the value
+with edit affordance.
+
+When the Leave / Attendance module lands (post-Phase 2), it'll
+populate `leaveAdjustmentUsd` automatically by reading leave days
+from its own tables. No schema migration needed.
+
+### FX rate pinning per run
+
+**Pinned at run-create time.** `CommissionRun.fxRateUsdToPkr` is a
+Decimal column set when the draft run is created. Display only in
+Phase 2 — calculations stay USD. Phase 7 (PKR Payroll) reads this
+field to convert USD line items to PKR for payslip PDFs.
+
+### Approval workflow
+
+**Soft separation of duties.** The same user CAN approve a run
+they created/submitted, but the audit log records the conflict
+(the `commission.run.approved` event payload includes
+`approverIsSubmitter: true`) and the UI shows a yellow warning
+banner before the approve button.
+
+The typed-phrase confirmation from PNG 10 (`Type APPROVE
+<MONTH YEAR> to confirm`) is a UI gate — server validates a
+`confirmationPhrase` field on the approve request matches
+`APPROVE <MONTH YEAR>` for the run's month.
+
+Single approver is enough — no multi-approval chain in Phase 2.
+
+### Cancellation / termination
+
+**Past stands, future stops.** When a project transitions to
+`cancelled` or `refunded`, the calculation engine generates no
+new line items for it from that point forward. When an Employee
+is terminated (deletedAt set or status flips to terminal), their
+ProjectAssignment rows remain (for history) but the calc engine
+skips them.
+
+No automatic redistribution — if Bilal had the Winner share and
+gets terminated mid-project, the Winner's % share simply doesn't
+pay out in subsequent runs. HR can manually reassign the role via
+the project detail screen if the role should be filled.
+
+No negative line items / clawbacks for `cancelled`. For `refunded`
+(future enhancement), the clawback behavior will need its own
+decision — Phase 2 ships without it.
+
+### Role reassignment
+
+**Future runs reflect current assignments at calc time.** The
+calc engine reads `ProjectAssignment` rows fresh each month with
+`removedAt IS NULL`. Reassignments take effect from the next run
+forward.
+
+Past runs (already-generated line items) are NEVER retroactively
+altered. The `commission.line_item.adjusted` event covers
+explicit manual adjustments during draft state, but historical
+approved runs are immutable per the immutable-financial-records
+principle.
+
+### Minimum project revenue threshold
+
+**Configurable per rule.** `CommissionRule.minProjectRevenueUsd`
+(Decimal, default 0). Calc engine skips projects whose
+`revenueUsd < minProjectRevenueUsd` for the rule, generating no
+line items. Display: gross of tax (no tax math in Phase 2 — that
+lands with Phase 10).
+
+### Decisions still deferred
+
+- Override policy specifics (who can override beyond `projects:override`,
+  whether a second approval is required for overrides) — currently any
+  user with `projects:override` can flip `hasOverride` + provide a
+  reason. Revisit if overrides become common.
