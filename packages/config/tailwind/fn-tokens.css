@@ -471,35 +471,33 @@
 }
 
 /* ===========================================================================
- * §3 — Tailwind v4 default-lockdown (DEFERRED — re-enable after Sub-phase D)
+ * §3 — Tailwind v4 default-lockdown (ACTIVE)
  *
  * Setting `--<namespace>-*: initial` inside @theme deletes every default
  * theme key in that namespace, which means the compiler stops emitting
  * the default utilities (`p-4`, `text-sm`, `rounded-md`, `bg-blue-500`,
- * `shadow-sm`, etc.). That's the ultimate lockdown — `p-4` becomes
- * literally non-renderable.
+ * `shadow-sm`, etc.). After this block, ONLY the fn-* utilities declared
+ * in §4 `@theme inline` generate CSS — `p-4` becomes literally
+ * non-renderable. Authors who write a banned utility get caught at three
+ * layers:
  *
- * During the Foundation Reset we defer this CSS-level lockdown so the
- * 45 legacy files in the ESLint skip-list keep rendering correctly
- * while Sub-phase D remediates them one at a time. The ESLint rule
- * `fn-tokens/no-default-utilities` is already active and prevents
- * any NEW code from using defaults — that's the drift prevention.
+ *   1. The ESLint rule `fn-tokens/no-default-utilities` errors during
+ *      edit (the loudest, earliest feedback).
+ *   2. This @theme initial block makes the CSS rule disappear (so any
+ *      that slip past lint still don't render — fail-loud).
+ *   3. PR review against the design — visual regression vs the
+ *      style-guide reference catches anything semantically wrong.
  *
- * Re-enable trigger (final step of Sub-phase D):
- *   1. Confirm packages/config/eslint/legacy-skip-list.mjs is empty.
- *   2. Confirm `pnpm --filter @futurenostics/web lint` exits 0 with
- *      the skip-list removed.
- *   3. Uncomment the @theme block below.
- *   4. Re-run dev — the served CSS should now contain only fn-* utilities
- *      (verify with the curl script in docs/RESET_LINT_FAILURES.md).
- *   5. Commit `feat(tokens): enable CSS-level lockdown after D completes`.
+ * Enabled at the end of Sub-phase D, after every file in apps/web had
+ * been remediated and the legacy skip-list emptied. If you ever need to
+ * temporarily disable this (e.g., during a migration that touches many
+ * files), comment the @theme block out and add files to the legacy
+ * skip-list — never use !important to route around it.
  *
- * What stays default after re-enable: layout (flex/grid), positioning
- * (absolute/relative), display, opacity, z-index, blur, transition-
- * property, cursor, overflow, backdrop-blur — these have no design-token
- * implications.
+ * What stays default: layout (flex/grid), positioning (absolute/relative),
+ * display, opacity, z-index, blur, transition-property, cursor, overflow,
+ * backdrop-blur — these have no design-token implications.
  * ========================================================================= */
-/*
 @theme {
   --spacing: initial;
   --color-*: initial;
@@ -517,7 +515,6 @@
   --default-font-family: initial;
   --default-mono-font-family: initial;
 }
-*/
 
 /* ===========================================================================
  * §4 — Tailwind v4 token bridge (fn-* utilities only)
