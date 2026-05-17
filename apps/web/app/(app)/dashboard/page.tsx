@@ -13,7 +13,7 @@ export default function DashboardPage() {
   const firstName = user?.fullName?.split(' ')[0] ?? user?.email?.split('@')[0] ?? 'there';
 
   return (
-    <AppShell breadcrumbs={[{ label: 'Workspace' }, { label: 'Dashboard' }]}>
+    <AppShell breadcrumbs={[{ label: 'Dashboard' }]}>
       <div className="gap-fn-6 mx-auto flex w-full max-w-6xl flex-col">
         <div className="gap-fn-1 flex flex-col">
           <h1 className="text-fn-fg font-fn-semibold tracking-fn-tight text-[22px]">

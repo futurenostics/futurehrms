@@ -367,7 +367,7 @@ export default function OrgChartPage() {
   }, [roots, search, dept, totalHeadcount]);
 
   return (
-    <AppShell breadcrumbs={[{ label: 'HR Core' }, { label: 'Org Chart' }]}>
+    <AppShell breadcrumbs={[{ label: 'Org Chart' }]}>
       <style dangerouslySetInnerHTML={{ __html: ORG_STYLES }} />
       <div className="gap-fn-5 mx-auto flex w-full max-w-[1280px] flex-col">
         {/* Header */}
