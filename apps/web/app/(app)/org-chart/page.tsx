@@ -234,25 +234,46 @@ export default function OrgChartPage() {
     };
   }, []);
 
-  function onCanvasWheel(e: React.WheelEvent) {
-    // Cmd/Ctrl + wheel (or pinch) → zoom around the cursor position.
-    // Plain wheel pans (so trackpad two-finger scroll moves the canvas).
-    if (e.ctrlKey || e.metaKey) {
+  // React's synthetic onWheel is registered passively in React 17+,
+  // which means preventDefault() inside the JSX handler is silently
+  // ignored — so ⌘+wheel on the canvas would still zoom the whole
+  // browser page. We attach a native non-passive listener via ref so
+  // preventDefault actually wins.
+  //
+  // We track zoom/pan in a ref the listener can read mutably without
+  // forcing the effect to re-bind on every state change (which would
+  // miss the first wheel tick of a gesture).
+  const zoomRef = React.useRef(zoom);
+  const panRef = React.useRef(pan);
+  React.useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
+  React.useEffect(() => {
+    panRef.current = pan;
+  }, [pan]);
+
+  React.useEffect(() => {
+    const vp = viewportRef.current;
+    if (!vp) return;
+    function onWheel(e: WheelEvent) {
       e.preventDefault();
-      const vp = viewportRef.current;
-      if (!vp) return;
-      const rect = vp.getBoundingClientRect();
-      const cx = e.clientX - rect.left;
-      const cy = e.clientY - rect.top;
-      const nextZoom = clampZoom(zoom * (e.deltaY > 0 ? 0.92 : 1.08));
-      const ratio = nextZoom / zoom;
-      setPan({ x: cx - (cx - pan.x) * ratio, y: cy - (cy - pan.y) * ratio });
-      setZoom(nextZoom);
-    } else {
-      e.preventDefault();
-      setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }));
+      const rect = vp!.getBoundingClientRect();
+      if (e.ctrlKey || e.metaKey) {
+        const cx = e.clientX - rect.left;
+        const cy = e.clientY - rect.top;
+        const nextZoom = clampZoom(zoomRef.current * (e.deltaY > 0 ? 0.92 : 1.08));
+        const ratio = nextZoom / zoomRef.current;
+        const cur = panRef.current;
+        setPan({ x: cx - (cx - cur.x) * ratio, y: cy - (cy - cur.y) * ratio });
+        setZoom(nextZoom);
+      } else {
+        const cur = panRef.current;
+        setPan({ x: cur.x - e.deltaX, y: cur.y - e.deltaY });
+      }
     }
-  }
+    vp.addEventListener('wheel', onWheel, { passive: false });
+    return () => vp.removeEventListener('wheel', onWheel);
+  }, []);
 
   function zoomBy(factor: number) {
     const vp = viewportRef.current;
@@ -267,6 +288,44 @@ export default function OrgChartPage() {
     setPan({ x: cx - (cx - pan.x) * ratio, y: cy - (cy - pan.y) * ratio });
     setZoom(nextZoom);
   }
+
+  // Pan to the first matching card whenever the search changes, so
+  // the user doesn't have to drag around hunting for who they typed.
+  // We also auto-select it so the right-side details panel updates.
+  React.useEffect(() => {
+    const q = search.trim().toLowerCase();
+    if (!q || roots.length === 0) return;
+    let match: OrgChartNode | null = null;
+    const walk = (n: OrgChartNode): boolean => {
+      if (matchesFilters(n, q, dept)) {
+        match = n;
+        return true;
+      }
+      for (const c of n.reports) if (walk(c)) return true;
+      return false;
+    };
+    for (const r of roots) if (walk(r)) break;
+    if (!match) return;
+    const found: OrgChartNode = match;
+    setSelectedId(found.id);
+    // wait for layout + transform commit before measuring
+    const id = window.setTimeout(() => {
+      const vp = viewportRef.current;
+      const card = vp?.querySelector<HTMLElement>(`[data-node-id="${found.id}"]`);
+      if (!vp || !card) return;
+      const vpRect = vp.getBoundingClientRect();
+      const cardRect = card.getBoundingClientRect();
+      const cardCx = cardRect.left + cardRect.width / 2 - vpRect.left;
+      const cardCy = cardRect.top + cardRect.height / 2 - vpRect.top;
+      setPan((p) => ({
+        x: p.x + (vp.clientWidth / 2 - cardCx),
+        y: p.y + (vp.clientHeight / 2 - cardCy),
+      }));
+    }, 80);
+    return () => window.clearTimeout(id);
+    // We intentionally don't depend on pan — recentring on every pan
+    // change would yank the canvas back during a drag.
+  }, [search, dept, roots]);
 
   function toggleCollapse(id: string) {
     setCollapsed((prev) => {
@@ -479,7 +538,6 @@ export default function OrgChartPage() {
               ref={viewportRef}
               className="org-canvas"
               onMouseDown={onCanvasMouseDown}
-              onWheel={onCanvasWheel}
               style={{
                 position: 'relative',
                 height: fullWidth ? 'calc(100vh - 280px)' : '560px',
@@ -523,6 +581,7 @@ export default function OrgChartPage() {
                     alignItems: 'flex-start',
                     padding: '12px 24px',
                     willChange: 'transform',
+                    userSelect: 'none',
                   }}
                 >
                   {roots.map((root) => (
@@ -703,6 +762,7 @@ function OrgCard({
       role="button"
       tabIndex={0}
       data-card
+      data-node-id={node.id}
       onClick={onSelect}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -711,7 +771,7 @@ function OrgCard({
         }
       }}
       className={cn(
-        'rounded-fn-sm bg-fn-bg-panel relative cursor-pointer transition-all',
+        'rounded-fn-sm bg-fn-bg-panel relative cursor-pointer select-none transition-all',
         compact ? 'px-fn-2_5 py-fn-2' : 'px-fn-3_5 py-fn-3',
         dimmed && 'opacity-35',
         selected
@@ -1049,9 +1109,14 @@ const ORG_STYLES = `
   gap: 0; padding-top: 0; margin-top: 24px; position: relative;
 }
 .org-tree-children::before {
+  /* Line starts BELOW the parent-card's collapse button. The button is
+   * a 20px circle centred on the card's bottom edge, so its lower edge
+   * sits 10px below the card; the children container is 24px below
+   * the card; we want the drop to fill the 14px gap between them so
+   * the button reads as the head of the connector, not on top of it. */
   content: ''; position: absolute;
-  top: -24px; left: 50%; transform: translateX(-50%);
-  width: 2px; height: 24px;
+  top: -14px; left: 50%; transform: translateX(-50%);
+  width: 2px; height: 14px;
   background: var(--fn-border-strong); border-radius: 99px;
 }
 .org-tree-child {
