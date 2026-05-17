@@ -126,8 +126,14 @@ export default function EmployeesListPage() {
     refetch,
   } = useInfiniteEmployees(filters, PAGE_SIZE);
 
+  // Defensive flatten: if a page object is missing `items` (e.g. the
+  // API server is still running the pre-migration shape that returned
+  // `{ data, meta }`), `p.items` is undefined and a naive flatMap
+  // would yield `[undefined, undefined, …]` — which would then crash
+  // every downstream getRowKey lookup. Coercing to [] keeps the table
+  // empty rather than crashing the page.
   const rows: EmployeePublic[] = React.useMemo(
-    () => data?.pages.flatMap((p) => p.items) ?? [],
+    () => (data?.pages ?? []).flatMap((p) => p?.items ?? []),
     [data?.pages],
   );
   const totalCount = data?.pages[0]?.total ?? 0;
