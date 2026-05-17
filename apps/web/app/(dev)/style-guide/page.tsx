@@ -31,6 +31,7 @@ import { CheckboxSection } from './_sections/checkbox';
 import { RadioGroupSection } from './_sections/radio-group';
 import { SwitchSection } from './_sections/switch';
 import { SelectSection } from './_sections/select';
+import { ComboboxSection } from './_sections/combobox';
 
 export const metadata = {
   title: 'Style Guide — Futurenostics',
@@ -494,6 +495,7 @@ function PrimitivesSection() {
       <RadioGroupSection />
       <SwitchSection />
       <SelectSection />
+      <ComboboxSection />
       <div className="bg-fn-bg-panel border-fn-border rounded-fn-xs p-fn-6 border">
         <p className="text-fn-fg-muted text-fn-base leading-fn-normal max-w-[640px]">
           Tier 1 atoms (Label · Separator · Spinner) are now live. Coming next: Tier 2 Form atoms —
