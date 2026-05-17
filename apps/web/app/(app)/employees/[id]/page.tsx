@@ -28,20 +28,26 @@ import {
 import { Button } from '@/components/ui/button';
 import { ProfileHeader } from '@/components/employees/profile-header';
 import { StatusPill } from '@/components/employees/status-pill';
-import {
-  useDeleteEmployee,
-  useEmployee,
-  useSalaryHistory,
-  useTimeline,
-} from '@/lib/queries/employees';
+import { useDeleteEmployee, useEmployee, useSalaryHistory } from '@/lib/queries/employees';
 import { ChangeStatusDialog } from '@/components/employees/dialogs/change-status-dialog';
 import { ChangeManagerDialog } from '@/components/employees/dialogs/change-manager-dialog';
 import { ChangeSalaryDialog } from '@/components/employees/dialogs/change-salary-dialog';
 import { EmployeeFormSheet } from '@/components/employees/employee-form-sheet';
+import { ProfileQuickStats } from '@/components/employees/profile-quick-stats';
+import { ProfileTimeline } from '@/components/employees/profile-timeline';
+import { CompensationCard, DocumentsCard } from '@/components/employees/profile-sidebar-cards';
 import { usePermissions } from '@/hooks/use-permissions';
 import { cn } from '@/lib/utils';
 
-const TAB_KEYS = ['personal', 'job', 'salary', 'timeline', 'documents', 'evaluations'] as const;
+const TAB_KEYS = [
+  'overview',
+  'jobcomp',
+  'salary',
+  'timeline',
+  'documents',
+  'evaluations',
+  'commissions',
+] as const;
 type TabKey = (typeof TAB_KEYS)[number];
 
 function isTabKey(value: string | null): value is TabKey {
@@ -59,7 +65,7 @@ export default function EmployeeProfilePage() {
   const employee = employeeQuery.data;
 
   const requestedTab = searchParams.get('tab');
-  const activeTab: TabKey = isTabKey(requestedTab) ? requestedTab : 'personal';
+  const activeTab: TabKey = isTabKey(requestedTab) ? requestedTab : 'timeline';
 
   const [changeStatusOpen, setChangeStatusOpen] = React.useState(false);
   const [changeManagerOpen, setChangeManagerOpen] = React.useState(false);
@@ -106,7 +112,7 @@ export default function EmployeeProfilePage() {
         { label: employee?.fullName ?? 'Loading…' },
       ]}
     >
-      <div className="gap-fn-5 mx-auto flex w-full max-w-6xl flex-col">
+      <div className="gap-fn-4 mx-auto flex w-full max-w-6xl flex-col">
         {employeeQuery.isLoading && <ProfileHeaderSkeleton />}
         {employeeQuery.isError && (
           <ErrorState
@@ -125,44 +131,78 @@ export default function EmployeeProfilePage() {
               onArchive={() => setArchiveOpen(true)}
             />
 
+            {/* Quick-stat strip — sits directly under the header per the
+                design's profile screen layout. */}
+            <ProfileQuickStats employee={employee} />
+
+            {/* Tab anchor bar — restructured to match the design:
+                Overview · Job & comp · Salary history · Timeline ·
+                Documents · Evaluations · Commissions. The active tab
+                content renders in a 2-col grid below: left column owns
+                the primary content, right column owns the sidebar
+                cards (Compensation + Documents). */}
             <Tabs value={activeTab} onValueChange={(v) => setTab(v as TabKey)}>
               <TabsList>
-                <TabsTrigger value="personal">Personal</TabsTrigger>
-                <TabsTrigger value="job">Job</TabsTrigger>
+                <TabsTrigger value="overview">Overview</TabsTrigger>
+                <TabsTrigger value="jobcomp">Job &amp; comp</TabsTrigger>
                 {perms.has('employees:view_salary') && (
-                  <TabsTrigger value="salary">Salary History</TabsTrigger>
+                  <TabsTrigger value="salary">Salary history</TabsTrigger>
                 )}
                 <TabsTrigger value="timeline">Timeline</TabsTrigger>
                 <TabsTrigger value="documents">Documents</TabsTrigger>
                 <TabsTrigger value="evaluations">Evaluations</TabsTrigger>
+                <TabsTrigger value="commissions">Commissions</TabsTrigger>
               </TabsList>
 
-              <TabsContent value="personal">
-                <PersonalTab employee={employee} />
-              </TabsContent>
-              <TabsContent value="job">
-                <JobTab employee={employee} />
-              </TabsContent>
-              {perms.has('employees:view_salary') && (
-                <TabsContent value="salary">
-                  <SalaryTab employeeId={employee.id} />
-                </TabsContent>
-              )}
-              <TabsContent value="timeline">
-                <TimelineTab employeeId={employee.id} />
-              </TabsContent>
-              <TabsContent value="documents">
-                <PlaceholderTab
-                  title="Documents"
-                  body="Document storage and upload will be available in a future release. The placeholder card here will list contracts, offer letters, ID copies, and other employee files."
-                />
-              </TabsContent>
-              <TabsContent value="evaluations">
-                <PlaceholderTab
-                  title="Evaluations"
-                  body="Performance evaluations land in a later phase. This tab will show evaluation history, current evaluation cycle, and submitted forms."
-                />
-              </TabsContent>
+              <div className="gap-fn-5 mt-fn-4 grid grid-cols-1 lg:grid-cols-[1.4fr_1fr]">
+                <div className="min-w-0">
+                  <TabsContent value="overview" className="mt-0">
+                    <PersonalTab employee={employee} />
+                  </TabsContent>
+                  <TabsContent value="jobcomp" className="mt-0">
+                    <JobTab employee={employee} />
+                  </TabsContent>
+                  {perms.has('employees:view_salary') && (
+                    <TabsContent value="salary" className="mt-0">
+                      <SalaryTab employeeId={employee.id} />
+                    </TabsContent>
+                  )}
+                  <TabsContent value="timeline" className="mt-0">
+                    <ProfileTimeline employeeId={employee.id} />
+                  </TabsContent>
+                  <TabsContent value="documents" className="mt-0">
+                    <PlaceholderTab
+                      title="Documents"
+                      body="Document storage and upload will be available in a future release."
+                    />
+                  </TabsContent>
+                  <TabsContent value="evaluations" className="mt-0">
+                    <PlaceholderTab
+                      title="Evaluations"
+                      body="Performance evaluations land in a later phase."
+                    />
+                  </TabsContent>
+                  <TabsContent value="commissions" className="mt-0">
+                    <PlaceholderTab
+                      title="Commissions"
+                      body="Commission history lands with the commissions module."
+                    />
+                  </TabsContent>
+                </div>
+
+                {/* Sidebar — Compensation + Documents cards. Hidden on
+                    narrow viewports where they stack under the primary
+                    tab content (the grid collapses to one column). */}
+                <aside className="gap-fn-4 flex min-w-0 flex-col">
+                  {perms.has('employees:view_salary') && (
+                    <CompensationCard
+                      employee={employee}
+                      onIncrement={() => setChangeSalaryOpen(true)}
+                    />
+                  )}
+                  <DocumentsCard employee={employee} />
+                </aside>
+              </div>
             </Tabs>
 
             <ChangeStatusDialog
@@ -417,46 +457,6 @@ function SalaryTab({ employeeId }: { employeeId: string }) {
   );
 }
 
-function TimelineTab({ employeeId }: { employeeId: string }) {
-  const timelineQuery = useTimeline(employeeId);
-  if (timelineQuery.isLoading) return <SectionSkeleton />;
-  const entries = timelineQuery.data ?? [];
-
-  if (entries.length === 0) {
-    return (
-      <Section title="Timeline">
-        <p className="text-fn-fg-muted text-[13px]">No timeline entries yet.</p>
-      </Section>
-    );
-  }
-
-  return (
-    <Section title="Timeline">
-      <ol className="gap-fn-4 flex flex-col">
-        {entries.map((entry, idx) => (
-          <li key={entry.id} className="gap-fn-3 flex">
-            <div className="flex flex-col items-center">
-              <div className="bg-fn-accent-soft text-fn-accent-soft-fg h-fn-7 w-fn-7 rounded-fn-full flex items-center justify-center">
-                <span
-                  className="bg-fn-accent h-fn-1_5 w-fn-1_5 rounded-fn-full inline-block"
-                  aria-hidden
-                />
-              </div>
-              {idx < entries.length - 1 && <div className="bg-fn-divider mt-fn-1 w-px flex-1" />}
-            </div>
-            <div className="pb-fn-3 flex-1">
-              <div className="text-fn-fg font-fn-medium text-[13px]">{entry.title}</div>
-              <div className="text-fn-fg-faint text-[11.5px] tabular-nums">
-                {formatDateTime(entry.occurredAt)} · {entry.module}
-              </div>
-            </div>
-          </li>
-        ))}
-      </ol>
-    </Section>
-  );
-}
-
 function PlaceholderTab({ title, body }: { title: string; body: string }) {
   return (
     <Section title={title}>
@@ -573,20 +573,6 @@ function formatDate(iso: string): string {
     });
   } catch {
     return iso.slice(0, 10);
-  }
-}
-
-function formatDateTime(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString('en-GB', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return iso;
   }
 }
 
