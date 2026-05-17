@@ -260,70 +260,83 @@ export function DataTable<T>({
           chrome === 'card' && 'border-fn-border bg-fn-bg-panel rounded-fn-xs border',
         )}
       >
-        <table
-          className="w-full table-fixed border-collapse text-[13px]"
-          style={{ minWidth: `${computedMinWidth}px` }}
-        >
-          <colgroup>
-            {hasSelection && <col style={{ width: SELECTION_COL_WIDTH }} />}
-            {columns.map((c) => (
-              <col
-                key={c.id}
-                style={c.width === 'auto' || c.width == null ? undefined : { width: c.width }}
-              />
-            ))}
-            {hasActions && <col style={{ width: ACTIONS_COL_WIDTH }} />}
-          </colgroup>
-          <DataTableHeader
-            columns={columns}
-            sortKey={sortKey}
-            sortDirection={sortDirection}
-            onClickHeader={handleHeaderClick}
-            hasSelection={hasSelection}
-            masterState={masterState}
-            onToggleAll={toggleAllVisible}
-            hasActions={hasActions}
-          />
-          <tbody>
-            {isLoading && (
-              <SkeletonRows
-                columns={columns}
-                count={INITIAL_SKELETON_ROWS}
-                variant="initial"
-                hasSelection={hasSelection}
-                hasActions={hasActions}
-              />
-            )}
-            {!isLoading &&
-              !isError &&
-              rows.map((row, idx) => {
-                const key = getRowKey(row);
-                return (
-                  <DataTableRow
-                    key={key}
-                    row={row}
-                    rowKey={key}
-                    columns={columns}
-                    bordered={idx < rows.length - 1 || isFetchingMore || hasMore}
-                    onRowClick={onRowClick}
-                    hasSelection={hasSelection}
-                    isSelected={selectedSet.has(key)}
-                    onToggleSelection={toggleRowSelection}
-                    rowActions={rowActions}
-                  />
-                );
-              })}
-            {!isLoading && !isError && isFetchingMore && (
-              <SkeletonRows
-                columns={columns}
-                count={NEXT_PAGE_SKELETON_ROWS}
-                variant="next"
-                hasSelection={hasSelection}
-                hasActions={hasActions}
-              />
-            )}
-          </tbody>
-        </table>
+        {/* Inset wrapper — 14px horizontal / 8px vertical padding around the
+            table so the sticky header pill (bg-fn-bg-subtle on the thead
+            cells) and the body row dividers stop short of the container's
+            left and right edges. Matches docs/design/screens/employees.jsx
+            line 102 `<div padding: '8px 14px'>`. We deliberately keep the
+            single-table layout (rather than wrap the header in a nested
+            inset table per the design source) because a nested table inside
+            a th colSpan computes sub-pixel column widths slightly
+            differently in Chrome vs Firefox and visibly drifts the header
+            checkbox out of alignment with the body row checkboxes — a bug
+            already burned in once. */}
+        <div className="px-fn-3_5 py-fn-2">
+          <table
+            className="w-full table-fixed border-collapse text-[13px]"
+            style={{ minWidth: `${computedMinWidth}px` }}
+          >
+            <colgroup>
+              {hasSelection && <col style={{ width: SELECTION_COL_WIDTH }} />}
+              {columns.map((c) => (
+                <col
+                  key={c.id}
+                  style={c.width === 'auto' || c.width == null ? undefined : { width: c.width }}
+                />
+              ))}
+              {hasActions && <col style={{ width: ACTIONS_COL_WIDTH }} />}
+            </colgroup>
+            <DataTableHeader
+              columns={columns}
+              sortKey={sortKey}
+              sortDirection={sortDirection}
+              onClickHeader={handleHeaderClick}
+              hasSelection={hasSelection}
+              masterState={masterState}
+              onToggleAll={toggleAllVisible}
+              hasActions={hasActions}
+            />
+            <tbody>
+              {isLoading && (
+                <SkeletonRows
+                  columns={columns}
+                  count={INITIAL_SKELETON_ROWS}
+                  variant="initial"
+                  hasSelection={hasSelection}
+                  hasActions={hasActions}
+                />
+              )}
+              {!isLoading &&
+                !isError &&
+                rows.map((row, idx) => {
+                  const key = getRowKey(row);
+                  return (
+                    <DataTableRow
+                      key={key}
+                      row={row}
+                      rowKey={key}
+                      columns={columns}
+                      bordered={idx < rows.length - 1 || isFetchingMore || hasMore}
+                      onRowClick={onRowClick}
+                      hasSelection={hasSelection}
+                      isSelected={selectedSet.has(key)}
+                      onToggleSelection={toggleRowSelection}
+                      rowActions={rowActions}
+                    />
+                  );
+                })}
+              {!isLoading && !isError && isFetchingMore && (
+                <SkeletonRows
+                  columns={columns}
+                  count={NEXT_PAGE_SKELETON_ROWS}
+                  variant="next"
+                  hasSelection={hasSelection}
+                  hasActions={hasActions}
+                />
+              )}
+            </tbody>
+          </table>
+        </div>
 
         {/* States that live below the table inside the same scroll
             container so they ride along with the rows as the user
