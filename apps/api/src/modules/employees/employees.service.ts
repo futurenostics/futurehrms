@@ -506,27 +506,48 @@ export class EmployeesService {
       return toEmployeePublic(fresh as unknown as EmployeeRowForMapping, actor, photoUrl);
     }
 
-    // Salary changes go through changeSalary so SalaryHistory is captured.
-    if (changed.includes('salaryPkr')) {
-      throw new BadRequestException(
-        'Use POST /employees/:id/change-salary to record a salary change',
-      );
-    }
-    if (changed.includes('statusId')) {
-      throw new BadRequestException(
-        'Use POST /employees/:id/change-status to record a status change',
-      );
-    }
-    if (changed.includes('managerId')) {
-      throw new BadRequestException(
-        'Use POST /employees/:id/change-manager to record a manager change',
-      );
-    }
+    // The sheet redesign edits salary / status / manager inline along
+    // with the rest of the fields, so the legacy "use POST /change-*"
+    // guards are gone. Audit-grade history is still captured:
+    //   • salaryPkr change → a SalaryHistory row inside the same tx
+    //     with the optional input.salaryEffectiveDate (defaults to
+    //     today) and a default 'Updated via employee form' remark
+    //   • statusId / managerId change → captured via the
+    //     `employee.updated` event below (changedFields + before/after)
+    // The dedicated POST /change-salary, /change-status, and
+    // /change-manager endpoints stay for workflows that need a
+    // mandatory reason / effective date / typed remarks.
 
-    const updated = await prisma.employee.update({
-      where: { id },
-      data,
-      include: EMPLOYEE_PUBLIC_INCLUDE,
+    const oldSalary = existing.salaryPkr ? Number(existing.salaryPkr.toString()) : null;
+    const newSalary = changed.includes('salaryPkr') ? (input.salaryPkr ?? null) : oldSalary;
+    const salaryDidChange =
+      changed.includes('salaryPkr') &&
+      (oldSalary === null ||
+        newSalary === null ||
+        Math.abs((newSalary ?? 0) - (oldSalary ?? 0)) >= 0.01);
+
+    const updated = await prisma.$transaction(async (tx) => {
+      if (salaryDidChange) {
+        await tx.salaryHistory.create({
+          data: {
+            employeeId: id,
+            oldSalaryPkr: existing.salaryPkr,
+            newSalaryPkr: newSalary as number,
+            effectiveDate: input.salaryEffectiveDate ?? new Date(),
+            remarks: 'Updated via employee form',
+            changedBy: actor.id,
+          },
+        });
+        if (oldSalary !== null && (newSalary ?? 0) > oldSalary) {
+          (data as Record<string, unknown>).lastIncrementDate =
+            input.salaryEffectiveDate ?? new Date();
+        }
+      }
+      return tx.employee.update({
+        where: { id },
+        data,
+        include: EMPLOYEE_PUBLIC_INCLUDE,
+      });
     });
 
     this.events.emit(
@@ -534,6 +555,19 @@ export class EmployeesService {
       { employeeId: id, changedFields: changed, before, after },
       { actorId: actor.id },
     );
+    if (salaryDidChange) {
+      this.events.emit(
+        'employee.salary.updated',
+        {
+          employeeId: id,
+          oldSalaryPkr: oldSalary,
+          newSalaryPkr: newSalary,
+          effectiveDate: (input.salaryEffectiveDate ?? new Date()).toISOString(),
+          remarks: 'Updated via employee form',
+        },
+        { actorId: actor.id },
+      );
+    }
 
     const photoUrl = await this.resolveOnePhotoUrl(updated);
     return toEmployeePublic(updated as unknown as EmployeeRowForMapping, actor, photoUrl);
