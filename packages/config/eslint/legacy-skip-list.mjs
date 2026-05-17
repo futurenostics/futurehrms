@@ -19,10 +19,10 @@
  */
 export const legacySkipList = [
   // 'app/(app)/dashboard/page.tsx' — remediated in Sub-phase D.
-  'app/(app)/employees/[id]/edit/page.tsx',
+  // 'app/(app)/employees/[id]/edit/page.tsx' — remediated in Sub-phase D.
   'app/(app)/employees/[id]/page.tsx',
   'app/(app)/employees/import/page.tsx',
-  'app/(app)/employees/new/page.tsx',
+  // 'app/(app)/employees/new/page.tsx' — remediated in Sub-phase D.
   'app/(app)/employees/org/page.tsx',
   'app/(app)/employees/page.tsx',
   'app/(app)/layout.tsx',

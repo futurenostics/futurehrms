@@ -19,16 +19,16 @@ export default function EditEmployeePage() {
         { label: 'Edit' },
       ]}
     >
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-fn-fg text-[22px] font-semibold tracking-tight">
+      <div className="gap-fn-5 mx-auto flex w-full max-w-4xl flex-col">
+        <div className="gap-fn-1 flex flex-col">
+          <h1 className="text-fn-fg font-fn-semibold tracking-fn-tight text-[22px]">
             Edit {employeeQuery.data?.fullName ?? 'employee'}
           </h1>
           <p className="text-fn-fg-muted text-[13px]">
             Status, manager, and salary changes go through their dedicated dialogs on the profile.
           </p>
         </div>
-        {employeeQuery.isLoading && <Skeleton className="h-96 w-full" />}
+        {employeeQuery.isLoading && <Skeleton className="h-[384px] w-full" />}
         {employeeQuery.data && <EmployeeForm mode="edit" employee={employeeQuery.data} />}
       </div>
     </AppShell>
