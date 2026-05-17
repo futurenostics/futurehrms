@@ -2,8 +2,27 @@ import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
+/*
+ * Badge primitive.
+ *
+ * Design spec (docs/design/shared/primitives.jsx Badge, L92-130):
+ *   font-size 12 (text-fn-base-lo) · weight 600 (font-fn-semibold)
+ *   leading 1.55 (leading-fn-normal-plus) · tracking -0.005em
+ *   padding 2px / 8px (py-fn-0_5 / px-fn-2)
+ *   tabular-nums for any numeric badges
+ *   radius 6 (rounded-fn-xs)
+ *
+ * Variants
+ *   default       neutral muted on bg-inset
+ *   accent        indigo-violet
+ *   success       mint
+ *   warning       amber
+ *   danger        coral
+ *   info          sky
+ *   outline       transparent + 1px border
+ */
 const badgeVariants = cva(
-  'rounded-fn-xs inline-flex items-center px-2 py-0.5 text-[12px] font-semibold tabular-nums leading-[1.55] tracking-[-0.005em] transition-colors',
+  'rounded-fn-xs px-fn-2 py-fn-0_5 text-fn-base-lo font-fn-semibold leading-fn-normal-plus tracking-fn-micro-loose inline-flex items-center tabular-nums transition-colors',
   {
     variants: {
       variant: {

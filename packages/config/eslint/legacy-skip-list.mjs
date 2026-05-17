@@ -46,8 +46,8 @@ export const legacySkipList = [
   // 'components/shell/theme-toggle.tsx' — remediated in Sub-phase D.
   // 'components/shell/topbar.tsx' — remediated in Sub-phase D.
   // 'components/shell/user-menu.tsx' — remediated in Sub-phase D.
-  'components/ui/avatar.tsx',
-  'components/ui/badge.tsx',
+  // 'components/ui/avatar.tsx' — remediated in Sub-phase B Tier 3.
+  // 'components/ui/badge.tsx' — remediated in Sub-phase B Tier 3.
   // 'components/ui/button.tsx' — remediated in Sub-phase B Tier 2.
   'components/ui/card.tsx',
   // 'components/ui/checkbox.tsx' — remediated in Sub-phase B Tier 2.
@@ -62,7 +62,7 @@ export const legacySkipList = [
   'components/ui/sheet.tsx',
   'components/ui/table.tsx',
   'components/ui/tabs.tsx',
-  'components/ui/tooltip.tsx',
+  // 'components/ui/tooltip.tsx' — remediated in Sub-phase B Tier 3.
 ];
 
 export default legacySkipList;
