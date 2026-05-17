@@ -4,16 +4,11 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  ArrowDown,
-  ArrowUp,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Download,
   Filter,
   LayoutGrid,
   List,
-  MoreHorizontal,
   Plus,
   Search,
   Upload,
@@ -21,32 +16,53 @@ import {
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { ContractType, EmployeeListQuery, EmployeePublic } from '@futurenostics/types';
+import type {
+  ContractType,
+  EmployeeListQuery,
+  EmployeePublic,
+  EmployeeSortBy,
+} from '@futurenostics/types';
 import { AppShell } from '@/components/shell/app-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  DataTable,
+  type DataTableColumn,
+  type DataTableRowAction,
+} from '@/components/ui/data-table';
 import { StatusPill } from '@/components/employees/status-pill';
 import { EmployeeAvatar } from '@/components/employees/employee-avatar';
 import { KpiStrip } from '@/components/employees/kpi-strip';
-import { useEmployeesList, useEmployeeStats, useReferences } from '@/lib/queries/employees';
+import { useEmployeeStats, useInfiniteEmployees, useReferences } from '@/lib/queries/employees';
 import { usePermissions } from '@/hooks/use-permissions';
 import { cn } from '@/lib/utils';
 
-const DEFAULT_PAGE_SIZE = 25;
+const PAGE_SIZE = 50;
 const CONTRACT_OPTIONS: ContractType[] = ['FullTime', 'PartTime', 'Contractor', 'Intern'];
 
 type ViewMode = 'list' | 'grid';
+
+/**
+ * Maps DataTable column ids (which double as sort keys) to the API's
+ * EmployeeSortBy union. Keys not present in this map are not sortable
+ * on the server side — the DataTable header click is a no-op for them.
+ */
+const SORT_KEY_TO_API: Record<string, EmployeeSortBy> = {
+  employee: 'fullName',
+  eid: 'eid',
+  joinDate: 'joinDate',
+  salary: 'salaryPkr',
+};
+const API_TO_SORT_KEY: Record<EmployeeSortBy, string> = {
+  fullName: 'employee',
+  eid: 'eid',
+  joinDate: 'joinDate',
+  salaryPkr: 'salary',
+  createdAt: 'createdAt',
+};
 
 export default function EmployeesListPage() {
   const router = useRouter();
@@ -68,40 +84,53 @@ export default function EmployeesListPage() {
   const [contractType, setContractType] = React.useState<ContractType | ''>('');
   const [includeArchived, setIncludeArchived] = React.useState(false);
 
-  const [page, setPage] = React.useState(1);
-  const [sortBy, setSortBy] = React.useState<EmployeeListQuery['sortBy']>('joinDate');
-  const [sortDir, setSortDir] = React.useState<EmployeeListQuery['sortDir']>('desc');
+  const [sortBy, setSortBy] = React.useState<EmployeeSortBy>('joinDate');
+  const [sortDir, setSortDir] = React.useState<'asc' | 'desc'>('desc');
 
   const [view, setView] = React.useState<ViewMode>('list');
-  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [selected, setSelected] = React.useState<string[]>([]);
 
   React.useEffect(() => {
     const id = window.setTimeout(() => setDebouncedSearch(search), 250);
     return () => window.clearTimeout(id);
   }, [search]);
 
+  // Reset selection whenever filters change — the previous selection
+  // may now reference rows the user can't see.
   React.useEffect(() => {
-    setPage(1);
-    setSelected(new Set());
+    setSelected([]);
   }, [debouncedSearch, departmentId, statusId, contractType, includeArchived]);
 
-  // Transitional shape — kept until commit 5 swaps the inline table for
-  // the DataTable primitive (and useInfiniteEmployees). Once that lands,
-  // this whole block goes away.
-  const query: Partial<EmployeeListQuery> = {
-    offset: (page - 1) * DEFAULT_PAGE_SIZE,
-    limit: DEFAULT_PAGE_SIZE,
-    sortBy,
-    sortDir,
-    ...(debouncedSearch ? { search: debouncedSearch } : {}),
-    ...(departmentId ? { departmentId } : {}),
-    ...(statusId ? { statusId } : {}),
-    ...(contractType ? { contractType } : {}),
-    includeArchived,
-  };
-  const { data, isLoading, isError, error, refetch, isFetching } = useEmployeesList(query);
-  const totalCount = data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(totalCount / DEFAULT_PAGE_SIZE));
+  const filters = React.useMemo(
+    () => ({
+      sortBy,
+      sortDir,
+      ...(debouncedSearch ? { search: debouncedSearch } : {}),
+      ...(departmentId ? { departmentId } : {}),
+      ...(statusId ? { statusId } : {}),
+      ...(contractType ? { contractType } : {}),
+      includeArchived,
+    }),
+    [sortBy, sortDir, debouncedSearch, departmentId, statusId, contractType, includeArchived],
+  );
+
+  const {
+    data,
+    isLoading,
+    isError,
+    isFetching,
+    isFetchingNextPage,
+    isRefetchError: nextPageError,
+    hasNextPage,
+    fetchNextPage,
+    refetch,
+  } = useInfiniteEmployees(filters, PAGE_SIZE);
+
+  const rows: EmployeePublic[] = React.useMemo(
+    () => data?.pages.flatMap((p) => p.items) ?? [],
+    [data?.pages],
+  );
+  const totalCount = data?.pages[0]?.total ?? 0;
 
   const activeFilterCount =
     (debouncedSearch ? 1 : 0) +
@@ -119,13 +148,11 @@ export default function EmployeesListPage() {
     setIncludeArchived(false);
   }
 
-  function toggleSort(column: EmployeeListQuery['sortBy']) {
-    if (sortBy === column) {
-      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortBy(column);
-      setSortDir(column === 'joinDate' ? 'desc' : 'asc');
-    }
+  function handleSortChange(key: string, direction: 'asc' | 'desc') {
+    const apiKey = SORT_KEY_TO_API[key];
+    if (!apiKey) return;
+    setSortBy(apiKey);
+    setSortDir(direction);
   }
 
   const departments = referencesQuery.data?.departments ?? [];
@@ -133,38 +160,49 @@ export default function EmployeesListPage() {
   const selectedDepartment = departments.find((d) => d.id === departmentId);
   const selectedStatus = statuses.find((s) => s.id === statusId);
 
-  const rows = data?.items ?? [];
-  const pageIds = rows.map((r) => r.id);
-  const allOnPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
-  const someOnPageSelected = pageIds.some((id) => selected.has(id));
+  const columns = React.useMemo<DataTableColumn<EmployeePublic>[]>(
+    () => buildColumns({ canViewSalary }),
+    [canViewSalary],
+  );
 
-  function toggleSelectAll() {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (allOnPageSelected) {
-        for (const id of pageIds) next.delete(id);
-      } else {
-        for (const id of pageIds) next.add(id);
+  const rowActions = React.useCallback(
+    (employee: EmployeePublic): DataTableRowAction[] => {
+      const items: DataTableRowAction[] = [
+        { label: 'View profile', onClick: () => router.push(`/employees/${employee.id}`) },
+        { label: 'Edit details', onClick: () => router.push(`/employees/${employee.id}/edit`) },
+        {
+          label: 'Change status',
+          onClick: () => router.push(`/employees/${employee.id}?action=change-status`),
+        },
+        {
+          label: 'Change manager',
+          onClick: () => router.push(`/employees/${employee.id}?action=change-manager`),
+        },
+        {
+          label: 'Change salary',
+          onClick: () => router.push(`/employees/${employee.id}?action=change-salary`),
+        },
+      ];
+      if (canArchive) {
+        items.push({
+          label: 'Archive',
+          variant: 'destructive',
+          onClick: () => router.push(`/employees/${employee.id}?action=archive`),
+        });
       }
-      return next;
-    });
-  }
+      return items;
+    },
+    [router, canArchive],
+  );
 
-  function toggleRow(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
+  const exportUrl = React.useMemo(() => buildExportUrl(filters), [filters]);
 
   return (
     <TooltipProvider delayDuration={200}>
       <AppShell breadcrumbs={[{ label: 'HR Core' }, { label: 'Employees' }]}>
-        <div className="gap-fn-5 flex flex-col">
+        <div className="gap-fn-5 flex h-full flex-col">
           {/* Page header */}
-          <div className="gap-fn-3 flex flex-wrap items-end justify-between">
+          <div className="gap-fn-3 flex shrink-0 flex-wrap items-end justify-between">
             <div className="gap-fn-1_5 flex flex-col">
               <h1 className="text-fn-fg font-fn-semibold tracking-fn-tight text-[24px]">
                 Employees
@@ -176,10 +214,6 @@ export default function EmployeesListPage() {
               </p>
             </div>
             <div className="gap-fn-2 flex items-center">
-              {/* secondary (not outline) — design intent for toolbar buttons next to
-                  a primary action: visible bg-fn-bg-panel + border-strong so the
-                  buttons read as solid chrome against the page bg, not as
-                  transparent ghosts. */}
               {canImport && (
                 <Button asChild variant="secondary" size="md">
                   <Link href="/employees/import">
@@ -189,7 +223,7 @@ export default function EmployeesListPage() {
               )}
               {canExport && (
                 <Button asChild variant="secondary" size="md">
-                  <a href={buildExportUrl(query)} target="_blank" rel="noreferrer">
+                  <a href={exportUrl} target="_blank" rel="noreferrer">
                     <Download className="h-fn-4 w-fn-4" /> Export
                   </a>
                 </Button>
@@ -207,10 +241,16 @@ export default function EmployeesListPage() {
           {/* KPI strip */}
           <KpiStrip />
 
-          {/* Table card */}
-          <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm overflow-hidden border">
+          {/* Table card — takes remaining vertical space; the DataTable
+              inside it owns the scroll. `min-h-0` lets the flex child
+              shrink below its content's natural size so the internal
+              scroll actually engages instead of pushing main to scroll.
+              The outer div owns the card chrome (border + rounded + bg)
+              so the toolbar and the table share one continuous frame;
+              the DataTable is rendered with chrome="plain" inside. */}
+          <div className="border-fn-border bg-fn-bg-panel rounded-fn-xs flex min-h-0 flex-1 flex-col overflow-hidden border">
             {/* Toolbar */}
-            <div className="border-fn-divider gap-fn-2_5 px-fn-5 py-fn-3_5 flex flex-wrap items-center border-b">
+            <div className="border-fn-divider gap-fn-2_5 px-fn-5 py-fn-3_5 flex shrink-0 flex-wrap items-center border-b">
               <div className="relative w-full max-w-[340px] flex-1">
                 <Search className="text-fn-fg-faint left-fn-2_5 h-fn-3_5 w-fn-3_5 pointer-events-none absolute top-1/2 -translate-y-1/2" />
                 <Input
@@ -312,145 +352,40 @@ export default function EmployeesListPage() {
               </div>
             </div>
 
-            {/* Table */}
-            {/*
-             * Column widths — locked to docs/design/screens/employees.jsx
-             * lines 104-114. Nine columns:
-             *   48 / flex / 130 / 130 / 130 / 130 / 130 / 110 / 36
-             * Fixed columns sum to 844px; Employee takes the rest.
-             *
-             * `min-w-[1080px]` on the table guarantees a ~236px Employee
-             * column floor; below that viewport the overflow-x-auto
-             * wrapper produces a horizontal scrollbar instead of letting
-             * fixed columns collapse and content overlap into neighbours.
-             *
-             * Single-table layout (vs nested inset table inside a
-             * th colSpan): one colgroup means column edges are
-             * guaranteed identical between header and body rows, so the
-             * header checkbox cannot drift against the row checkboxes.
-             */}
-            <div className="p-fn-3_5 overflow-x-auto">
-              <table className="w-full min-w-[1080px] table-fixed border-collapse text-[13px]">
-                <colgroup>
-                  <col style={{ width: 48 }} />
-                  <col />
-                  <col style={{ width: 130 }} />
-                  <col style={{ width: 130 }} />
-                  <col style={{ width: 130 }} />
-                  <col style={{ width: 130 }} />
-                  <col style={{ width: 130 }} />
-                  {canViewSalary && <col style={{ width: 110 }} />}
-                  <col style={{ width: 48 }} />
-                </colgroup>
-                <thead>
-                  <tr className="[&>td]:bg-fn-bg-subtle [&>td:first-child]:rounded-l-fn-sm [&>td:last-child]:rounded-r-fn-sm">
-                    <td className="py-fn-4 pl-[18px] pr-0 align-middle">
-                      <Checkbox
-                        checked={
-                          allOnPageSelected ? true : someOnPageSelected ? 'indeterminate' : false
-                        }
-                        onCheckedChange={() => toggleSelectAll()}
-                        aria-label={allOnPageSelected ? 'Deselect all' : 'Select all'}
-                      />
-                    </td>
-                    <Th
-                      sortable
-                      active={sortBy === 'fullName'}
-                      dir={sortDir}
-                      onSort={() => toggleSort('fullName')}
-                    >
-                      Employee
-                    </Th>
-                    <Th
-                      sortable
-                      active={sortBy === 'eid'}
-                      dir={sortDir}
-                      onSort={() => toggleSort('eid')}
-                    >
-                      EID
-                    </Th>
-                    <Th>Department</Th>
-                    <Th>Designation</Th>
-                    <Th>Status</Th>
-                    <Th
-                      sortable
-                      active={sortBy === 'joinDate'}
-                      dir={sortDir}
-                      onSort={() => toggleSort('joinDate')}
-                    >
-                      Join date
-                    </Th>
-                    {canViewSalary && (
-                      <Th
-                        sortable
-                        active={sortBy === 'salaryPkr'}
-                        dir={sortDir}
-                        onSort={() => toggleSort('salaryPkr')}
-                      >
-                        Salary / mo
-                      </Th>
-                    )}
-                    <td />
-                  </tr>
-                </thead>
-                <tbody>
-                  {isLoading && <SkeletonRows columns={canViewSalary ? 9 : 8} />}
-                  {!isLoading && isError && (
-                    <tr>
-                      <td colSpan={canViewSalary ? 9 : 8}>
-                        <div className="text-fn-fg-muted gap-fn-2 py-fn-10 flex flex-col items-center text-center text-[13px]">
-                          <p>
-                            Couldn't load employees: {(error as Error)?.message ?? 'unknown error'}
-                          </p>
-                          <Button variant="outline" size="sm" onClick={() => refetch()}>
-                            Retry
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                  {!isLoading && !isError && data && data.items.length === 0 && (
-                    <tr>
-                      <td colSpan={canViewSalary ? 9 : 8}>
-                        <EmptyState hasFilters={activeFilterCount > 0} canCreate={canCreate} />
-                      </td>
-                    </tr>
-                  )}
-                  {!isLoading &&
-                    rows.map((emp, idx) => (
-                      <EmployeeRow
-                        key={emp.id}
-                        employee={emp}
-                        canViewSalary={canViewSalary}
-                        canArchive={canArchive}
-                        isSelected={selected.has(emp.id)}
-                        bordered={idx < rows.length - 1}
-                        onToggle={() => toggleRow(emp.id)}
-                        onOpen={() => router.push(`/employees/${emp.id}`)}
-                      />
-                    ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Pagination — transitional until commit 5 introduces
-                infinite scroll via the DataTable primitive. */}
-            {data && totalCount > 0 && (
-              <Pagination
-                page={page}
-                totalPages={totalPages}
-                total={totalCount}
-                pageSize={DEFAULT_PAGE_SIZE}
-                onChange={setPage}
+            {/* DataTable — owns the actual scroll, sticky header, infinite
+                load mechanics, and all loading/empty/error states. */}
+            <div className="min-h-0 flex-1">
+              <DataTable<EmployeePublic>
+                columns={columns}
+                rows={rows}
+                getRowKey={(r) => r.id}
+                isLoading={isLoading}
+                isError={isError && rows.length === 0}
+                onRetry={() => refetch()}
+                totalCount={totalCount}
+                hasMore={hasNextPage}
+                isFetchingMore={isFetchingNextPage}
+                onLoadMore={() => fetchNextPage()}
+                hasFetchMoreError={Boolean(nextPageError && rows.length > 0)}
+                onRetryFetchMore={() => fetchNextPage()}
+                onRowClick={(r) => router.push(`/employees/${r.id}`)}
+                sortKey={API_TO_SORT_KEY[sortBy]}
+                sortDirection={sortDir}
+                onSortChange={handleSortChange}
+                selectedRowKeys={selected}
+                onSelectionChange={setSelected}
+                rowActions={rowActions}
+                emptyState={<EmptyState hasFilters={activeFilterCount > 0} canCreate={canCreate} />}
+                chrome="plain"
               />
-            )}
+            </div>
           </div>
         </div>
 
         <BulkActionBar
-          count={selected.size}
+          count={selected.length}
           canArchive={canArchive}
-          onClear={() => setSelected(new Set())}
+          onClear={() => setSelected([])}
           onExport={() => toast.info('Bulk export will land with the reports module.')}
           onArchive={() => toast.info('Bulk archive will land alongside the per-row workflow.')}
         />
@@ -459,121 +394,27 @@ export default function EmployeesListPage() {
   );
 }
 
-/* ---------- Header cells ---------- */
+/* ---------- Column definitions ---------- */
 
-interface ThProps {
-  children: React.ReactNode;
-  align?: 'left' | 'right';
-  sortable?: boolean;
-  active?: boolean;
-  dir?: 'asc' | 'desc';
-  onSort?: () => void;
-}
-
-function Th({ children, align = 'left', sortable, active, dir, onSort }: ThProps) {
-  // Header spec: 11px / weight 500 / UPPERCASE / tracking 0.10em
-  // / muted color / 16px vertical · 12px horizontal padding. The
-  // 16px vertical aligns the header pill height with the row
-  // rhythm (row inner-pad is also 16-18px).
-  return (
-    <td
-      className={cn(
-        'text-fn-fg-muted px-fn-3 py-fn-4 font-fn-medium text-[11px] uppercase tracking-[0.1em]',
-        align === 'right' ? 'text-right' : 'text-left',
-      )}
-    >
-      <button
-        type="button"
-        onClick={sortable ? onSort : undefined}
-        disabled={!sortable}
-        className={cn(
-          // uppercase + tracking duplicated from the <td> wrapper because
-          // browser UA styles set `text-transform: none` on <button>,
-          // which blocks the td's inheritance. Same reason font-size and
-          // letter-spacing get repeated — the button is its own
-          // text-rendering context.
-          'font-fn-medium inline-flex items-center gap-[5px] text-[11px] uppercase tracking-[0.1em] transition-colors',
-          align === 'right' && 'flex-row-reverse',
-          sortable && 'hover:text-fn-fg cursor-pointer',
-          active && 'text-fn-fg',
-        )}
-      >
-        <span>{children}</span>
-        {sortable &&
-          active &&
-          (dir === 'asc' ? (
-            <ArrowUp className="h-fn-3 w-fn-3 opacity-60" />
-          ) : (
-            <ArrowDown className="h-fn-3 w-fn-3 opacity-60" />
-          ))}
-      </button>
-    </td>
-  );
-}
-
-/* ---------- Body row ---------- */
-
-interface EmployeeRowProps {
-  employee: EmployeePublic;
-  canViewSalary: boolean;
-  canArchive: boolean;
-  isSelected: boolean;
-  bordered: boolean;
-  onToggle: () => void;
-  onOpen: () => void;
-}
-
-function EmployeeRow({
-  employee,
+function buildColumns({
   canViewSalary,
-  canArchive,
-  isSelected,
-  bordered,
-  onToggle,
-  onOpen,
-}: EmployeeRowProps) {
-  // Cell padding spec (docs/design/screens/employees.jsx Td function):
-  //   first cell  → 12px 0 12px 18px
-  //   last cell   → 12px 14px 12px 4px
-  //   default     → 12px 12px (px-fn-3 py-fn-3)
-  //
-  // The Employee cell additionally renders the 36px avatar + name +
-  // email block which pushes the row to ~70px tall — that's the row
-  // rhythm the design intends. Other cells inherit that height
-  // automatically through align-middle.
-  const cellBorder = bordered ? 'border-b border-fn-divider' : '';
-  return (
-    <tr
-      onClick={onOpen}
-      data-state={isSelected ? 'selected' : undefined}
-      className={cn(
-        'hover:bg-fn-bg-subtle cursor-pointer transition-colors',
-        isSelected && 'bg-fn-accent-soft/30',
-        employee.isArchived && 'opacity-60',
-      )}
-    >
-      <td
-        className={cn('py-fn-4_5 pl-[18px] pr-0 align-middle', cellBorder)}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <Checkbox
-          checked={isSelected}
-          onCheckedChange={onToggle}
-          aria-label={`Select ${employee.fullName}`}
-        />
-      </td>
-      <td className={cn('px-fn-3 align-middle', cellBorder)}>
-        {/* Inner wrapper drives the row-rhythm pad (18px top/bottom)
-            so the cell border tracks the row, not the avatar block.
-            18px + 36 avatar + 18 = 72px row height, matches the
-            design reference. */}
-        <div className="gap-fn-3 py-fn-4_5 flex items-center">
+}: {
+  canViewSalary: boolean;
+}): DataTableColumn<EmployeePublic>[] {
+  const cols: DataTableColumn<EmployeePublic>[] = [
+    {
+      id: 'employee',
+      header: 'Employee',
+      width: 'auto',
+      sortable: true,
+      cell: (employee) => (
+        <div className="gap-fn-3 flex items-center">
           <EmployeeAvatar fullName={employee.fullName} photoUrl={employee.photoUrl} size="md" />
           <div className="min-w-0">
             <div
               className={cn(
                 'text-fn-fg font-fn-semibold leading-fn-tight truncate text-[14px]',
-                employee.isArchived && 'line-through',
+                employee.isArchived && 'line-through opacity-60',
               )}
             >
               {employee.fullName}
@@ -583,109 +424,75 @@ function EmployeeRow({
             </div>
           </div>
         </div>
-      </td>
-      <td className={cn('px-fn-3 py-fn-4_5 align-middle', cellBorder)}>
+      ),
+    },
+    {
+      id: 'eid',
+      header: 'EID',
+      width: 130,
+      sortable: true,
+      cell: (employee) => (
         <span className="text-fn-fg-muted font-mono text-[12px] tabular-nums">{employee.eid}</span>
-      </td>
-      <td className={cn('text-fn-fg-muted px-fn-3 py-fn-4_5 align-middle text-[13px]', cellBorder)}>
-        {employee.department.name}
-      </td>
-      <td className={cn('text-fn-fg-muted px-fn-3 py-fn-4_5 align-middle text-[13px]', cellBorder)}>
-        {employee.designation.name}
-      </td>
-      <td className={cn('px-fn-3 py-fn-4_5 align-middle', cellBorder)}>
-        <StatusPill status={employee.status} dot />
-      </td>
-      <td
-        className={cn(
-          'text-fn-fg-muted px-fn-3 py-fn-4_5 align-middle text-[13px] tabular-nums',
-          cellBorder,
-        )}
-      >
-        {formatJoinDate(employee.joinDate)}
-      </td>
-      {canViewSalary && (
-        <td className={cn('px-fn-3 py-fn-4_5 align-middle', cellBorder)}>
-          {employee.salaryPkr != null ? (
-            <>
-              <div className="text-fn-fg font-fn-semibold text-[13px] tabular-nums">
-                {formatSalary(employee.salaryPkr)}
-              </div>
-              {employee.hasPayoneer && (
-                <div className="text-fn-success-soft-fg mt-fn-0_5 font-fn-medium text-[10.5px]">
-                  Payoneer linked
-                </div>
-              )}
-            </>
-          ) : (
-            <span className="text-fn-fg-faint">—</span>
-          )}
-        </td>
-      )}
-      {/* Kebab cell — 48px col, padded with the standard px-fn-3 (12) so
-          the gap from the salary cell's right edge to the kebab button
-          mirrors the gap between every other adjacent column. The 24×24
-          button + 12 + 12 sums to exactly 48 so nothing overflows. */}
-      <td
-        className={cn('px-fn-3 py-fn-4_5 align-middle', cellBorder)}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <RowKebabMenu employee={employee} canArchive={canArchive} />
-      </td>
-    </tr>
-  );
-}
-
-function RowKebabMenu({ employee, canArchive }: { employee: EmployeePublic; canArchive: boolean }) {
-  const router = useRouter();
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label={`Actions for ${employee.fullName}`}
-          className="rounded-fn-xs text-fn-fg-faint hover:bg-fn-bg-inset hover:text-fn-fg-muted focus-visible:ring-fn-accent h-fn-6 w-fn-6 inline-flex cursor-pointer items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2"
-        >
-          <MoreHorizontal className="h-fn-4 w-fn-4" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-fn-52">
-        <DropdownMenuItem onClick={() => router.push(`/employees/${employee.id}`)}>
-          View profile
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => router.push(`/employees/${employee.id}/edit`)}>
-          Edit details
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onClick={() => router.push(`/employees/${employee.id}?action=change-status`)}
-        >
-          Change status
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => router.push(`/employees/${employee.id}?action=change-manager`)}
-        >
-          Change manager
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => router.push(`/employees/${employee.id}?action=change-salary`)}
-        >
-          Change salary
-        </DropdownMenuItem>
-        {canArchive && (
+      ),
+    },
+    {
+      id: 'department',
+      header: 'Department',
+      width: 130,
+      cell: (employee) => (
+        <span className="text-fn-fg-muted text-[13px]">{employee.department.name}</span>
+      ),
+    },
+    {
+      id: 'designation',
+      header: 'Designation',
+      width: 130,
+      cell: (employee) => (
+        <span className="text-fn-fg-muted text-[13px]">{employee.designation.name}</span>
+      ),
+    },
+    {
+      id: 'status',
+      header: 'Status',
+      width: 130,
+      cell: (employee) => <StatusPill status={employee.status} dot />,
+    },
+    {
+      id: 'joinDate',
+      header: 'Join date',
+      width: 130,
+      sortable: true,
+      cell: (employee) => (
+        <span className="text-fn-fg-muted text-[13px] tabular-nums">
+          {formatJoinDate(employee.joinDate)}
+        </span>
+      ),
+    },
+  ];
+  if (canViewSalary) {
+    cols.push({
+      id: 'salary',
+      header: 'Salary / mo',
+      width: 110,
+      sortable: true,
+      cell: (employee) =>
+        employee.salaryPkr != null ? (
           <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => router.push(`/employees/${employee.id}?action=archive`)}
-              className="text-fn-danger focus:text-fn-danger"
-            >
-              Archive
-            </DropdownMenuItem>
+            <div className="text-fn-fg font-fn-semibold text-[13px] tabular-nums">
+              {formatSalary(employee.salaryPkr)}
+            </div>
+            {employee.hasPayoneer && (
+              <div className="text-fn-success-soft-fg mt-fn-0_5 font-fn-medium text-[10.5px]">
+                Payoneer linked
+              </div>
+            )}
           </>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+        ) : (
+          <span className="text-fn-fg-faint">—</span>
+        ),
+    });
+  }
+  return cols;
 }
 
 /* ---------- Filter pill ---------- */
@@ -816,93 +623,6 @@ function ViewToggle({ current, onChange }: { current: ViewMode; onChange: (v: Vi
   );
 }
 
-/* ---------- Pagination ---------- */
-
-function Pagination({
-  page,
-  totalPages,
-  total,
-  pageSize,
-  onChange,
-}: {
-  page: number;
-  totalPages: number;
-  total: number;
-  pageSize: number;
-  onChange: (next: number) => void;
-}) {
-  const from = (page - 1) * pageSize + 1;
-  const to = Math.min(page * pageSize, total);
-  const pages = visiblePages(page, totalPages);
-  return (
-    <div className="border-fn-divider text-fn-fg-muted px-fn-5 py-fn-3_5 flex items-center justify-between border-t text-[13px]">
-      <div className="tabular-nums">
-        Showing{' '}
-        <strong className="text-fn-fg font-fn-semibold">
-          {from}–{to}
-        </strong>{' '}
-        of {total.toLocaleString()}
-      </div>
-      <div className="gap-fn-1 flex items-center">
-        <button
-          type="button"
-          onClick={() => onChange(Math.max(1, page - 1))}
-          disabled={page <= 1}
-          className="rounded-fn-xs text-fn-fg-muted hover:bg-fn-bg-inset gap-fn-1 px-fn-2_5 font-fn-medium inline-flex h-[30px] cursor-pointer items-center text-[12.5px] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <ChevronLeft className="h-fn-3 w-fn-3" /> Prev
-        </button>
-        {pages.map((p, i) =>
-          typeof p === 'number' ? (
-            <button
-              key={i}
-              type="button"
-              onClick={() => onChange(p)}
-              className={cn(
-                'rounded-fn-xs inline-flex h-[30px] w-[30px] cursor-pointer items-center justify-center text-[12.5px] transition-colors',
-                p === page
-                  ? 'bg-fn-accent text-fn-accent-fg font-fn-semibold'
-                  : 'text-fn-fg-muted hover:bg-fn-bg-inset',
-              )}
-            >
-              {p}
-            </button>
-          ) : (
-            <span
-              key={i}
-              className="text-fn-fg-faint inline-flex h-[30px] w-[30px] items-center justify-center"
-            >
-              …
-            </span>
-          ),
-        )}
-        <button
-          type="button"
-          onClick={() => onChange(Math.min(totalPages, page + 1))}
-          disabled={page >= totalPages}
-          className="rounded-fn-xs text-fn-fg-muted hover:bg-fn-bg-inset gap-fn-1 px-fn-2_5 font-fn-medium inline-flex h-[30px] cursor-pointer items-center text-[12.5px] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Next <ChevronRight className="h-fn-3 w-fn-3" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function visiblePages(page: number, total: number): Array<number | '…'> {
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
-  const set = new Set<number>([1, total, page, page - 1, page + 1]);
-  const sorted = [...set].filter((n) => n >= 1 && n <= total).sort((a, b) => a - b);
-  const out: Array<number | '…'> = [];
-  for (let i = 0; i < sorted.length; i += 1) {
-    out.push(sorted[i]!);
-    if (i < sorted.length - 1 && sorted[i + 1]! - sorted[i]! > 1) {
-      out.push('…');
-    }
-  }
-  return out;
-}
-
 /* ---------- Bulk action bar ---------- */
 
 function BulkActionBar({
@@ -949,35 +669,7 @@ function BulkActionBar({
   );
 }
 
-/* ---------- Skeleton + empty ---------- */
-
-function SkeletonRows({ columns }: { columns: number }) {
-  return (
-    <>
-      {Array.from({ length: 6 }).map((_, i) => (
-        <tr key={i} className="border-fn-divider border-b last:border-b-0">
-          <td className="py-fn-4 pl-[18px] pr-0">
-            <Skeleton className="h-fn-4 w-fn-4 rounded-[4px]" />
-          </td>
-          <td className="px-fn-3 py-fn-4">
-            <div className="gap-fn-3 flex items-center">
-              <Skeleton className="h-fn-9 w-fn-9 rounded-[8px]" />
-              <div className="gap-fn-1_5 flex flex-col">
-                <Skeleton className="h-fn-3 w-fn-36" />
-                <Skeleton className="h-fn-2_5 w-fn-24" />
-              </div>
-            </div>
-          </td>
-          {Array.from({ length: columns - 2 }).map((__, j) => (
-            <td key={j} className="px-fn-3 py-fn-4">
-              <Skeleton className="h-fn-3 w-fn-20" />
-            </td>
-          ))}
-        </tr>
-      ))}
-    </>
-  );
-}
+/* ---------- Empty state ---------- */
 
 function EmptyState({ hasFilters, canCreate }: { hasFilters: boolean; canCreate: boolean }) {
   return (
@@ -989,7 +681,9 @@ function EmptyState({ hasFilters, canCreate }: { hasFilters: boolean; canCreate:
         <UsersIcon className="h-fn-5 w-fn-5" />
       </div>
       <div className="gap-fn-1 flex flex-col">
-        <p className="text-fn-fg font-fn-medium text-[14px]">No employees match your filters</p>
+        <p className="text-fn-fg font-fn-medium text-[14px]">
+          {hasFilters ? 'No employees match your filters' : 'No employees yet'}
+        </p>
         <p className="text-fn-fg-muted text-[13px]">
           {hasFilters
             ? 'Try clearing one of the filters or searching for someone else.'
@@ -1026,7 +720,7 @@ function buildExportUrl(query: Partial<EmployeeListQuery>): string {
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(query)) {
     if (v === undefined || v === null || v === '') continue;
-    if (k === 'page' || k === 'pageSize') continue;
+    if (k === 'offset' || k === 'limit') continue;
     params.set(k, String(v));
   }
   const base = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';

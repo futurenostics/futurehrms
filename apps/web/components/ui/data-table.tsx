@@ -115,6 +115,14 @@ export type DataTableProps<T> = {
 
   /** Minimum table width in px — horizontal scroll kicks in below this. */
   minWidth?: number;
+  /**
+   * Chrome around the scroll container.
+   *   - `'card'` (default): border + rounded + bg-fn-bg-panel, standalone.
+   *   - `'plain'`: no border, no rounded, no bg. Use when the parent
+   *     already provides a card around the table (e.g. a toolbar sits
+   *     above and shares the rounded corners).
+   */
+  chrome?: 'card' | 'plain';
   /** Optional className for the outermost wrapper (rare; usually unused). */
   className?: string;
 };
@@ -152,6 +160,7 @@ export function DataTable<T>({
   rowActions,
   emptyState,
   minWidth,
+  chrome = 'card',
   className,
 }: DataTableProps<T>) {
   const sentinelRef = React.useRef<HTMLDivElement | null>(null);
@@ -245,7 +254,12 @@ export function DataTable<T>({
           overflow-auto enables both the horizontal scroll (when viewport
           < minWidth) and the vertical scroll that drives infinite
           loading. */}
-      <div className="border-fn-border bg-fn-bg-panel rounded-fn-xs h-full overflow-auto border">
+      <div
+        className={cn(
+          'h-full overflow-auto',
+          chrome === 'card' && 'border-fn-border bg-fn-bg-panel rounded-fn-xs border',
+        )}
+      >
         <table
           className="w-full table-fixed border-collapse text-[13px]"
           style={{ minWidth: `${computedMinWidth}px` }}
