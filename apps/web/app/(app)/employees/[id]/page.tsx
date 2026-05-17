@@ -37,6 +37,7 @@ import {
 import { ChangeStatusDialog } from '@/components/employees/dialogs/change-status-dialog';
 import { ChangeManagerDialog } from '@/components/employees/dialogs/change-manager-dialog';
 import { ChangeSalaryDialog } from '@/components/employees/dialogs/change-salary-dialog';
+import { EmployeeFormSheet } from '@/components/employees/employee-form-sheet';
 import { usePermissions } from '@/hooks/use-permissions';
 import { cn } from '@/lib/utils';
 
@@ -64,6 +65,7 @@ export default function EmployeeProfilePage() {
   const [changeManagerOpen, setChangeManagerOpen] = React.useState(false);
   const [changeSalaryOpen, setChangeSalaryOpen] = React.useState(false);
   const [archiveOpen, setArchiveOpen] = React.useState(false);
+  const [editOpen, setEditOpen] = React.useState(false);
   const archiveMutation = useDeleteEmployee(id ?? '');
 
   function setTab(next: TabKey) {
@@ -103,6 +105,7 @@ export default function EmployeeProfilePage() {
           <>
             <ProfileHeader
               employee={employee}
+              onEdit={() => setEditOpen(true)}
               onChangeStatus={() => setChangeStatusOpen(true)}
               onChangeManager={() => setChangeManagerOpen(true)}
               onChangeSalary={() => setChangeSalaryOpen(true)}
@@ -163,6 +166,14 @@ export default function EmployeeProfilePage() {
               open={changeSalaryOpen}
               onOpenChange={setChangeSalaryOpen}
               employee={employee}
+            />
+
+            <EmployeeFormSheet
+              open={editOpen}
+              onOpenChange={setEditOpen}
+              mode="edit"
+              employee={employee}
+              onSuccess={() => employeeQuery.refetch()}
             />
 
             <Dialog open={archiveOpen} onOpenChange={setArchiveOpen}>

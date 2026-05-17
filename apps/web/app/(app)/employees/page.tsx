@@ -183,7 +183,7 @@ export default function EmployeesListPage() {
     (employee: EmployeePublic): DataTableRowAction[] => {
       const items: DataTableRowAction[] = [
         { label: 'View profile', onClick: () => router.push(`/employees/${employee.id}`) },
-        { label: 'Edit details', onClick: () => router.push(`/employees/${employee.id}/edit`) },
+        { label: 'Edit details', onClick: () => setSheetState({ mode: 'edit', employee }) },
         {
           label: 'Change status',
           onClick: () => router.push(`/employees/${employee.id}?action=change-status`),

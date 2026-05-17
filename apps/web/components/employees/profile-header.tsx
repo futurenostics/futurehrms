@@ -20,6 +20,7 @@ import { usePermissions } from '@/hooks/use-permissions';
 
 export interface ProfileHeaderProps {
   employee: EmployeePublic;
+  onEdit: () => void;
   onChangeStatus: () => void;
   onChangeManager: () => void;
   onChangeSalary: () => void;
@@ -28,6 +29,7 @@ export interface ProfileHeaderProps {
 
 export function ProfileHeader({
   employee,
+  onEdit,
   onChangeStatus,
   onChangeManager,
   onChangeSalary,
@@ -124,8 +126,8 @@ export function ProfileHeader({
 
         <div className="gap-fn-2 flex flex-wrap items-center">
           {canEdit && (
-            <Button asChild variant="outline" size="sm">
-              <Link href={`/employees/${employee.id}/edit`}>Edit</Link>
+            <Button variant="outline" size="sm" onClick={onEdit}>
+              Edit
             </Button>
           )}
           {(canChangeStatus || canChangeManager || canChangeSalary || canArchive) && (
