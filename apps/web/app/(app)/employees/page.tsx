@@ -157,36 +157,38 @@ export default function EmployeesListPage() {
   return (
     <TooltipProvider delayDuration={200}>
       <AppShell breadcrumbs={[{ label: 'HR Core' }, { label: 'Employees' }]}>
-        <div className="flex flex-col gap-5">
+        <div className="gap-fn-5 flex flex-col">
           {/* Page header */}
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div className="flex flex-col gap-1.5">
-              <h1 className="text-fn-fg text-[24px] font-semibold tracking-tight">Employees</h1>
+          <div className="gap-fn-3 flex flex-wrap items-end justify-between">
+            <div className="gap-fn-1_5 flex flex-col">
+              <h1 className="text-fn-fg font-fn-semibold tracking-fn-tight text-[24px]">
+                Employees
+              </h1>
               <p className="text-fn-fg-muted text-[14px]">
                 {statsQuery.data
                   ? `${statsQuery.data.totalHeadcount.toLocaleString()} ${statsQuery.data.totalHeadcount === 1 ? 'person' : 'people'} across ${statsQuery.data.distinctDepartments} ${statsQuery.data.distinctDepartments === 1 ? 'department' : 'departments'}. Manage profiles, salaries, and lifecycle.`
                   : ' '}
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="gap-fn-2 flex items-center">
               {canImport && (
                 <Button asChild variant="outline" size="md">
                   <Link href="/employees/import">
-                    <Upload className="h-4 w-4" /> Import CSV
+                    <Upload className="h-fn-4 w-fn-4" /> Import CSV
                   </Link>
                 </Button>
               )}
               {canExport && (
                 <Button asChild variant="outline" size="md">
                   <a href={buildExportUrl(query)} target="_blank" rel="noreferrer">
-                    <Download className="h-4 w-4" /> Export
+                    <Download className="h-fn-4 w-fn-4" /> Export
                   </a>
                 </Button>
               )}
               {canCreate && (
                 <Button asChild size="md">
                   <Link href="/employees/new">
-                    <Plus className="h-4 w-4" /> New employee
+                    <Plus className="h-fn-4 w-fn-4" /> New employee
                   </Link>
                 </Button>
               )}
@@ -199,17 +201,17 @@ export default function EmployeesListPage() {
           {/* Table card */}
           <div className="rounded-fn-xs border-fn-border bg-fn-bg-panel shadow-fn-sm overflow-hidden border">
             {/* Toolbar */}
-            <div className="border-fn-divider flex flex-wrap items-center gap-2.5 border-b px-5 py-3.5">
+            <div className="border-fn-divider gap-fn-2_5 px-fn-5 py-fn-3_5 flex flex-wrap items-center border-b">
               <div className="relative w-full max-w-[340px] flex-1">
-                <Search className="text-fn-fg-faint pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" />
+                <Search className="text-fn-fg-faint left-fn-2_5 h-fn-3_5 w-fn-3_5 pointer-events-none absolute top-1/2 -translate-y-1/2" />
                 <Input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search by name, email, or EID…"
-                  className="pl-8"
+                  className="pl-fn-8"
                 />
               </div>
-              <div className="border-fn-divider mx-1 h-6 border-l" aria-hidden />
+              <div className="border-fn-divider mx-fn-1 h-fn-6 border-l" aria-hidden />
 
               <FilterPill
                 label="Department"
@@ -260,13 +262,13 @@ export default function EmployeesListPage() {
                 <button
                   type="button"
                   onClick={clearFilters}
-                  className="text-fn-accent-soft-fg cursor-pointer text-[12.5px] font-semibold hover:underline"
+                  className="text-fn-accent-soft-fg font-fn-semibold cursor-pointer text-[12.5px] hover:underline"
                 >
                   Clear ({activeFilterCount})
                 </button>
               )}
 
-              <div className="ml-auto flex items-center gap-2">
+              <div className="gap-fn-2 ml-auto flex items-center">
                 {isFetching && !isLoading && (
                   <span className="text-fn-fg-faint text-[11.5px]">Refreshing…</span>
                 )}
@@ -274,22 +276,22 @@ export default function EmployeesListPage() {
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button variant="outline" size="sm">
-                        <Filter className="h-3.5 w-3.5" /> More filters
+                        <Filter className="h-fn-3_5 w-fn-3_5" /> More filters
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent align="end" className="w-64">
-                      <div className="flex flex-col gap-3">
-                        <div className="text-fn-fg-faint text-[11px] font-semibold uppercase tracking-wider">
+                    <PopoverContent align="end" className="w-fn-64">
+                      <div className="gap-fn-3 flex flex-col">
+                        <div className="text-fn-fg-faint font-fn-semibold tracking-fn-uppercase-tight text-[11px] uppercase">
                           Visibility
                         </div>
-                        <label className="text-fn-fg inline-flex cursor-pointer items-center gap-2.5 text-[13px]">
+                        <label className="text-fn-fg gap-fn-2_5 inline-flex cursor-pointer items-center text-[13px]">
                           <Checkbox
                             checked={includeArchived}
                             onCheckedChange={(v) => setIncludeArchived(v === true)}
                           />
                           Include archived employees
                         </label>
-                        <p className="text-fn-fg-muted text-[11.5px] leading-relaxed">
+                        <p className="text-fn-fg-muted leading-fn-relaxed text-[11.5px]">
                           Archived employees keep their data and history but are hidden from the
                           default list.
                         </p>
@@ -302,7 +304,7 @@ export default function EmployeesListPage() {
             </div>
 
             {/* Table */}
-            <div className="p-3.5">
+            <div className="p-fn-3_5">
               <table className="w-full table-fixed border-collapse text-[13px]">
                 <colgroup>
                   <col style={{ width: 48 }} />
@@ -318,7 +320,7 @@ export default function EmployeesListPage() {
                 <thead>
                   <tr>
                     <th colSpan={canViewSalary ? 9 : 8} className="p-0">
-                      <div className="rounded-fn-sm bg-fn-bg-subtle mt-1">
+                      <div className="rounded-fn-sm bg-fn-bg-subtle mt-fn-1">
                         <table className="w-full table-fixed border-collapse">
                           <colgroup>
                             <col style={{ width: 48 }} />
@@ -333,7 +335,7 @@ export default function EmployeesListPage() {
                           </colgroup>
                           <tbody>
                             <tr>
-                              <td className="py-3 pl-[18px] pr-0 align-middle">
+                              <td className="py-fn-3 pl-[18px] pr-0 align-middle">
                                 <Checkbox
                                   checked={
                                     allOnPageSelected
@@ -397,7 +399,7 @@ export default function EmployeesListPage() {
                   {!isLoading && isError && (
                     <tr>
                       <td colSpan={canViewSalary ? 9 : 8}>
-                        <div className="text-fn-fg-muted flex flex-col items-center gap-2 py-10 text-center text-[13px]">
+                        <div className="text-fn-fg-muted gap-fn-2 py-fn-10 flex flex-col items-center text-center text-[13px]">
                           <p>
                             Couldn't load employees: {(error as Error)?.message ?? 'unknown error'}
                           </p>
@@ -477,7 +479,7 @@ function Th({ children, align = 'left', sortable, active, dir, onSort }: ThProps
   return (
     <td
       className={cn(
-        'text-fn-fg-muted px-3 py-3 text-[11px] font-medium uppercase tracking-[0.08em]',
+        'text-fn-fg-muted px-fn-3 py-fn-3 font-fn-medium text-[11px] uppercase tracking-[0.08em]',
         align === 'right' ? 'text-right' : 'text-left',
       )}
     >
@@ -496,9 +498,9 @@ function Th({ children, align = 'left', sortable, active, dir, onSort }: ThProps
         {sortable &&
           active &&
           (dir === 'asc' ? (
-            <ArrowUp className="h-3 w-3 opacity-60" />
+            <ArrowUp className="h-fn-3 w-fn-3 opacity-60" />
           ) : (
-            <ArrowDown className="h-3 w-3 opacity-60" />
+            <ArrowDown className="h-fn-3 w-fn-3 opacity-60" />
           ))}
       </button>
     </td>
@@ -529,7 +531,7 @@ function EmployeeRow({
   // Cell padding spec (docs/design/screens/employees.jsx Td function):
   //   first cell  → 12px 0 12px 18px
   //   last cell   → 12px 14px 12px 4px
-  //   default     → 12px 12px (px-3 py-3)
+  //   default     → 12px 12px (px-fn-3 py-fn-3)
   //
   // The Employee cell additionally renders the 36px avatar + name +
   // email block which pushes the row to ~70px tall — that's the row
@@ -547,7 +549,7 @@ function EmployeeRow({
       )}
     >
       <td
-        className={cn('py-3 pl-[18px] pr-0 align-middle', cellBorder)}
+        className={cn('py-fn-3 pl-[18px] pr-0 align-middle', cellBorder)}
         onClick={(e) => e.stopPropagation()}
       >
         <Checkbox
@@ -556,55 +558,55 @@ function EmployeeRow({
           aria-label={`Select ${employee.fullName}`}
         />
       </td>
-      <td className={cn('px-3 align-middle', cellBorder)}>
+      <td className={cn('px-fn-3 align-middle', cellBorder)}>
         {/* Inner wrapper holds the row-rhythm pad (12px top/bottom) so
             the cell border tracks the row, not the avatar block. */}
-        <div className="flex items-center gap-3 py-3">
+        <div className="gap-fn-3 py-fn-3 flex items-center">
           <EmployeeAvatar fullName={employee.fullName} photoUrl={employee.photoUrl} size="md" />
           <div className="min-w-0">
             <div
               className={cn(
-                'text-fn-fg truncate text-[14px] font-semibold leading-tight',
+                'text-fn-fg font-fn-semibold leading-fn-tight truncate text-[14px]',
                 employee.isArchived && 'line-through',
               )}
             >
               {employee.fullName}
             </div>
-            <div className="text-fn-fg-faint mt-0.5 truncate font-mono text-[11.5px] leading-tight">
+            <div className="text-fn-fg-faint mt-fn-0_5 leading-fn-tight truncate font-mono text-[11.5px]">
               {employee.email}
             </div>
           </div>
         </div>
       </td>
-      <td className={cn('px-3 py-3 align-middle', cellBorder)}>
+      <td className={cn('px-fn-3 py-fn-3 align-middle', cellBorder)}>
         <span className="text-fn-fg-muted font-mono text-[12px] tabular-nums">{employee.eid}</span>
       </td>
-      <td className={cn('text-fn-fg-muted px-3 py-3 align-middle text-[13px]', cellBorder)}>
+      <td className={cn('text-fn-fg-muted px-fn-3 py-fn-3 align-middle text-[13px]', cellBorder)}>
         {employee.department.name}
       </td>
-      <td className={cn('text-fn-fg-muted px-3 py-3 align-middle text-[13px]', cellBorder)}>
+      <td className={cn('text-fn-fg-muted px-fn-3 py-fn-3 align-middle text-[13px]', cellBorder)}>
         {employee.designation.name}
       </td>
-      <td className={cn('px-3 py-3 align-middle', cellBorder)}>
+      <td className={cn('px-fn-3 py-fn-3 align-middle', cellBorder)}>
         <StatusPill status={employee.status} dot />
       </td>
       <td
         className={cn(
-          'text-fn-fg-muted px-3 py-3 align-middle text-[13px] tabular-nums',
+          'text-fn-fg-muted px-fn-3 py-fn-3 align-middle text-[13px] tabular-nums',
           cellBorder,
         )}
       >
         {formatJoinDate(employee.joinDate)}
       </td>
       {canViewSalary && (
-        <td className={cn('px-3 py-3 text-right align-middle', cellBorder)}>
+        <td className={cn('px-fn-3 py-fn-3 text-right align-middle', cellBorder)}>
           {employee.salaryPkr != null ? (
             <>
-              <div className="text-fn-fg text-[13px] font-semibold tabular-nums">
+              <div className="text-fn-fg font-fn-semibold text-[13px] tabular-nums">
                 {formatSalary(employee.salaryPkr)}
               </div>
               {employee.hasPayoneer && (
-                <div className="text-fn-success-soft-fg mt-0.5 text-[10.5px] font-medium">
+                <div className="text-fn-success-soft-fg mt-fn-0_5 font-fn-medium text-[10.5px]">
                   Payoneer linked
                 </div>
               )}
@@ -615,7 +617,7 @@ function EmployeeRow({
         </td>
       )}
       <td
-        className={cn('py-3 pl-1 pr-[14px] text-right align-middle', cellBorder)}
+        className={cn('py-fn-3 pl-fn-1 pr-[14px] text-right align-middle', cellBorder)}
         onClick={(e) => e.stopPropagation()}
       >
         <RowKebabMenu employee={employee} canArchive={canArchive} />
@@ -632,12 +634,12 @@ function RowKebabMenu({ employee, canArchive }: { employee: EmployeePublic; canA
         <button
           type="button"
           aria-label={`Actions for ${employee.fullName}`}
-          className="rounded-fn-xs text-fn-fg-faint hover:bg-fn-bg-inset hover:text-fn-fg-muted focus-visible:ring-fn-accent inline-flex h-7 w-7 cursor-pointer items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2"
+          className="rounded-fn-xs text-fn-fg-faint hover:bg-fn-bg-inset hover:text-fn-fg-muted focus-visible:ring-fn-accent h-fn-7 w-fn-7 inline-flex cursor-pointer items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2"
         >
-          <MoreHorizontal className="h-4 w-4" />
+          <MoreHorizontal className="h-fn-4 w-fn-4" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-52">
+      <DropdownMenuContent align="end" className="w-fn-52">
         <DropdownMenuItem onClick={() => router.push(`/employees/${employee.id}`)}>
           View profile
         </DropdownMenuItem>
@@ -695,22 +697,22 @@ function FilterPill({
         <button
           type="button"
           className={cn(
-            'rounded-fn-xs inline-flex h-[34px] cursor-pointer items-center gap-1.5 border px-3 text-[13px] font-medium transition-colors',
+            'rounded-fn-xs gap-fn-1_5 px-fn-3 font-fn-medium inline-flex h-[34px] cursor-pointer items-center border text-[13px] transition-colors',
             active
               ? 'border-fn-accent/30 bg-fn-accent-soft text-fn-accent-soft-fg'
               : 'border-fn-border-strong bg-fn-bg-panel text-fn-fg-muted hover:border-fn-fg-faint',
           )}
         >
           <span
-            className={cn('font-medium', active ? 'text-fn-accent-soft-fg' : 'text-fn-fg-faint')}
+            className={cn('font-fn-medium', active ? 'text-fn-accent-soft-fg' : 'text-fn-fg-faint')}
           >
             {label}
           </span>
           <span>{value}</span>
-          <ChevronDown className="h-3 w-3" />
+          <ChevronDown className="h-fn-3 w-fn-3" />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-56 p-1">
+      <PopoverContent align="start" className="w-fn-56 p-fn-1">
         {children}
       </PopoverContent>
     </Popover>
@@ -736,14 +738,16 @@ function PillSelect({
             type="button"
             onClick={() => onPick(opt.id)}
             className={cn(
-              'rounded-fn-xs flex cursor-pointer items-center justify-between px-2 py-1.5 text-left text-[13px] transition-colors',
+              'rounded-fn-xs px-fn-2 py-fn-1_5 flex cursor-pointer items-center justify-between text-left text-[13px] transition-colors',
               active
-                ? 'bg-fn-accent-soft text-fn-accent-soft-fg font-medium'
+                ? 'bg-fn-accent-soft text-fn-accent-soft-fg font-fn-medium'
                 : 'text-fn-fg hover:bg-fn-bg-inset',
             )}
           >
             <span>{opt.label}</span>
-            {active && <span className="text-[10.5px] uppercase tracking-wider">Active</span>}
+            {active && (
+              <span className="tracking-fn-uppercase-tight text-[10.5px] uppercase">Active</span>
+            )}
           </button>
         );
       })}
@@ -755,7 +759,7 @@ function PillSelect({
 
 function ViewToggle({ current, onChange }: { current: ViewMode; onChange: (v: ViewMode) => void }) {
   return (
-    <div className="rounded-fn-xs border-fn-border-strong bg-fn-bg-subtle flex border p-0.5">
+    <div className="rounded-fn-xs border-fn-border-strong bg-fn-bg-subtle p-fn-0_5 flex border">
       <Tooltip>
         <TooltipTrigger asChild>
           <button
@@ -764,13 +768,13 @@ function ViewToggle({ current, onChange }: { current: ViewMode; onChange: (v: Vi
             aria-label="List view"
             aria-pressed={current === 'list'}
             className={cn(
-              'inline-flex h-7 w-9 cursor-pointer items-center justify-center rounded-[4px] transition-colors',
+              'h-fn-7 w-fn-9 inline-flex cursor-pointer items-center justify-center rounded-[4px] transition-colors',
               current === 'list'
                 ? 'bg-fn-bg-panel text-fn-fg shadow-fn-xs'
                 : 'text-fn-fg-faint hover:text-fn-fg-muted',
             )}
           >
-            <List className="h-3.5 w-3.5" />
+            <List className="h-fn-3_5 w-fn-3_5" />
           </button>
         </TooltipTrigger>
         <TooltipContent side="bottom" sideOffset={6}>
@@ -785,13 +789,13 @@ function ViewToggle({ current, onChange }: { current: ViewMode; onChange: (v: Vi
             aria-label="Grid view"
             aria-pressed={current === 'grid'}
             className={cn(
-              'inline-flex h-7 w-9 cursor-pointer items-center justify-center rounded-[4px] transition-colors',
+              'h-fn-7 w-fn-9 inline-flex cursor-pointer items-center justify-center rounded-[4px] transition-colors',
               current === 'grid'
                 ? 'bg-fn-bg-panel text-fn-fg shadow-fn-xs'
                 : 'text-fn-fg-faint hover:text-fn-fg-muted',
             )}
           >
-            <LayoutGrid className="h-3.5 w-3.5" />
+            <LayoutGrid className="h-fn-3_5 w-fn-3_5" />
           </button>
         </TooltipTrigger>
         <TooltipContent side="bottom" sideOffset={6}>
@@ -821,22 +825,22 @@ function Pagination({
   const to = Math.min(page * pageSize, total);
   const pages = visiblePages(page, totalPages);
   return (
-    <div className="border-fn-divider text-fn-fg-muted flex items-center justify-between border-t px-5 py-3.5 text-[13px]">
-      <div className="font-tabular">
+    <div className="border-fn-divider text-fn-fg-muted px-fn-5 py-fn-3_5 flex items-center justify-between border-t text-[13px]">
+      <div className="tabular-nums">
         Showing{' '}
-        <strong className="text-fn-fg font-semibold">
+        <strong className="text-fn-fg font-fn-semibold">
           {from}–{to}
         </strong>{' '}
         of {total.toLocaleString()}
       </div>
-      <div className="flex items-center gap-1">
+      <div className="gap-fn-1 flex items-center">
         <button
           type="button"
           onClick={() => onChange(Math.max(1, page - 1))}
           disabled={page <= 1}
-          className="rounded-fn-xs text-fn-fg-muted hover:bg-fn-bg-inset inline-flex h-[30px] cursor-pointer items-center gap-1 px-2.5 text-[12.5px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-fn-xs text-fn-fg-muted hover:bg-fn-bg-inset gap-fn-1 px-fn-2_5 font-fn-medium inline-flex h-[30px] cursor-pointer items-center text-[12.5px] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <ChevronLeft className="h-3 w-3" /> Prev
+          <ChevronLeft className="h-fn-3 w-fn-3" /> Prev
         </button>
         {pages.map((p, i) =>
           typeof p === 'number' ? (
@@ -847,7 +851,7 @@ function Pagination({
               className={cn(
                 'rounded-fn-xs inline-flex h-[30px] w-[30px] cursor-pointer items-center justify-center text-[12.5px] transition-colors',
                 p === page
-                  ? 'bg-fn-accent text-fn-accent-fg font-semibold'
+                  ? 'bg-fn-accent text-fn-accent-fg font-fn-semibold'
                   : 'text-fn-fg-muted hover:bg-fn-bg-inset',
               )}
             >
@@ -866,9 +870,9 @@ function Pagination({
           type="button"
           onClick={() => onChange(Math.min(totalPages, page + 1))}
           disabled={page >= totalPages}
-          className="rounded-fn-xs text-fn-fg-muted hover:bg-fn-bg-inset inline-flex h-[30px] cursor-pointer items-center gap-1 px-2.5 text-[12.5px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-fn-xs text-fn-fg-muted hover:bg-fn-bg-inset gap-fn-1 px-fn-2_5 font-fn-medium inline-flex h-[30px] cursor-pointer items-center text-[12.5px] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Next <ChevronRight className="h-3 w-3" />
+          Next <ChevronRight className="h-fn-3 w-fn-3" />
         </button>
       </div>
     </div>
@@ -909,15 +913,15 @@ function BulkActionBar({
     <div
       role="region"
       aria-label={`${count} employees selected`}
-      className="rounded-fn-md border-fn-accent/30 bg-fn-bg-panel shadow-fn-lg animate-in fade-in-0 slide-in-from-bottom-2 fixed bottom-6 left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 border px-4 py-2.5"
+      className="rounded-fn-md border-fn-accent/30 bg-fn-bg-panel shadow-fn-lg animate-in fade-in-0 slide-in-from-bottom-fn-2 bottom-fn-6 gap-fn-3 px-fn-4 py-fn-2_5 fixed left-1/2 z-30 flex -translate-x-1/2 items-center border"
       style={{ background: 'color-mix(in oklch, var(--fn-accent-soft) 60%, var(--fn-bg-panel))' }}
     >
-      <span className="text-fn-fg text-[13px] font-semibold">
+      <span className="text-fn-fg font-fn-semibold text-[13px]">
         {count.toLocaleString()} selected
       </span>
-      <div className="bg-fn-divider h-5 w-px" aria-hidden />
+      <div className="bg-fn-divider h-fn-5 w-px" aria-hidden />
       <Button size="sm" variant="outline" onClick={onExport}>
-        <Download className="h-3.5 w-3.5" /> Export selected
+        <Download className="h-fn-3_5 w-fn-3_5" /> Export selected
       </Button>
       {canArchive && (
         <Button size="sm" variant="outline" onClick={onArchive}>
@@ -927,9 +931,9 @@ function BulkActionBar({
       <button
         type="button"
         onClick={onClear}
-        className="text-fn-fg-muted hover:text-fn-fg ml-1 inline-flex cursor-pointer items-center gap-1 text-[12.5px] font-medium"
+        className="text-fn-fg-muted hover:text-fn-fg ml-fn-1 gap-fn-1 font-fn-medium inline-flex cursor-pointer items-center text-[12.5px]"
       >
-        <X className="h-3 w-3" /> Clear selection
+        <X className="h-fn-3 w-fn-3" /> Clear selection
       </button>
     </div>
   );
@@ -942,21 +946,21 @@ function SkeletonRows({ columns }: { columns: number }) {
     <>
       {Array.from({ length: 6 }).map((_, i) => (
         <tr key={i} className="border-fn-divider border-b last:border-b-0">
-          <td className="py-4 pl-[18px] pr-0">
-            <Skeleton className="h-4 w-4 rounded-[4px]" />
+          <td className="py-fn-4 pl-[18px] pr-0">
+            <Skeleton className="h-fn-4 w-fn-4 rounded-[4px]" />
           </td>
-          <td className="px-3 py-4">
-            <div className="flex items-center gap-3">
-              <Skeleton className="h-9 w-9 rounded-[8px]" />
-              <div className="flex flex-col gap-1.5">
-                <Skeleton className="h-3 w-36" />
-                <Skeleton className="h-2.5 w-24" />
+          <td className="px-fn-3 py-fn-4">
+            <div className="gap-fn-3 flex items-center">
+              <Skeleton className="h-fn-9 w-fn-9 rounded-[8px]" />
+              <div className="gap-fn-1_5 flex flex-col">
+                <Skeleton className="h-fn-3 w-fn-36" />
+                <Skeleton className="h-fn-2_5 w-fn-24" />
               </div>
             </div>
           </td>
           {Array.from({ length: columns - 2 }).map((__, j) => (
-            <td key={j} className="px-3 py-4">
-              <Skeleton className="h-3 w-20" />
+            <td key={j} className="px-fn-3 py-fn-4">
+              <Skeleton className="h-fn-3 w-fn-20" />
             </td>
           ))}
         </tr>
@@ -967,15 +971,15 @@ function SkeletonRows({ columns }: { columns: number }) {
 
 function EmptyState({ hasFilters, canCreate }: { hasFilters: boolean; canCreate: boolean }) {
   return (
-    <div className="flex flex-col items-center gap-3 py-14 text-center">
+    <div className="gap-fn-3 py-fn-14 flex flex-col items-center text-center">
       <div
-        className="rounded-fn-lg flex h-12 w-12 items-center justify-center"
+        className="rounded-fn-lg h-fn-12 w-fn-12 flex items-center justify-center"
         style={{ background: 'var(--fn-icon-tile)', color: 'var(--fn-icon-tile-fg)' }}
       >
-        <UsersIcon className="h-5 w-5" />
+        <UsersIcon className="h-fn-5 w-fn-5" />
       </div>
-      <div className="flex flex-col gap-1">
-        <p className="text-fn-fg text-[14px] font-medium">No employees match your filters</p>
+      <div className="gap-fn-1 flex flex-col">
+        <p className="text-fn-fg font-fn-medium text-[14px]">No employees match your filters</p>
         <p className="text-fn-fg-muted text-[13px]">
           {hasFilters
             ? 'Try clearing one of the filters or searching for someone else.'
@@ -985,7 +989,7 @@ function EmptyState({ hasFilters, canCreate }: { hasFilters: boolean; canCreate:
       {canCreate && (
         <Button asChild variant="outline" size="sm">
           <Link href="/employees/new">
-            <Plus className="h-3.5 w-3.5" /> Add employee
+            <Plus className="h-fn-3_5 w-fn-3_5" /> Add employee
           </Link>
         </Button>
       )}
