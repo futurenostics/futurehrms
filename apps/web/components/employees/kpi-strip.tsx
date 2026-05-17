@@ -4,10 +4,10 @@ import type { LucideIcon } from 'lucide-react';
 import { ArrowDownRight, ArrowUpRight, Clock, Info, UserPlus, Users } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { useEmployeeStats } from '@/lib/queries/employees';
-import { cn } from '@/lib/utils';
 
-type DeltaTone = 'success' | 'danger' | 'warning' | 'neutral';
+type DeltaTone = 'success' | 'danger' | 'warning' | 'default';
 
 /**
  * KPI strip — four cards above the table on the Employees list page.
@@ -139,67 +139,21 @@ function DeltaPill({ delta }: { delta: NonNullable<KpiCardProps['delta']> }) {
     const tone: DeltaTone = delta.value >= 0 ? 'success' : 'danger';
     const text = `${delta.value >= 0 ? '+' : ''}${delta.value.toFixed(1)}%`;
     return (
-      <TrendPill tone={tone}>
+      <Badge tone={tone as BadgeTone}>
         {text}
         {delta.value >= 0 ? (
           <ArrowUpRight className="h-fn-3 w-fn-3" strokeWidth={2.25} />
         ) : (
           <ArrowDownRight className="h-fn-3 w-fn-3" strokeWidth={2.25} />
         )}
-      </TrendPill>
+      </Badge>
     );
   }
   return (
-    <TrendPill tone={delta.tone}>
+    <Badge tone={delta.tone as BadgeTone}>
       {delta.text}
       <ArrowUpRight className="h-fn-3 w-fn-3" strokeWidth={2.25} />
-    </TrendPill>
-  );
-}
-
-const TREND_TONE: Record<DeltaTone, { bg: string; fg: string; border: string }> = {
-  success: {
-    bg: 'var(--fn-success-soft)',
-    fg: 'var(--fn-success-soft-fg)',
-    border: 'var(--fn-success)',
-  },
-  danger: {
-    bg: 'var(--fn-danger-soft)',
-    fg: 'var(--fn-danger-soft-fg)',
-    border: 'var(--fn-danger)',
-  },
-  warning: {
-    bg: 'var(--fn-warning-soft)',
-    fg: 'var(--fn-warning-soft-fg)',
-    border: 'var(--fn-warning)',
-  },
-  neutral: {
-    bg: 'var(--fn-bg-inset)',
-    fg: 'var(--fn-fg-muted)',
-    border: 'var(--fn-border)',
-  },
-};
-
-/**
- * Trend pill — the design's "outlined-pill" treatment: soft-tinted bg,
- * matching text, and a 35%-mix colored border so the pill reads even
- * when sitting on a coloured background. Used for KPI deltas only.
- */
-function TrendPill({ tone, children }: { tone: DeltaTone; children: React.ReactNode }) {
-  const t = TREND_TONE[tone];
-  return (
-    <span
-      className={cn(
-        'rounded-fn-xs gap-fn-1 font-fn-semibold inline-flex items-center px-[9px] py-[2px] text-[12px] tabular-nums leading-[1.55] tracking-[-0.005em]',
-      )}
-      style={{
-        background: t.bg,
-        color: t.fg,
-        border: `1px solid color-mix(in oklch, ${t.border} 35%, transparent)`,
-      }}
-    >
-      {children}
-    </span>
+    </Badge>
   );
 }
 

@@ -1,24 +1,19 @@
-import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
+import { Badge, type BadgeTone } from '@/components/ui/badge';
 
-const STATUS_VARIANT: Record<string, React.ComponentProps<typeof Badge>['variant']> = {
+/**
+ * StatusPill — thin wrapper around `<Badge>` that maps an
+ * EmployeeStatus slug to the canonical tone. Use this instead of
+ * a hand-rolled `<Badge tone="...">` so the tone mapping lives in
+ * one place; all label shape / padding / border concerns live on
+ * the `<Badge>` primitive itself.
+ */
+const STATUS_TONE: Record<string, BadgeTone> = {
   permanent: 'success',
   probation: 'warning',
   intern: 'info',
   contractor: 'default',
   'on-leave': 'info',
   terminated: 'danger',
-};
-
-// Dot color keyed to the variant's accent so the pill reads at a glance
-// even before the eye lands on the label.
-const STATUS_DOT_COLOR: Record<string, string> = {
-  permanent: 'var(--fn-success)',
-  probation: 'var(--fn-warning)',
-  intern: 'var(--fn-info)',
-  contractor: 'var(--fn-fg-muted)',
-  'on-leave': 'var(--fn-info)',
-  terminated: 'var(--fn-danger)',
 };
 
 export function StatusPill({
@@ -29,14 +24,7 @@ export function StatusPill({
   dot?: boolean;
 }) {
   return (
-    <Badge variant={STATUS_VARIANT[status.slug] ?? 'default'} className={cn(dot && 'gap-fn-1_5')}>
-      {dot && (
-        <span
-          aria-hidden
-          className="h-fn-1_5 w-fn-1_5 rounded-fn-full inline-block"
-          style={{ background: STATUS_DOT_COLOR[status.slug] ?? 'currentColor' }}
-        />
-      )}
+    <Badge tone={STATUS_TONE[status.slug] ?? 'default'} dot={dot}>
       {status.name}
     </Badge>
   );

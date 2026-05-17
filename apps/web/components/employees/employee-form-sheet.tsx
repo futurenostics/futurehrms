@@ -34,6 +34,7 @@ import {
   type TerminateEmployeeInput,
 } from '@futurenostics/types';
 import { Alert } from '@/components/ui/alert';
+import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -1491,22 +1492,15 @@ function PhotoUploadTile() {
 }
 
 function StatusBadge({ slug, name }: { slug: string; name: string }) {
-  const tone: Record<string, string> = {
-    intern: 'bg-fn-info-soft text-fn-info-soft-fg border-fn-info/30',
-    probation: 'bg-fn-warning-soft text-fn-warning-soft-fg border-fn-warning/30',
-    permanent: 'bg-fn-success-soft text-fn-success-soft-fg border-fn-success/30',
-    contractor: 'bg-fn-accent-soft text-fn-accent-soft-fg border-fn-accent/30',
+  // Same status-slug -> tone map used by the profile header; the
+  // Badge primitive owns the shape.
+  const tone: Record<string, BadgeTone> = {
+    intern: 'info',
+    probation: 'warning',
+    permanent: 'success',
+    contractor: 'accent',
   };
-  return (
-    <span
-      className={cn(
-        'rounded-fn-full px-fn-2 py-fn-0_5 font-fn-medium inline-flex items-center border text-[10.5px]',
-        tone[slug] ?? 'bg-fn-bg-subtle text-fn-fg-muted border-fn-border',
-      )}
-    >
-      {name}
-    </span>
-  );
+  return <Badge tone={tone[slug] ?? 'default'}>{name}</Badge>;
 }
 
 function emptyDefaults(): EmployeeCreateInput {

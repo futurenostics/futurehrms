@@ -4,6 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { Briefcase, Camera, Mail, MapPin, MoreHorizontal, Phone, User } from 'lucide-react';
 import type { EmployeePublic } from '@futurenostics/types';
+import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -203,16 +204,14 @@ export function ProfileHeader({
             >
               {employee.fullName}
             </h1>
-            <StatusBadge slug={employee.status.slug} name={employee.status.name} />
-            <ContractBadge contractType={employee.contractType} />
-            <span className="bg-fn-bg-inset text-fn-fg-faint rounded-fn-xs px-fn-1_5 py-fn-0_5 inline-flex items-center font-mono text-[11.5px]">
+            <Badge tone={STATUS_TONE[employee.status.slug] ?? 'default'} dot>
+              {employee.status.name}
+            </Badge>
+            <Badge tone="default">{prettyContract(employee.contractType)}</Badge>
+            <Badge tone="default" className="font-mono">
               {employee.eid}
-            </span>
-            {employee.isArchived && (
-              <span className="bg-fn-bg-inset text-fn-fg-faint rounded-fn-full px-fn-2 py-fn-0_5 font-fn-semibold tracking-fn-uppercase-tight inline-flex items-center text-[10.5px] uppercase">
-                Archived
-              </span>
-            )}
+            </Badge>
+            {employee.isArchived && <Badge tone="default">Archived</Badge>}
           </div>
           <div className="text-fn-fg-muted font-fn-medium mt-fn-1_5 text-[14px]">
             {employee.designation.name} · {employee.department.name}
@@ -280,42 +279,16 @@ function Meta({
   );
 }
 
-function StatusBadge({ slug, name }: { slug: string; name: string }) {
-  // Permanent → success dot. Probation → warning dot. Intern → info
-  // dot. Contractor → accent dot. Anything else → neutral.
-  const tone: Record<string, string> = {
-    permanent: 'bg-fn-success-soft text-fn-success-soft-fg border-fn-success/30',
-    probation: 'bg-fn-warning-soft text-fn-warning-soft-fg border-fn-warning/30',
-    intern: 'bg-fn-info-soft text-fn-info-soft-fg border-fn-info/30',
-    contractor: 'bg-fn-accent-soft text-fn-accent-soft-fg border-fn-accent/30',
-  };
-  const dotTone: Record<string, string> = {
-    permanent: 'bg-fn-success',
-    probation: 'bg-fn-warning',
-    intern: 'bg-fn-info',
-    contractor: 'bg-fn-accent',
-  };
-  return (
-    <span
-      className={cn(
-        'rounded-fn-full gap-fn-1_5 px-fn-2 py-fn-0_5 font-fn-medium inline-flex items-center border text-[11.5px]',
-        tone[slug] ?? 'bg-fn-bg-subtle text-fn-fg-muted border-fn-border',
-      )}
-    >
-      <span
-        aria-hidden
-        className={cn('rounded-fn-full h-fn-1_5 w-fn-1_5', dotTone[slug] ?? 'bg-fn-fg-faint')}
-      />
-      {name}
-    </span>
-  );
-}
+// Status slug → Badge tone. The Badge primitive owns the shape; this
+// map is the only place where a permanent / probation / intern /
+// contractor status picks its semantic colour.
+const STATUS_TONE: Record<string, BadgeTone> = {
+  permanent: 'success',
+  probation: 'warning',
+  intern: 'info',
+  contractor: 'accent',
+};
 
-function ContractBadge({ contractType }: { contractType: string }) {
-  const label = contractType.replace(/([A-Z])/g, ' $1').trim();
-  return (
-    <span className="bg-fn-bg-inset text-fn-fg-muted rounded-fn-full px-fn-2 py-fn-0_5 font-fn-medium inline-flex items-center text-[11.5px]">
-      {label}
-    </span>
-  );
+function prettyContract(contractType: string): string {
+  return contractType.replace(/([A-Z])/g, ' $1').trim();
 }

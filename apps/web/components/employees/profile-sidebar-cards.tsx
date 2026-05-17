@@ -4,6 +4,7 @@ import * as React from 'react';
 import { ArrowUp, Download, Plus, Upload } from 'lucide-react';
 import type { EmployeePublic, SalaryHistoryEntry } from '@futurenostics/types';
 import { useSalaryHistory } from '@/lib/queries/employees';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
@@ -80,20 +81,17 @@ export function CompensationCard({
           {salary != null && (
             <div className="mt-fn-2_5 gap-fn-2_5 flex items-center">
               {deltaPct != null && (
-                <span
-                  className={cn(
-                    'rounded-fn-full gap-fn-1 px-fn-2 py-fn-0_5 font-fn-semibold inline-flex items-center border text-[11px]',
-                    deltaPct >= 0
-                      ? 'bg-fn-success-soft text-fn-success-soft-fg border-fn-success/30'
-                      : 'bg-fn-danger-soft text-fn-danger-soft-fg border-fn-danger/30',
-                  )}
+                <Badge
+                  tone={deltaPct >= 0 ? 'success' : 'danger'}
+                  icon={
+                    <ArrowUp
+                      className={cn('h-fn-3 w-fn-3', deltaPct < 0 && 'rotate-180')}
+                      strokeWidth={2.5}
+                    />
+                  }
                 >
-                  <ArrowUp
-                    className={cn('h-fn-3 w-fn-3', deltaPct < 0 && 'rotate-180')}
-                    strokeWidth={2.5}
-                  />
                   {Math.abs(deltaPct).toFixed(1)}%
-                </span>
+                </Badge>
               )}
               <span className="text-fn-fg-muted text-[12px]">
                 ≈ {altFmt(salary)}
@@ -134,16 +132,9 @@ function SalaryRow({ entry, bordered }: { entry: SalaryHistoryEntry; bordered: b
         bordered && 'border-fn-divider border-t',
       )}
     >
-      <span
-        className={cn(
-          'rounded-fn-full px-fn-2 py-fn-0_5 font-fn-semibold inline-flex min-w-[52px] items-center justify-center border text-[11px]',
-          pct == null
-            ? 'bg-fn-bg-inset text-fn-fg-muted border-fn-border'
-            : 'bg-fn-success-soft text-fn-success-soft-fg border-fn-success/30',
-        )}
-      >
+      <Badge tone={pct == null ? 'default' : 'success'} className="min-w-[52px] justify-center">
         {label}
-      </span>
+      </Badge>
       <div className="min-w-0 flex-1">
         <div className="text-fn-fg font-fn-semibold font-mono text-[13px] tabular-nums">
           {entry.oldSalaryPkr != null

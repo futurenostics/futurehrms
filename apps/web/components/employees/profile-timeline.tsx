@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { ArrowDown, ArrowUp, Briefcase, Check, Clock, CreditCard, Flag, Star } from 'lucide-react';
 import type { TimelineEntryPublic } from '@futurenostics/types';
+import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { useTimeline } from '@/lib/queries/employees';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
@@ -246,26 +247,20 @@ function TimelineCard({
             >
               {entry.title}
             </span>
-            <ModuleBadge module={entry.module} tone={tone} />
+            <Badge tone={toneToBadge(tone)}>{prettyModule(entry.module)}</Badge>
             {highlight && (
-              <span className="bg-fn-accent text-fn-accent-fg rounded-fn-full gap-fn-1 px-fn-1_5 py-fn-0_5 font-fn-semibold inline-flex items-center text-[10px]">
-                <span aria-hidden className="bg-fn-accent-fg rounded-fn-full h-fn-1 w-fn-1" />
+              <Badge tone="accent" dot>
                 Latest
-              </span>
+              </Badge>
             )}
           </div>
           <div className="text-fn-fg-muted mt-fn-1 text-[12.5px]">{describeDetails(entry)}</div>
         </div>
         {/* Right slot — amount or tag are pulled from details when present */}
         {extractAmount(entry) && (
-          <span
-            className={cn(
-              'rounded-fn-xs px-fn-2_5 py-fn-1 font-fn-semibold inline-block border font-mono text-[13px] tabular-nums',
-              'bg-fn-success-soft text-fn-success-soft-fg border-fn-success/25',
-            )}
-          >
+          <Badge tone="success" className="font-mono">
             {extractAmount(entry)}
-          </span>
+          </Badge>
         )}
       </div>
       <div className="gap-fn-2 mt-fn-2_5 pt-fn-2_5 border-fn-border text-fn-fg-faint flex items-center border-t border-dashed text-[11.5px]">
@@ -283,17 +278,12 @@ function TimelineCard({
   );
 }
 
-function ModuleBadge({ module: mod, tone }: { module: string; tone: Tone }) {
-  return (
-    <span
-      className={cn(
-        'rounded-fn-full px-fn-2 py-fn-0_5 font-fn-medium inline-flex items-center border text-[10.5px]',
-        TONE_BADGE[tone],
-      )}
-    >
-      {prettyModule(mod)}
-    </span>
-  );
+// Map the local Tone scale (used by the icon bubble's outline + bg)
+// onto the BadgeTone union. The bubble keeps its bespoke tone scheme
+// because it's a *visual ornament* on the rail, not a label.
+function toneToBadge(tone: Tone): BadgeTone {
+  if (tone === 'neutral') return 'default';
+  return tone;
 }
 
 function TimelineSkeleton() {
@@ -342,14 +332,6 @@ const TONE_OUTLINE: Record<Tone, string> = {
   accent: 'outline-fn-accent/30',
   neutral: 'outline-fn-border',
 };
-const TONE_BADGE: Record<Tone, string> = {
-  success: 'bg-fn-success-soft text-fn-success-soft-fg border-fn-success/30',
-  warning: 'bg-fn-warning-soft text-fn-warning-soft-fg border-fn-warning/30',
-  info: 'bg-fn-info-soft text-fn-info-soft-fg border-fn-info/30',
-  accent: 'bg-fn-accent-soft text-fn-accent-soft-fg border-fn-accent/30',
-  neutral: 'bg-fn-bg-inset text-fn-fg-muted border-fn-border',
-};
-
 function toneForModule(mod: string): Tone {
   const m = mod.toLowerCase();
   if (m.includes('commission') || m.includes('payroll')) return 'success';

@@ -126,6 +126,21 @@ When you sit down to start a new work block, the first thing you do is verify th
 - Use the established design tokens; never introduce new color values, spacing values, or typography sizes without first adding them to the shared config.
 - shadcn/ui primitives for all interactive components. No custom inline-styled components.
 
+## Labels
+
+Every label-shaped element in the app — status pills, KPI trend chips, EID stamps, count chips, module tags, contract / employment-record tags, "Latest" / "Verified" / "Archived" markers, the salary "+9.6%" / "Hire" chips, etc. — uses the **`Badge` primitive** at `apps/web/components/ui/badge.tsx`. **No bespoke `<span className="rounded-… bg-fn-…-soft text-fn-…-soft-fg">` pills**.
+
+Locked shape (matches the design's "+5.6% ↗" KPI badge):
+
+- `rounded-fn-xs` (6px)
+- 9px horizontal / 2px vertical padding
+- 12px / fw-600 / tabular-nums / tight leading
+- soft-tinted bg + matching `*-soft-fg` text + a **35%-mix tinted border** (so the badge reads on coloured surfaces)
+
+Tones: `default` (neutral) · `accent` · `success` · `warning` · `danger` · `info` · `outline`. Optional leading `icon` slot, or `dot` for status indicators ("● Permanent"). See `/style-guide#primitive-badge` for every tone × dot/icon combination.
+
+If a label needs functionality the primitive doesn't support (clickable, removable chip, count badge on a circle, etc.), extend the primitive — do not roll a new one. The visual treatment is owned by `Badge`; consumers own only the tone choice and the content.
+
 ## Tables
 
 All tabular data displays in this app use the `<DataTable>` primitive at `apps/web/components/ui/data-table.tsx`. Do not build custom table markup. If a table needs functionality the primitive doesn't support (column reordering, virtualization, expandable rows, etc.), extend the primitive — do not build a bespoke alternative. The visual treatment (sticky header, column structure via colgroup, design's rounded grey header pill), infinite-scroll mechanics, loading / empty / next-page-error / end-of-list states, selection column, and row-actions kebab column are all owned by the primitive. Pages own only:

@@ -39,7 +39,12 @@ export function BadgeSection() {
 
       <div className="border-fn-border bg-fn-bg-panel rounded-fn-xs gap-fn-3 p-fn-6 flex flex-wrap items-center border">
         {BADGE_VARIANTS.map((v) => (
-          <Badge key={v} variant={v}>
+          <Badge key={v} tone={v}>
+            {v}
+          </Badge>
+        ))}
+        {BADGE_VARIANTS.map((v) => (
+          <Badge key={`dot-${v}`} tone={v} dot>
             {v}
           </Badge>
         ))}
