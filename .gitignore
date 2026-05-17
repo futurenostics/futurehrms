@@ -8,6 +8,7 @@ build/
 .next/
 out/
 .turbo/
+.playwright-mcp/
 *.tsbuildinfo
 
 # Environment
