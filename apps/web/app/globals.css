@@ -11,6 +11,14 @@
 
 @custom-variant dark (&:is([data-theme='dark'] *, .dark *));
 
+html {
+  /* Reserve the vertical scrollbar gutter so the layout width doesn't
+     swing when content height crosses the viewport (e.g. selecting a
+     row reveals the bulk action bar, which can momentarily toggle
+     vertical overflow and shift the topbar by ~15px). */
+  scrollbar-gutter: stable;
+}
+
 html,
 body {
   height: 100%;
