@@ -171,15 +171,19 @@ export default function EmployeesListPage() {
               </p>
             </div>
             <div className="gap-fn-2 flex items-center">
+              {/* secondary (not outline) — design intent for toolbar buttons next to
+                  a primary action: visible bg-fn-bg-panel + border-strong so the
+                  buttons read as solid chrome against the page bg, not as
+                  transparent ghosts. */}
               {canImport && (
-                <Button asChild variant="outline" size="md">
+                <Button asChild variant="secondary" size="md">
                   <Link href="/employees/import">
                     <Upload className="h-fn-4 w-fn-4" /> Import CSV
                   </Link>
                 </Button>
               )}
               {canExport && (
-                <Button asChild variant="outline" size="md">
+                <Button asChild variant="secondary" size="md">
                   <a href={buildExportUrl(query)} target="_blank" rel="noreferrer">
                     <Download className="h-fn-4 w-fn-4" /> Export
                   </a>

@@ -38,19 +38,26 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
+        // The `!` prefix on text-fn-accent-fg makes the color win over
+        // any parent / sibling text-color that might cascade in via
+        // asChild → Slot → Link composition. Belt-and-braces — the
+        // class would win on cascade order alone, but the `!` makes
+        // sure no future call-site or wrapper className can accidentally
+        // re-color the button text to fn-fg (which would look near-black
+        // on the accent surface in light mode).
         default:
-          'bg-fn-accent text-fn-accent-fg border-fn-accent shadow-fn-xs hover:bg-fn-accent-hover hover:border-fn-accent-hover',
+          'bg-fn-accent !text-fn-accent-fg border-fn-accent shadow-fn-xs hover:bg-fn-accent-hover hover:border-fn-accent-hover',
         secondary:
           'bg-fn-bg-panel text-fn-fg border-fn-border-strong shadow-fn-xs hover:bg-fn-bg-subtle',
         outline:
           'text-fn-fg border-fn-border-strong shadow-fn-xs hover:bg-fn-bg-subtle bg-transparent',
         ghost: 'text-fn-fg hover:bg-fn-bg-inset bg-transparent',
         soft: 'bg-fn-accent-soft text-fn-accent-soft-fg hover:bg-fn-accent-soft/80',
-        dark: 'bg-fn-fg text-fn-fg-invert border-fn-fg shadow-fn-xs hover:bg-fn-fg/90',
+        dark: 'bg-fn-fg !text-fn-fg-invert border-fn-fg shadow-fn-xs hover:bg-fn-fg/90',
         destructive:
-          'bg-fn-danger text-fn-accent-fg border-fn-danger shadow-fn-xs hover:bg-fn-danger/90',
+          'bg-fn-danger !text-fn-accent-fg border-fn-danger shadow-fn-xs hover:bg-fn-danger/90',
         success:
-          'bg-fn-success text-fn-accent-fg border-fn-success shadow-fn-xs hover:bg-fn-success/90',
+          'bg-fn-success !text-fn-accent-fg border-fn-success shadow-fn-xs hover:bg-fn-success/90',
         link: 'text-fn-accent underline-offset-4 hover:underline',
       },
       size: {
