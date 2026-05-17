@@ -14,6 +14,38 @@
 - Read `docs/design/README.md` before touching UI code.
 - The visual fidelity standard in `docs/prompts/CLAUDE_CODE_VISUAL_FIDELITY_ADDENDUM.md` is non-negotiable for UI work.
 
+## Visual fidelity rules (strict mode)
+
+The Foundation Reset established five non-negotiable rules for any UI work. Full text in `docs/prompts/CLAUDE_CODE_VISUAL_FIDELITY_ADDENDUM.md`; summary here so the rules are part of every session's context:
+
+1. **No raw Tailwind defaults for tokenized properties.** Spacing, sizing, color, radius, shadow, font-size, font-weight, line-height, letter-spacing must use `fn-*` utilities. `p-4`, `text-sm`, `rounded-md`, `bg-blue-500`, `shadow-sm`, `font-semibold`, `leading-none`, `tracking-tight` — all banned. Use `p-fn-4`, `text-fn-sm`, `rounded-fn-md`, `bg-fn-accent`, `shadow-fn-sm`, `font-fn-semibold`, `leading-fn-unit`, `tracking-fn-tight`. The ESLint rule `fn-tokens/no-default-utilities` is the enforcement; violations fail CI.
+2. **No inline styles for static values.** Use className with `fn-*` utilities. Inline `style={{}}` only for values that are genuinely dynamic at render time (computed hue, computed transform).
+3. **Modify primitives at source, not at usage.** A Button's padding lives once in `components/ui/button.tsx`. Usage sites only customize layout (`mt-fn-4`, `w-full`) — never the primitive's internal styling.
+4. **Every primitive verified visually before use.** The verification surface is `/dev/style-guide` (dev-only). A primitive without a style-guide section doesn't exist.
+5. **Every screen section verified during build, not after.** Walk one section at a time; don't accumulate unverified sections. Per-section process: `docs/prompts/QA_VERIFICATION_PROTOCOL.md` §4.
+
+Layout/positioning utilities (`flex`, `grid`, `items-center`, `absolute`, `transition`, `mx-auto`, `w-full`, `min-h-screen`, etc.) stay default — they have no design-token implications. Numeric `0` (`p-0`, `top-0`, `min-w-0`) is also allowed — it's a layout-reset marker, not a scale step.
+
+Where things live:
+
+| Looking for…                                       | Read…                                                                         |
+| -------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Every design token                                 | `packages/config/tailwind/fn-tokens.css`                                      |
+| Token catalog with rationale                       | `packages/config/tailwind/extracted-tokens.md`                                |
+| Strict-mode rules + per-screen translation process | `docs/prompts/CLAUDE_CODE_VISUAL_FIDELITY_ADDENDUM.md`                        |
+| The runnable verification protocol                 | `docs/prompts/QA_VERIFICATION_PROTOCOL.md`                                    |
+| The visual verification surface                    | `/dev/style-guide` (dev only)                                                 |
+| Files awaiting Sub-phase D remediation             | `packages/config/eslint/legacy-skip-list.mjs` + `docs/RESET_LINT_FAILURES.md` |
+
+Escape hatch (use sparingly, expect questions in review):
+
+```tsx
+// eslint-disable-next-line fn-tokens/no-default-utilities
+<div className="…" />
+```
+
+Using this more than once or twice in a screen is a signal that a new token is needed, not that the escape should be used repeatedly. Add the token first.
+
 ## Commits
 
 ### When to commit
