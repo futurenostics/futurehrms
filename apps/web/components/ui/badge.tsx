@@ -28,7 +28,7 @@ import { cn } from '@/lib/utils';
  * use it for status indicators like "● Permanent".
  */
 const badgeVariants = cva(
-  'rounded-fn-xs gap-fn-1 font-fn-semibold inline-flex items-center border px-[9px] py-[2px] text-[12px] tabular-nums leading-[1.55] tracking-[-0.005em] transition-colors',
+  'rounded-fn-xs gap-fn-1 font-fn-semibold inline-flex items-center whitespace-nowrap border px-[9px] py-[2px] text-[12px] tabular-nums leading-[1.55] tracking-[-0.005em] transition-colors',
   {
     variants: {
       tone: {
@@ -75,13 +75,18 @@ const DOT_TONE: Record<BadgeTone, string> = {
 };
 
 function Badge({ className, tone = 'default', icon, dot, children, ...props }: BadgeProps) {
+  // Children render as direct flex items of the badge's inline-flex
+  // container — that's what keeps the icon (e.g. `<ArrowUpRight />`)
+  // on the same row as the text, regardless of Tailwind preflight's
+  // `svg { display: block }`. A wrapping `<span>{children}</span>`
+  // would push the SVG onto a new line via the inner block context.
   return (
     <span className={cn(badgeVariants({ tone }), className)} {...props}>
       {dot ? (
         <span
           aria-hidden
           className={cn(
-            'rounded-fn-full h-fn-1_5 w-fn-1_5 inline-block',
+            'rounded-fn-full h-fn-1_5 w-fn-1_5 inline-block shrink-0',
             DOT_TONE[tone ?? 'default'],
           )}
         />
@@ -90,7 +95,7 @@ function Badge({ className, tone = 'default', icon, dot, children, ...props }: B
           {icon}
         </span>
       ) : null}
-      {children != null && <span>{children}</span>}
+      {children}
     </span>
   );
 }
