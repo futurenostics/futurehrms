@@ -499,7 +499,17 @@
  * backdrop-blur — these have no design-token implications.
  * ========================================================================= */
 @theme {
-  --spacing: initial;
+  /*
+   * --spacing stays DEFAULT. It's not just the padding/margin/gap
+   * scale — Tailwind v4 derives EVERY dimensional utility from it
+   * (inset-N, top-N, left-N, width/height/etc.). Setting it to
+   * initial collapses inset-0 → no CSS → absolutely-positioned
+   * elements with `inset-0` get 0×0 dimensions (e.g. the login
+   * orbit rotor, which then mis-positions its satellites). The
+   * ESLint rule fn-tokens/no-default-utilities is the primary
+   * defense against authoring p-4/m-2/etc.; the CSS layer can't
+   * help here without breaking layout primitives.
+   */
   --color-*: initial;
   --text-*: initial;
   --font-*: initial;
@@ -521,6 +531,18 @@
    */
   --default-font-family: initial;
   --default-mono-font-family: initial;
+
+  /*
+   * --color-white and --color-black re-added after the --color-*
+   * initial above. These two are universal CSS color keywords —
+   * the brand mark (F glyph + LogIn icon on the accent gradient)
+   * needs guaranteed white in both themes, which is correct as
+   * a literal rather than a flipping fn-fg-invert. Tailwind's
+   * text-white / bg-white / border-white utilities depend on
+   * these tokens; without them every text-white emits no CSS.
+   */
+  --color-white: #ffffff;
+  --color-black: #000000;
 }
 
 /* ===========================================================================
