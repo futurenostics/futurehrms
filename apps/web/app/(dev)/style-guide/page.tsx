@@ -49,6 +49,7 @@ import {
   ToastSection,
 } from './_sections/tier-5';
 import { FormSection, TableSection } from './_sections/tier-6-7';
+import { DataTableSection } from './_sections/data-table';
 
 export const metadata = {
   title: 'Style Guide — Futurenostics',
@@ -129,7 +130,10 @@ const TOC = [
   },
   {
     label: 'Tier 7 · Data',
-    items: [{ id: 'primitive-table', label: 'Table' }],
+    items: [
+      { id: 'primitive-table', label: 'Table' },
+      { id: 'primitive-data-table', label: 'DataTable' },
+    ],
   },
 ];
 
@@ -566,6 +570,7 @@ function PrimitivesSection() {
       <ToastSection />
       <FormSection />
       <TableSection />
+      <DataTableSection />
       <div className="bg-fn-bg-panel border-fn-border rounded-fn-xs p-fn-6 border">
         <p className="text-fn-fg-muted text-fn-base leading-fn-normal max-w-[640px]">
           Tier 1 atoms (Label · Separator · Spinner) are now live. Coming next: Tier 2 Form atoms —
