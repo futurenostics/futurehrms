@@ -677,6 +677,94 @@ model Notification {
   @@index([type, createdAt])
 }
 
+// ---------- Reminders (Phase 3) ----------
+
+/// A reminder rule — versioned, like CommissionRule.
+///
+/// Two trigger flavors:
+///   - `event` : when an event matching `triggerSpec.eventType` fires,
+///     compute a `scheduledFor` from `triggerSpec.relativeTo` (a field
+///     on the event payload) plus `triggerSpec.offset` (ISO duration,
+///     e.g. `-P30D`). Insert a Reminder row.
+///   - `cron`  : on each scheduler tick, run the rule's
+///     `triggerSpec.query` against the source entity, fire reminders
+///     for matches (e.g. "employees with probationEndDate in 30d").
+///
+/// `recipientResolver` is the key of a registered resolver — modules
+/// declare their own and the registry maps keys to functions that
+/// compute `(rule, source) → userId[]`.
+///
+/// Versioning: publishing a rule stamps `effectiveTo` on the previous
+/// active version and creates a new row. Already-scheduled reminders
+/// keep their FK to the old rule row, so policy changes never alter
+/// past behavior.
+model ReminderRule {
+  id                String   @id @default(cuid())
+  /// Stable user-friendly key — used by recipient resolvers and seeds.
+  /// Unique across active versions; multiple archived versions of the
+  /// same key are allowed.
+  key               String
+  name              String
+  description       String?
+  status            String   @default("draft")  // draft | active | archived
+  /// `event` or `cron`.
+  triggerType       String
+  /// JSON spec — shape depends on triggerType. See module docstring.
+  triggerSpec       Json
+  /// FK-like reference to NotificationType.key (no FK to keep types
+  /// registry decoupled from the DB).
+  notificationType  String
+  /// Key of a registered RecipientResolver.
+  recipientResolver String
+  version           String   @default("1.0")
+  effectiveFrom     DateTime?
+  effectiveTo       DateTime?
+  publishedAt       DateTime?
+  publishedById     String?
+  createdAt         DateTime @default(now())
+  createdById       String
+  updatedAt         DateTime @updatedAt
+  deletedAt         DateTime?
+
+  reminders Reminder[]
+
+  @@index([key, status])
+  @@index([status, triggerType])
+  @@index([notificationType])
+}
+
+/// A scheduled reminder instance — one row per (rule × target × scheduledFor).
+///
+/// Inserted by the trigger evaluator (event-based) or the cron tick
+/// (time-based). Fired by the scheduler loop when `scheduledFor` is
+/// in the past; transition to `fired` writes the FK to the resulting
+/// Notification row.
+model Reminder {
+  id              String   @id @default(cuid())
+  ruleId          String
+  rule            ReminderRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  recipientUserId String
+  /// Polymorphic source — the entity the reminder is about.
+  sourceType      String?
+  sourceId        String?
+  /// Local-time-anchored fire-at. Stored UTC; the evaluator converts
+  /// before scheduling so "9 AM Asia/Karachi" lands at the right epoch.
+  scheduledFor    DateTime
+  status          String   @default("scheduled")  // scheduled | fired | cancelled
+  /// Optional context the notification renderer can read.
+  payload         Json?
+  firedAt         DateTime?
+  notificationId  String?
+  cancelledAt     DateTime?
+  cancelReason    String?
+  createdAt       DateTime @default(now())
+
+  @@index([status, scheduledFor])
+  @@index([ruleId, status])
+  @@index([recipientUserId, status])
+  @@index([sourceType, sourceId])
+}
+
 /// Per-user, per-type, per-channel toggle.
 ///
 /// Absence implies the type's registered default (in-app on, email on for
