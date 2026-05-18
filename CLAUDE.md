@@ -175,6 +175,42 @@ If you need behavior a primitive doesn't support (creatable options, async pagin
 
 See `/style-guide#primitive-select` and `/style-guide#primitive-combobox` for every state. The Employee form sheet at `apps/web/components/employees/employee-form-sheet.tsx` is the canonical adoption example (11 Combobox call sites — gender, department, designation, manager, contract type, etc.).
 
+## Filters
+
+Every list page that supports filtering uses the **Advanced Filters** primitives at `apps/web/components/filters/` and the state hook at `apps/web/hooks/use-filter-state.ts`. **No bespoke filter popovers, no `<select>` chains, no ad-hoc `?filter=` query params managed by hand.** Visual spec lives in `docs/design/screens/advance-filter/` (PNGs 199–202 cover the drawer, saved presets, date-range picker, and dark mode).
+
+Architecture:
+
+| Piece                                 | Source                                | Job                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `useFilterState({ entity, initial })` | `hooks/use-filter-state.ts`           | Holds the typed `Record<sectionKey, FilterValue>`, syncs to the URL under the `?f.<sectionKey>=` namespace, persists named presets to localStorage scoped by `entity`. Exposes `state`, `setSection`, `clearSection`, `clearAll`, `activeCount`, `presets`, `savePreset`, `applyPreset`, `deletePreset`. |
+| `<FilterPanelTrigger>`                | `components/filters/filter-panel.tsx` | The toolbar button — shows the active count as a badge and opens the drawer.                                                                                                                                                                                                                             |
+| `<FilterPanel>`                       | same file                             | Sheet-based drawer chrome with sticky header (title + active count + X), optional `presetsSlot` between header and body, scrollable section stack, sticky footer (matched-of-total card + Clear all + Save as preset + Apply).                                                                           |
+| `<FilterPresetsBar>`                  | `filter-presets-bar.tsx`              | Saved-preset chips row at the top of the drawer. PNG-200 active state.                                                                                                                                                                                                                                   |
+| `<FilterSection>`                     | `filter-section.tsx`                  | Collapsible card with icon + uppercase title + count badge + Clear link.                                                                                                                                                                                                                                 |
+| `<FilterMultiSelect>`                 | `filter-multi-select.tsx`             | Checkbox row list with optional colored dot + count. Use for short fixed lists (statuses, contract types).                                                                                                                                                                                               |
+| `<FilterSearchableList>`              | `filter-searchable-list.tsx`          | Search input + filtered rows + "Show N more" expander. Use for long lists (designations, projects, employees).                                                                                                                                                                                           |
+| `<FilterPillGroup mode="single        | multi">`                              | `filter-pill-group.tsx`                                                                                                                                                                                                                                                                                  | Toggleable chip row. Single-select gets `activeTone="warning"` for status-style emphasis. |
+| `<FilterRangeSlider>`                 | `filter-range-slider.tsx`             | Dual-handle numeric range with min/max inputs + display string. Use for salary, revenue, count windows.                                                                                                                                                                                                  |
+| `<FilterDateRange>`                   | `filter-date-range.tsx`               | Preset chip row (Any / Last 30d / Last 90d / This year / Last year / Custom) + two date inputs.                                                                                                                                                                                                          |
+| `<FilterToggleList>`                  | `filter-toggle-list.tsx`              | Labeled checkbox list with sub-label text. Use for boolean filters (Has Payoneer / Include archived / Active only).                                                                                                                                                                                      |
+| `<FilterChipsBar>`                    | `filter-chips-bar.tsx`                | Active-filters strip above the DataTable. Consumer passes a `SectionDescriptor[]` describing how each section renders to chip text.                                                                                                                                                                      |
+
+The chips bar is **always** rendered above the DataTable when `activeCount > 0` — never hide active filters behind a button. The drawer is the editor; the chips are the always-on summary.
+
+URL encoding (owned by `useFilterState`):
+
+```
+?f.<sectionKey>=<encoded>
+
+multi / toggles → comma-joined id list
+single          → raw id
+range           → "min..max"   (either side may be empty)
+date-range      → "preset|from..to"
+```
+
+If a section needs behaviour the primitives don't support (e.g. creatable options, cascading filters, async paged options), **extend the primitive in place** — don't roll a parallel implementation. The Employees list at `apps/web/app/(app)/employees/page.tsx` is the canonical adoption example (4 sections — Department / Status / Contract type / Visibility, plus the active-chips bar above the DataTable).
+
 ## Asking for clarification
 
 - When something is genuinely ambiguous, ask before deciding.
