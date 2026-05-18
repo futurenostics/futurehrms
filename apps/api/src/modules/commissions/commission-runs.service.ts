@@ -46,6 +46,7 @@ import {
 import type { AuthenticatedUser } from '../../core/auth/types';
 import { AuditService } from '../../core/audit/audit.service';
 import { EventBusService } from '../../core/events/event-bus.service';
+import { ApprovalsService } from '../approvals/approvals.service';
 import {
   calcProjectLineItems,
   computeFinal,
@@ -67,6 +68,7 @@ export class CommissionRunsService {
   constructor(
     private readonly events: EventBusService,
     private readonly audit: AuditService,
+    private readonly approvals: ApprovalsService,
   ) {}
 
   /* ---------- Permission helpers ---------- */
@@ -432,6 +434,17 @@ export class CommissionRunsService {
 
   /* ---------- Lifecycle ---------- */
 
+  /**
+   * Submit for approval — migrated to the generic ApprovalsService.
+   *
+   * We still flip the CommissionRun's state machine (draft →
+   * pending_approval) + denormalised submit fields here, because the
+   * run-detail page reads them directly. Then we create the Approval
+   * record so the unified inbox at /approvals picks it up.
+   *
+   * The bespoke endpoint stays as a thin shim for backwards-compat
+   * with the existing FE submit button + the Phase 2 E2E suite.
+   */
   async submitForApproval(
     viewer: AuthenticatedUser,
     id: string,
@@ -452,6 +465,15 @@ export class CommissionRunsService {
       },
     });
 
+    // Create the generic Approval row. The unified inbox picks it
+    // up; bespoke approve/reject endpoints delegate to ApprovalsService
+    // via findActiveBySource → approve/reject.
+    await this.approvals.submit({
+      type: 'commission-run',
+      sourceId: id,
+      submittedById: viewer.id,
+    });
+
     this.events.emit(
       'commission.run.submitted_for_approval',
       { runId: id, monthKey: existing.monthKey },
@@ -461,6 +483,14 @@ export class CommissionRunsService {
     return this.summary(id);
   }
 
+  /**
+   * Approve — bespoke endpoint now a thin shim. Finds the active
+   * generic Approval for this run and delegates to ApprovalsService.
+   * The commission-run ApprovalType's onApproved side effect
+   * dual-writes the CommissionRun.approved* fields and emits the
+   * commission.run.approved event with the recipients[] array the
+   * timeline subscriber depends on.
+   */
   async approve(
     viewer: AuthenticatedUser,
     id: string,
@@ -471,58 +501,26 @@ export class CommissionRunsService {
     if (!existing) throw new NotFoundException('Commission run not found');
     this.assertTransition(existing.status as CommissionRunStatus, 'approved');
 
-    // Confirmation phrase must match `APPROVE <MONTH YEAR>` for the
-    // run's month (case-sensitive, per PNG 10).
-    const expectedPhrase = `APPROVE ${monthLabel(existing.monthKey).toUpperCase()}`;
-    if (input.confirmationPhrase.trim() !== expectedPhrase) {
-      throw new BadRequestException(`Confirmation phrase mismatch. Expected '${expectedPhrase}'.`);
-    }
-
-    const approverIsSubmitter = existing.submittedById === viewer.id;
-
-    await prisma.commissionRun.update({
-      where: { id },
-      data: {
-        status: 'approved',
-        approvedAt: new Date(),
-        approvedById: viewer.id,
-        approverIsSubmitter,
-        approvalConfirmationPhrase: input.confirmationPhrase.trim(),
-        notes: input.notes ?? existing.notes,
-      },
-    });
-
-    // Emit. The Timeline subscriber listens to this and lands a row
-    // for every affected employee (one per recipient).
-    const lineItems = await prisma.commissionLineItem.findMany({
-      where: { runId: id },
-      select: { employeeId: true, finalAmountUsd: true },
-    });
-    const byEmployee = new Map<string, number>();
-    for (const li of lineItems) {
-      byEmployee.set(
-        li.employeeId,
-        (byEmployee.get(li.employeeId) ?? 0) + Number(li.finalAmountUsd),
+    const approval = await this.approvals.findActiveBySource('commission-run', id);
+    if (!approval) {
+      throw new BadRequestException(
+        'No active approval found for this run — submit for approval first',
       );
     }
-    this.events.emit(
-      'commission.run.approved',
-      {
-        runId: id,
-        monthKey: existing.monthKey,
-        monthLabel: monthLabel(existing.monthKey),
-        approverIsSubmitter,
-        recipients: Array.from(byEmployee.entries()).map(([employeeId, totalUsd]) => ({
-          employeeId,
-          totalUsd: roundUsd(totalUsd),
-        })),
-      },
-      { actorId: viewer.id },
-    );
+
+    await this.approvals.approve(viewer, approval.id, {
+      confirmationData: { confirmationPhrase: input.confirmationPhrase.trim() },
+      notes: input.notes,
+    });
 
     return this.summary(id);
   }
 
+  /**
+   * Reject — bespoke endpoint now a thin shim. Finds the active
+   * Approval and delegates; the type's onRejected dual-writes the
+   * CommissionRun.rejected* fields and emits commission.run.rejected.
+   */
   async reject(
     viewer: AuthenticatedUser,
     id: string,
@@ -533,21 +531,13 @@ export class CommissionRunsService {
     if (!existing) throw new NotFoundException('Commission run not found');
     this.assertTransition(existing.status as CommissionRunStatus, 'rejected');
 
-    await prisma.commissionRun.update({
-      where: { id },
-      data: {
-        status: 'rejected',
-        rejectedAt: new Date(),
-        rejectedById: viewer.id,
-        rejectReason: input.reason,
-      },
-    });
-
-    this.events.emit(
-      'commission.run.rejected',
-      { runId: id, monthKey: existing.monthKey, reason: input.reason },
-      { actorId: viewer.id },
-    );
+    const approval = await this.approvals.findActiveBySource('commission-run', id);
+    if (!approval) {
+      throw new BadRequestException(
+        'No active approval found for this run — submit for approval first',
+      );
+    }
+    await this.approvals.reject(viewer, approval.id, { reason: input.reason });
 
     return this.summary(id);
   }
