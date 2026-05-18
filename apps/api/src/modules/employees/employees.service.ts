@@ -115,27 +115,7 @@ export class EmployeesService {
       return { items: [], total: 0, hasMore: false };
     }
 
-    const filters: Prisma.EmployeeWhereInput[] = [];
-    if (!query.includeArchived) filters.push({ deletedAt: null });
-    if (query.departmentId) filters.push({ departmentId: query.departmentId });
-    if (query.statusId) filters.push({ statusId: query.statusId });
-    if (query.managerId) filters.push({ managerId: query.managerId });
-    if (query.contractType) filters.push({ contractType: query.contractType });
-    if (query.search) {
-      const search = query.search.trim();
-      filters.push({
-        OR: [
-          { fullName: { contains: search, mode: 'insensitive' } },
-          { email: { contains: search, mode: 'insensitive' } },
-          { eid: { contains: search, mode: 'insensitive' } },
-        ],
-      });
-    }
-
-    const where = buildEmployeeScopeWhere(
-      viewer,
-      filters.length === 0 ? {} : filters.length === 1 ? filters[0]! : { AND: filters },
-    );
+    const where = buildEmployeeFilterWhere(viewer, query);
 
     const orderBy: Prisma.EmployeeOrderByWithRelationInput = {
       [query.sortBy]: query.sortDir,
@@ -377,7 +357,7 @@ export class EmployeesService {
       return emptyFilterCountsResponse();
     }
 
-    const where = buildEmployeeFilterCountsWhere(viewer, query);
+    const where = buildEmployeeFilterWhere(viewer, query);
     const seeSalary = canViewSalary(viewer);
 
     const [
@@ -1244,15 +1224,7 @@ export class EmployeesService {
       salaryPkr: number | null;
     }>
   > {
-    const filters: Prisma.EmployeeWhereInput[] = [];
-    if (!query.includeArchived) filters.push({ deletedAt: null });
-    if (query.departmentId) filters.push({ departmentId: query.departmentId });
-    if (query.statusId) filters.push({ statusId: query.statusId });
-    if (query.managerId) filters.push({ managerId: query.managerId });
-    const where = buildEmployeeScopeWhere(
-      viewer,
-      filters.length === 0 ? {} : filters.length === 1 ? filters[0]! : { AND: filters },
-    );
+    const where = buildEmployeeFilterWhere(viewer, query);
 
     const rows = await prisma.employee.findMany({
       where,
@@ -1359,9 +1331,37 @@ function emptyFilterCountsResponse(): EmployeeFilterCountsResponse {
   };
 }
 
-function buildEmployeeFilterCountsWhere(
+/**
+ * Builds the canonical `Prisma.EmployeeWhereInput` for the employees
+ * list + filter-counts endpoints. Both query shapes carry the same
+ * filter fields (array of ids, ranges, flags); the list query just
+ * adds offset/limit/sortBy on top, which aren't conditions.
+ *
+ * Single source of truth for "what filters mean" so the count footer,
+ * the per-option counts, and the list table always agree.
+ */
+type EmployeeFilterableQuery = Pick<
+  EmployeeFilterCountsQuery,
+  | 'departmentIds'
+  | 'designationIds'
+  | 'statusIds'
+  | 'contractTypes'
+  | 'managerIds'
+  | 'employmentRecords'
+  | 'tenureBuckets'
+  | 'compensationFlags'
+  | 'documentFlags'
+  | 'salaryMin'
+  | 'salaryMax'
+  | 'joinDateFrom'
+  | 'joinDateTo'
+  | 'search'
+  | 'includeArchived'
+>;
+
+function buildEmployeeFilterWhere(
   viewer: AuthenticatedUser,
-  query: EmployeeFilterCountsQuery,
+  query: EmployeeFilterableQuery,
 ): Prisma.EmployeeWhereInput {
   const filters: Prisma.EmployeeWhereInput[] = [];
   if (!query.includeArchived) filters.push({ deletedAt: null });
@@ -1375,8 +1375,8 @@ function buildEmployeeFilterCountsWhere(
     filters.push({ employmentRecord: { in: query.employmentRecords } });
   if (query.salaryMin !== undefined) filters.push({ salaryPkr: { gte: query.salaryMin } });
   if (query.salaryMax !== undefined) filters.push({ salaryPkr: { lte: query.salaryMax } });
-  if (query.joinDateFrom) filters.push({ joinDate: { gte: query.joinDateFrom } });
-  if (query.joinDateTo) filters.push({ joinDate: { lte: query.joinDateTo } });
+  if (query.joinDateFrom) filters.push({ joinDate: { gte: new Date(query.joinDateFrom) } });
+  if (query.joinDateTo) filters.push({ joinDate: { lte: new Date(query.joinDateTo) } });
 
   if (query.compensationFlags.length > 0) {
     for (const flag of query.compensationFlags) {

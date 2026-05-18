@@ -171,16 +171,65 @@ export const employeeSortBySchema = z.enum([
 ]);
 export type EmployeeSortBy = z.infer<typeof employeeSortBySchema>;
 
+/**
+ * Comma-separated ID list coercer — mirrors the one used by
+ * `employeeFilterCountsQuerySchema`. Accepts `string[]` (when the
+ * client passes them already split) or a comma-joined string (the
+ * URL-encoded form). Empty inputs collapse to `[]`.
+ */
+const listCsvIds = z
+  .union([z.string(), z.array(z.string())])
+  .optional()
+  .transform((v) => {
+    if (v === undefined) return [] as string[];
+    if (Array.isArray(v)) return v.filter(Boolean);
+    return v
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  });
+
+/**
+ * ISO-string date filter — both input and output stay as `string`
+ * so the same `EmployeeListQuery` type round-trips between client
+ * (which builds a URL) and server (which parses with `new Date(…)`
+ * when applying the filter). Using `z.coerce.date()` would force
+ * the output to `Date`, breaking the client's type contract.
+ */
+const isoDateString = z
+  .string()
+  .refine((s) => !Number.isNaN(Date.parse(s)), 'Invalid date')
+  .optional();
+
 export const employeeListQuerySchema = z.object({
   /** Number of rows to skip before returning the next page. */
   offset: z.coerce.number().int().min(0).default(0),
   /** Maximum rows in this page. Capped server-side to protect the DB. */
   limit: z.coerce.number().int().min(1).max(10_000).default(50),
   search: z.string().trim().min(1).optional(),
-  departmentId: z.string().optional(),
-  statusId: z.string().optional(),
-  managerId: z.string().optional(),
-  contractType: contractTypeSchema.optional(),
+
+  /* Array-shaped filters — the AdvancedFilters drawer sends every
+     selected option as a comma-joined id list. The service applies
+     them with Prisma's `in` operator. */
+  departmentIds: listCsvIds,
+  designationIds: listCsvIds,
+  statusIds: listCsvIds,
+  contractTypes: listCsvIds,
+  managerIds: listCsvIds,
+  employmentRecords: listCsvIds,
+  /** Tenure bucket slugs (`lt1` | `1to3` | `3to5` | `5to10` | `10plus`). */
+  tenureBuckets: listCsvIds,
+  /** Compensation flag slugs (`payoneer` | `pkrOnly` | `processedExternally` | `eligibleCommissions`). */
+  compensationFlags: listCsvIds,
+  /** Document-gap slugs (`missingEmergencyContact` | `missingProbationEndDate` | `missingPhoto`). */
+  documentFlags: listCsvIds,
+
+  /* Range + date-range filters. */
+  salaryMin: z.coerce.number().int().nonnegative().optional(),
+  salaryMax: z.coerce.number().int().nonnegative().optional(),
+  joinDateFrom: isoDateString,
+  joinDateTo: isoDateString,
+
   sortBy: employeeSortBySchema.default('fullName'),
   sortDir: z.enum(['asc', 'desc']).default('asc'),
   includeArchived: z.coerce.boolean().default(false),
@@ -226,8 +275,8 @@ export const employeeFilterCountsQuerySchema = z.object({
   documentFlags: csvIds,
   salaryMin: z.coerce.number().int().nonnegative().optional(),
   salaryMax: z.coerce.number().int().nonnegative().optional(),
-  joinDateFrom: z.coerce.date().optional(),
-  joinDateTo: z.coerce.date().optional(),
+  joinDateFrom: isoDateString,
+  joinDateTo: isoDateString,
   search: z.string().trim().min(1).optional(),
   includeArchived: z.coerce.boolean().default(false),
 });

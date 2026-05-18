@@ -14,12 +14,7 @@ import {
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type {
-  ContractType,
-  EmployeeListQuery,
-  EmployeePublic,
-  EmployeeSortBy,
-} from '@futurenostics/types';
+import type { EmployeeListQuery, EmployeePublic, EmployeeSortBy } from '@futurenostics/types';
 import { AppShell } from '@/components/shell/app-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -190,33 +185,20 @@ function EmployeesListInner({ schema }: { schema: ReturnType<typeof buildEmploye
   const [search, setSearch] = React.useState('');
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
 
-  // Filter state lives in the AdvancedFilters store (one source of truth
-  // for the drawer, the chips bar, the URL, and the data fetch). All
-  // sub-section reads happen through `useAdvancedFiltersValue()`; the
-  // active-count badge subscribes via `useAdvancedFiltersActiveCount()`.
-  //
-  // The Employees API still takes singular `departmentId / statusId /
-  // contractType / managerId` query params today; until it grows array
-  // support we send the FIRST selected id from each multi-select.
-  // The URL + presets round-trip correctly via the primitive; only the
-  // list-call is single-id.
+  // Filter state lives in the AdvancedFilters store — single source of
+  // truth for the drawer, the chips bar, the URL, the list query, and
+  // the filter-counts query. The list endpoint and the filter-counts
+  // endpoint share the same filter shape (array ids, ranges, flags),
+  // so every selection in the drawer is honoured by the table.
   const filterState = useAdvancedFiltersValue();
   const activeFiltersCount = useAdvancedFiltersActiveCount();
   const dispatch = useFilterDispatch();
 
-  const departmentIds = filterState.department?.kind === 'multi' ? filterState.department.ids : [];
-  const statusIds = filterState.status?.kind === 'multi' ? filterState.status.ids : [];
-  const contractTypes =
-    filterState.contract?.kind === 'multi' ? (filterState.contract.ids as ContractType[]) : [];
-  const managerIds = filterState.manager?.kind === 'multi' ? filterState.manager.ids : [];
-  const includeArchived =
-    filterState.archived?.kind === 'flags' ? filterState.archived.ids.includes('archived') : false;
-
-  // API call uses the first id from each multi-select (single-id API).
-  const departmentId = departmentIds[0] ?? '';
-  const statusId = statusIds[0] ?? '';
-  const contractType = contractTypes[0] ?? '';
-  const managerId = managerIds[0] ?? '';
+  // Stable derivation of the list-query filter params from the
+  // primitive's state. `stateToFilterCountsParams` already produces the
+  // exact shape both endpoints want; reusing it keeps the table and the
+  // filter-counts panel perfectly aligned.
+  const queryFilters = React.useMemo(() => stateToFilterCountsParams(filterState), [filterState]);
 
   const [filterPanelOpen, setFilterPanelOpen] = React.useState(false);
 
@@ -285,29 +267,16 @@ function EmployeesListInner({ schema }: { schema: ReturnType<typeof buildEmploye
   // may now reference rows the user can't see.
   React.useEffect(() => {
     setSelected([]);
-  }, [debouncedSearch, departmentId, statusId, contractType, includeArchived]);
+  }, [debouncedSearch, queryFilters]);
 
   const filters = React.useMemo(
     () => ({
       sortBy,
       sortDir,
       ...(debouncedSearch ? { search: debouncedSearch } : {}),
-      ...(departmentId ? { departmentId } : {}),
-      ...(statusId ? { statusId } : {}),
-      ...(contractType ? { contractType } : {}),
-      ...(managerId ? { managerId } : {}),
-      includeArchived,
+      ...queryFilters,
     }),
-    [
-      sortBy,
-      sortDir,
-      debouncedSearch,
-      departmentId,
-      statusId,
-      contractType,
-      managerId,
-      includeArchived,
-    ],
+    [sortBy, sortDir, debouncedSearch, queryFilters],
   );
 
   const {

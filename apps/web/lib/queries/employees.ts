@@ -44,6 +44,14 @@ function buildQs(query: Partial<EmployeeListQuery>): string {
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(query)) {
     if (v === undefined || v === null || v === '') continue;
+    // Array-shaped filters (departmentIds, contractTypes, …) are
+    // encoded as a comma-joined id list — matches the server-side
+    // listCsvIds coercer.
+    if (Array.isArray(v)) {
+      if (v.length === 0) continue;
+      params.set(k, v.join(','));
+      continue;
+    }
     params.set(k, String(v));
   }
   const qs = params.toString();
