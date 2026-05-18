@@ -4,9 +4,11 @@ import * as React from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
-  ChevronDown,
+  Archive,
+  Briefcase as BriefcaseIcon,
+  CircleDot,
   Download,
-  Filter,
+  Building2 as DepartmentIcon,
   LayoutGrid,
   List,
   Plus,
@@ -25,9 +27,18 @@ import type {
 import { AppShell } from '@/components/shell/app-shell';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  FilterChipsBar,
+  FilterPanel,
+  FilterPanelTrigger,
+  FilterPillGroup,
+  FilterPresetsBar,
+  FilterSection,
+  FilterToggleList,
+  type SectionDescriptor,
+} from '@/components/filters';
+import { useFilterState } from '@/hooks/use-filter-state';
 import {
   DataTable,
   type DataTableColumn,
@@ -87,10 +98,33 @@ export default function EmployeesListPage() {
 
   const [search, setSearch] = React.useState('');
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
-  const [departmentId, setDepartmentId] = React.useState<string>('');
-  const [statusId, setStatusId] = React.useState<string>('');
-  const [contractType, setContractType] = React.useState<ContractType | ''>('');
-  const [includeArchived, setIncludeArchived] = React.useState(false);
+
+  // Advanced filters: single source of truth via useFilterState. The
+  // existing single-id query params (`departmentId`, `statusId`,
+  // `contractType`) are derived from the state below so the API
+  // contract is unchanged.
+  const filterUi = useFilterState({
+    entity: 'employees',
+    initial: {
+      department: { kind: 'single', id: null },
+      status: { kind: 'single', id: null },
+      contract: { kind: 'single', id: null },
+      archived: { kind: 'toggles', ids: [] },
+    },
+  });
+  const departmentId =
+    filterUi.state.department?.kind === 'single' ? (filterUi.state.department.id ?? '') : '';
+  const statusId = filterUi.state.status?.kind === 'single' ? (filterUi.state.status.id ?? '') : '';
+  const contractType =
+    filterUi.state.contract?.kind === 'single'
+      ? ((filterUi.state.contract.id as ContractType | null) ?? '')
+      : '';
+  const includeArchived =
+    filterUi.state.archived?.kind === 'toggles'
+      ? filterUi.state.archived.ids.includes('archived')
+      : false;
+
+  const [filterPanelOpen, setFilterPanelOpen] = React.useState(false);
 
   const [sortBy, setSortBy] = React.useState<EmployeeSortBy>('joinDate');
   const [sortDir, setSortDir] = React.useState<'asc' | 'desc'>('desc');
@@ -206,11 +240,49 @@ export default function EmployeesListPage() {
   function clearFilters() {
     setSearch('');
     setDebouncedSearch('');
-    setDepartmentId('');
-    setStatusId('');
-    setContractType('');
-    setIncludeArchived(false);
+    filterUi.clearAll();
   }
+
+  /* ---------- Advanced-filter chip descriptors ----------
+   * One per section. Each knows how to render its active value as a
+   * single chip text (used by FilterChipsBar above the table).
+   */
+  const chipSections: SectionDescriptor[] = React.useMemo(() => {
+    return [
+      {
+        key: 'department',
+        label: 'Department',
+        renderChip: (v) => {
+          if (!v || v.kind !== 'single' || !v.id) return null;
+          return referencesQuery.data?.departments.find((d) => d.id === v.id)?.name ?? v.id;
+        },
+      },
+      {
+        key: 'status',
+        label: 'Status',
+        renderChip: (v) => {
+          if (!v || v.kind !== 'single' || !v.id) return null;
+          return referencesQuery.data?.statuses.find((s) => s.id === v.id)?.name ?? v.id;
+        },
+      },
+      {
+        key: 'contract',
+        label: 'Contract',
+        renderChip: (v) => {
+          if (!v || v.kind !== 'single' || !v.id) return null;
+          return v.id;
+        },
+      },
+      {
+        key: 'archived',
+        label: 'Visibility',
+        renderChip: (v) => {
+          if (!v || v.kind !== 'toggles' || v.ids.length === 0) return null;
+          return 'Include archived';
+        },
+      },
+    ];
+  }, [referencesQuery.data]);
 
   function handleSortChange(key: string, direction: 'asc' | 'desc') {
     const apiKey = SORT_KEY_TO_API[key];
@@ -218,11 +290,6 @@ export default function EmployeesListPage() {
     setSortBy(apiKey);
     setSortDir(direction);
   }
-
-  const departments = referencesQuery.data?.departments ?? [];
-  const statuses = referencesQuery.data?.statuses ?? [];
-  const selectedDepartment = departments.find((d) => d.id === departmentId);
-  const selectedStatus = statuses.find((s) => s.id === statusId);
 
   const columns = React.useMemo<DataTableColumn<EmployeePublic>[]>(
     () => buildColumns({ canViewSalary }),
@@ -325,54 +392,12 @@ export default function EmployeesListPage() {
                   className="pl-fn-8"
                 />
               </div>
-              <div className="border-fn-divider mx-fn-1 h-fn-6 border-l" aria-hidden />
+              <FilterPanelTrigger
+                onClick={() => setFilterPanelOpen(true)}
+                activeCount={filterUi.activeCount}
+              />
 
-              <FilterPill
-                label="Department"
-                value={selectedDepartment?.name ?? 'All'}
-                active={Boolean(departmentId)}
-              >
-                <PillSelect
-                  options={[
-                    { id: '', label: 'All departments' },
-                    ...departments.map((d) => ({ id: d.id, label: d.name })),
-                  ]}
-                  current={departmentId}
-                  onPick={setDepartmentId}
-                />
-              </FilterPill>
-
-              <FilterPill
-                label="Status"
-                value={selectedStatus?.name ?? 'All'}
-                active={Boolean(statusId)}
-              >
-                <PillSelect
-                  options={[
-                    { id: '', label: 'All statuses' },
-                    ...statuses.map((s) => ({ id: s.id, label: s.name })),
-                  ]}
-                  current={statusId}
-                  onPick={setStatusId}
-                />
-              </FilterPill>
-
-              <FilterPill
-                label="Contract"
-                value={contractType || 'All'}
-                active={Boolean(contractType)}
-              >
-                <PillSelect
-                  options={[
-                    { id: '', label: 'All contracts' },
-                    ...CONTRACT_OPTIONS.map((c) => ({ id: c, label: c })),
-                  ]}
-                  current={contractType}
-                  onPick={(v) => setContractType(v as ContractType | '')}
-                />
-              </FilterPill>
-
-              {activeFilterCount > 0 && (
+              {(filterUi.activeCount > 0 || debouncedSearch) && (
                 <button
                   type="button"
                   onClick={clearFilters}
@@ -386,36 +411,26 @@ export default function EmployeesListPage() {
                 {isFetching && !isLoading && (
                   <span className="text-fn-fg-faint text-[11.5px]">Refreshing…</span>
                 )}
-                {canSeeArchived && (
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" size="sm">
-                        <Filter className="h-fn-3_5 w-fn-3_5" /> More filters
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent align="end" className="w-fn-64">
-                      <div className="gap-fn-3 flex flex-col">
-                        <div className="text-fn-fg-faint font-fn-semibold tracking-fn-uppercase-tight text-[11px] uppercase">
-                          Visibility
-                        </div>
-                        <label className="text-fn-fg gap-fn-2_5 inline-flex cursor-pointer items-center text-[13px]">
-                          <Checkbox
-                            checked={includeArchived}
-                            onCheckedChange={(v) => setIncludeArchived(v === true)}
-                          />
-                          Include archived employees
-                        </label>
-                        <p className="text-fn-fg-muted leading-fn-relaxed text-[11.5px]">
-                          Archived employees keep their data and history but are hidden from the
-                          default list.
-                        </p>
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                )}
                 <ViewToggle current={view} onChange={setView} />
               </div>
             </div>
+
+            {/* Active-filter chips — sit above the DataTable as soon as
+                anything is applied. Clicking a chip's X clears that
+                section. */}
+            {filterUi.activeCount > 0 && (
+              <div className="px-fn-5 pt-fn-3">
+                <FilterChipsBar
+                  state={filterUi.state}
+                  sections={chipSections}
+                  matchedCount={totalCount}
+                  totalCount={totalCount}
+                  onClearSection={filterUi.clearSection}
+                  onClearAll={filterUi.clearAll}
+                  onOpenPanel={() => setFilterPanelOpen(true)}
+                />
+              </div>
+            )}
 
             {/* DataTable — owns the actual scroll, sticky header, infinite
                 load mechanics, and all loading/empty/error states. */}
@@ -467,6 +482,106 @@ export default function EmployeesListPage() {
           mode={sheetState?.mode ?? 'create'}
           employee={sheetState?.mode === 'edit' ? sheetState.employee : undefined}
         />
+
+        {/* Advanced Filters drawer — the entry point is the Filters
+            button on the toolbar; the drawer itself lives here so its
+            open state survives toolbar re-renders. */}
+        <FilterPanel
+          open={filterPanelOpen}
+          onOpenChange={setFilterPanelOpen}
+          activeCount={filterUi.activeCount}
+          matchedCount={totalCount}
+          totalCount={statsQuery.data?.totalHeadcount ?? totalCount}
+          entityNoun="employees"
+          onClearAll={filterUi.clearAll}
+          onSavePreset={() => {
+            const name = window.prompt('Name this preset');
+            if (name && name.trim()) filterUi.savePreset(name.trim());
+          }}
+          presetsSlot={
+            <FilterPresetsBar
+              presets={filterUi.presets}
+              activeId={null}
+              onApply={filterUi.applyPreset}
+              onDelete={filterUi.deletePreset}
+              onSaveCurrent={() => {
+                const name = window.prompt('Name this preset');
+                if (name && name.trim()) filterUi.savePreset(name.trim());
+              }}
+            />
+          }
+        >
+          <FilterSection
+            icon={<DepartmentIcon className="h-fn-3_5 w-fn-3_5" />}
+            title="Department"
+            count={departmentId ? 1 : 0}
+            onClear={() => filterUi.clearSection('department')}
+          >
+            <FilterPillGroup
+              mode="single"
+              value={departmentId || null}
+              onValueChange={(id) => filterUi.setSection('department', { kind: 'single', id })}
+              options={(referencesQuery.data?.departments ?? []).map((d) => ({
+                id: d.id,
+                label: d.name,
+              }))}
+            />
+          </FilterSection>
+
+          <FilterSection
+            icon={<CircleDot className="h-fn-3_5 w-fn-3_5" />}
+            title="Status"
+            count={statusId ? 1 : 0}
+            onClear={() => filterUi.clearSection('status')}
+          >
+            <FilterPillGroup
+              mode="single"
+              activeTone="warning"
+              value={statusId || null}
+              onValueChange={(id) => filterUi.setSection('status', { kind: 'single', id })}
+              options={(referencesQuery.data?.statuses ?? []).map((s) => ({
+                id: s.id,
+                label: s.name,
+              }))}
+            />
+          </FilterSection>
+
+          <FilterSection
+            icon={<BriefcaseIcon className="h-fn-3_5 w-fn-3_5" />}
+            title="Contract type"
+            count={contractType ? 1 : 0}
+            onClear={() => filterUi.clearSection('contract')}
+          >
+            <FilterPillGroup
+              mode="single"
+              value={contractType || null}
+              onValueChange={(id) => filterUi.setSection('contract', { kind: 'single', id })}
+              options={CONTRACT_OPTIONS.map((c) => ({ id: c, label: c }))}
+            />
+          </FilterSection>
+
+          {canSeeArchived && (
+            <FilterSection
+              icon={<Archive className="h-fn-3_5 w-fn-3_5" />}
+              title="Visibility"
+              count={includeArchived ? 1 : 0}
+              onClear={() => filterUi.clearSection('archived')}
+            >
+              <FilterToggleList
+                options={[
+                  {
+                    id: 'archived',
+                    label: 'Include archived employees',
+                    description:
+                      'Archived employees keep their data + history but are hidden from the default list.',
+                  },
+                ]}
+                values={includeArchived ? ['archived'] : []}
+                onValuesChange={(ids) => filterUi.setSection('archived', { kind: 'toggles', ids })}
+              />
+            </FilterSection>
+          )}
+        </FilterPanel>
       </AppShell>
     </TooltipProvider>
   );
@@ -571,83 +686,6 @@ function buildColumns({
     });
   }
   return cols;
-}
-
-/* ---------- Filter pill ---------- */
-
-function FilterPill({
-  label,
-  value,
-  active,
-  children,
-}: {
-  label: string;
-  value: string;
-  active: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            'rounded-fn-xs gap-fn-1_5 px-fn-3 font-fn-medium inline-flex h-[34px] cursor-pointer items-center border text-[13px] transition-colors',
-            active
-              ? 'border-fn-accent/30 bg-fn-accent-soft text-fn-accent-soft-fg'
-              : 'border-fn-border-strong bg-fn-bg-panel text-fn-fg-muted hover:border-fn-fg-faint',
-          )}
-        >
-          <span
-            className={cn('font-fn-medium', active ? 'text-fn-accent-soft-fg' : 'text-fn-fg-faint')}
-          >
-            {label}
-          </span>
-          <span>{value}</span>
-          <ChevronDown className="h-fn-3 w-fn-3" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-fn-56 p-fn-1">
-        {children}
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-function PillSelect({
-  options,
-  current,
-  onPick,
-}: {
-  options: Array<{ id: string; label: string }>;
-  current: string;
-  onPick: (value: string) => void;
-}) {
-  return (
-    <div className="flex max-h-[280px] flex-col overflow-y-auto">
-      {options.map((opt) => {
-        const active = opt.id === current;
-        return (
-          <button
-            key={opt.id || '__all__'}
-            type="button"
-            onClick={() => onPick(opt.id)}
-            className={cn(
-              'rounded-fn-xs px-fn-2 py-fn-1_5 flex cursor-pointer items-center justify-between text-left text-[13px] transition-colors',
-              active
-                ? 'bg-fn-accent-soft text-fn-accent-soft-fg font-fn-medium'
-                : 'text-fn-fg hover:bg-fn-bg-inset',
-            )}
-          >
-            <span>{opt.label}</span>
-            {active && (
-              <span className="tracking-fn-uppercase-tight text-[10.5px] uppercase">Active</span>
-            )}
-          </button>
-        );
-      })}
-    </div>
-  );
 }
 
 /* ---------- View toggle ---------- */
