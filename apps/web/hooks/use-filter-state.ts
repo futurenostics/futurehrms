@@ -74,20 +74,45 @@ export function useFilterState(options: UseFilterStateOptions): UseFilterStateRe
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
+  // Stabilize `initial` across renders. Callers almost always pass an
+  // object literal, so without this ref every render would mint a new
+  // reference, deps would treat it as a change, and we'd loop.
+  // Treat `initial` as a constant — the shape and default values are
+  // a design-time contract, not a runtime input.
+  const initialRef = React.useRef(initial);
+
+  // Track the encoded f.* signature we most recently wrote to the URL.
+  // The decode effect bails when the URL's params already match this —
+  // that's the race window between our router.replace() and Next's
+  // searchParams re-bind, during which the decode effect would
+  // otherwise read the *pre-write* URL, decode it back to the old
+  // state, and overwrite the click we just processed.
+  const lastWrittenSignatureRef = React.useRef<string>(
+    typeof window === 'undefined' ? '' : currentParamsSig(searchParams),
+  );
+
   // Decode from URL on first mount; thereafter the URL is a side-effect.
   const [state, setState] = React.useState<FilterState>(() => {
-    if (!syncUrl || typeof window === 'undefined') return initial;
-    return mergeFromUrl(initial, searchParams);
+    if (!syncUrl || typeof window === 'undefined') return initialRef.current;
+    return mergeFromUrl(initialRef.current, searchParams);
   });
 
-  // Re-decode if the URL changes externally (back/forward nav).
+  // Re-decode when the URL changes externally (back/forward nav). We
+  // bail out in two cases:
+  //   1. The encoded state already matches the URL (common — both are
+  //      in sync after the round-trip settles).
+  //   2. The URL's f.* signature equals the one our own write just
+  //      pushed (we're inside the propagation race; the URL hasn't
+  //      caught up to state yet, but it will in the next render).
   const urlSignature = serializeForUrl(state);
   const currentParamsSignature = currentParamsSig(searchParams);
   React.useEffect(() => {
     if (!syncUrl) return;
     if (urlSignature === currentParamsSignature) return;
-    setState(() => mergeFromUrl(initial, searchParams));
-  }, [currentParamsSignature, urlSignature, syncUrl, initial, searchParams]);
+    if (currentParamsSignature === lastWrittenSignatureRef.current) return;
+    const next = mergeFromUrl(initialRef.current, searchParams);
+    setState((prev) => (sameState(prev, next) ? prev : next));
+  }, [currentParamsSignature, urlSignature, syncUrl, searchParams]);
 
   // Write state → URL.
   React.useEffect(() => {
@@ -103,41 +128,41 @@ export function useFilterState(options: UseFilterStateOptions): UseFilterStateRe
     }
     const qs = next.toString();
     const target = qs ? `${pathname}?${qs}` : pathname;
+    // Remember what we're about to write so the decode effect can
+    // recognise the in-flight value and not regress us back.
+    lastWrittenSignatureRef.current = urlSignature;
     if (
       typeof window !== 'undefined' &&
       `${window.location.pathname}${window.location.search}` !== target
     ) {
       router.replace(target, { scroll: false });
     }
-  }, [state, pathname, syncUrl, searchParams, router]);
+  }, [state, pathname, syncUrl, searchParams, router, urlSignature]);
 
   /* ---------- Setters ---------- */
 
-  const setSection = React.useCallback(
-    (key: string, value: FilterValue | undefined) => {
-      setState((prev) => {
-        const next = { ...prev };
-        if (value === undefined) {
-          next[key] = initial[key] ?? { kind: 'multi', ids: [] };
-        } else {
-          next[key] = value;
-        }
-        return next;
-      });
-    },
-    [initial],
-  );
+  const setSection = React.useCallback((key: string, value: FilterValue | undefined) => {
+    setState((prev) => {
+      const next = { ...prev };
+      if (value === undefined) {
+        next[key] = initialRef.current[key] ?? { kind: 'multi', ids: [] };
+      } else {
+        next[key] = value;
+      }
+      return next;
+    });
+  }, []);
 
-  const clearSection = React.useCallback(
-    (key: string) => {
-      setState((prev) => ({ ...prev, [key]: initial[key] ?? { kind: 'multi', ids: [] } }));
-    },
-    [initial],
-  );
+  const clearSection = React.useCallback((key: string) => {
+    setState((prev) => ({
+      ...prev,
+      [key]: initialRef.current[key] ?? { kind: 'multi', ids: [] },
+    }));
+  }, []);
 
   const clearAll = React.useCallback(() => {
-    setState(initial);
-  }, [initial]);
+    setState(initialRef.current);
+  }, []);
 
   /* ---------- Presets ---------- */
 
@@ -162,9 +187,9 @@ export function useFilterState(options: UseFilterStateOptions): UseFilterStateRe
     (id: string) => {
       const preset = presets.find((p) => p.id === id);
       if (!preset) return;
-      setState({ ...initial, ...preset.state });
+      setState({ ...initialRef.current, ...preset.state });
     },
-    [initial, presets],
+    [presets],
   );
 
   const deletePreset = React.useCallback(
@@ -268,6 +293,16 @@ function currentParamsSig(params: URLSearchParams): string {
     if (k.startsWith(URL_PREFIX)) out.push(`${k}=${v}`);
   }
   return out.sort().join('&');
+}
+
+/**
+ * Cheap state equality — compares the canonical encoded form of two
+ * states. Used to prevent the URL-decode effect from triggering
+ * needless setState calls when the decoded state matches what we
+ * already hold (the common path after our own URL write).
+ */
+function sameState(a: FilterState, b: FilterState): boolean {
+  return serializeForUrl(a) === serializeForUrl(b);
 }
 
 /* ---------- localStorage presets ---------- */
