@@ -86,14 +86,7 @@ export function FilterPanel({
                   : `${activeCount} ${activeCount === 1 ? 'filter' : 'filters'} active`}
               </p>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Close filters"
-              onClick={() => onOpenChange(false)}
-            >
-              <X className="h-fn-4 w-fn-4" />
-            </Button>
+            {/* Close button comes from the Sheet primitive — no custom X here. */}
           </div>
         </SheetHeader>
 
