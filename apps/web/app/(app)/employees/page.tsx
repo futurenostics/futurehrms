@@ -849,7 +849,6 @@ export default function EmployeesListPage() {
             title="Reports to"
             count={managerId ? 1 : 0}
             onClear={() => filterUi.clearSection('manager')}
-            defaultOpen={false}
           >
             <FilterSearchableList
               placeholder="Search managers…"
@@ -885,7 +884,6 @@ export default function EmployeesListPage() {
             title="Tenure"
             count={tenureToggles.length}
             onClear={() => filterUi.clearSection('tenure')}
-            defaultOpen={false}
           >
             <FilterToggleList
               options={[...TENURE_OPTIONS]}
@@ -900,7 +898,6 @@ export default function EmployeesListPage() {
             title="Documents & compliance"
             count={documentToggles.length}
             onClear={() => filterUi.clearSection('documents')}
-            defaultOpen={false}
           >
             <FilterToggleList
               options={[...DOCUMENT_OPTIONS]}
@@ -916,7 +913,6 @@ export default function EmployeesListPage() {
               title="Visibility"
               count={includeArchived ? 1 : 0}
               onClear={() => filterUi.clearSection('archived')}
-              defaultOpen={false}
             >
               <FilterToggleList
                 options={[
