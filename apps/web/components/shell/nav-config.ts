@@ -87,7 +87,13 @@ export const navGroups: NavGroup[] = [
   {
     label: 'Reminders & Reviews',
     items: [
-      { key: 'hr-rules', label: 'Reminder Rules', icon: BellRing, href: '/hr/rules' },
+      {
+        key: 'reminder-rules',
+        label: 'Reminder Rules',
+        icon: BellRing,
+        href: '/settings/reminder-rules',
+        requires: 'reminders:view_rules',
+      },
       {
         key: 'evaluations',
         label: 'Evaluations',
