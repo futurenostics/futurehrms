@@ -1,23 +1,29 @@
 'use client';
 
 import * as React from 'react';
-import { Badge } from '@/components/ui/badge';
+import { ChevronDown } from 'lucide-react';
 
 /**
- * Section card chrome — matches PNG 199/200/201. Each section in the
- * drawer is wrapped in this card; the body is the per-type widget.
+ * Section row — matches PNG 199 (flat layout, no card chrome).
  *
- *   [icon] [TITLE] [count badge]                          [Clear]
- *   ─────────────────────────────────────────────────────────────
+ *   [icon] [TITLE] [count pill]                    [Clear] [chevron]
+ *   ──────────────────────────────────────────────────────────────
  *   <children>
+ *   ──────────────────────────────────────────────────────────────
  *
- * Always expanded — the design intentionally has no collapse toggle.
+ * Sections are separated by a single bottom divider; there is no border
+ * box around each one. The chevron is visual only (the design has it on
+ * every section) — sections always render expanded.
+ *
+ * The count pill is a small purple capsule, not the standard Badge,
+ * because the design treats it as part of the section title rather
+ * than as a status label.
  */
 
 export interface SectionCardProps {
   icon?: React.ReactNode;
   title: string;
-  /** Active selection count for this section — drives the inline badge and Clear button. */
+  /** Active selection count — drives the inline pill and Clear button visibility. */
   count?: number;
   onClear?: () => void;
   children: React.ReactNode;
@@ -32,37 +38,38 @@ export const SectionCard = React.memo(function SectionCard({
 }: SectionCardProps) {
   const showClear = count > 0 && !!onClear;
   return (
-    <section className="rounded-fn-sm border-fn-border bg-fn-bg-panel overflow-hidden border">
-      <header className="border-fn-divider gap-fn-2 px-fn-3 py-fn-2_5 flex items-center justify-between border-b">
+    <section className="border-fn-divider border-b last:border-b-0">
+      <header className="gap-fn-2 py-fn-3 flex items-center">
         <div className="gap-fn-2 flex flex-1 items-center">
           {icon && (
             <span
               aria-hidden
-              className="text-fn-fg-muted h-fn-3_5 w-fn-3_5 inline-flex shrink-0 items-center justify-center"
+              className="text-fn-fg-muted h-fn-4 w-fn-4 inline-flex shrink-0 items-center justify-center"
             >
               {icon}
             </span>
           )}
-          <span className="text-fn-fg-faint font-fn-semibold tracking-fn-uppercase-tight text-[11px] uppercase">
+          <span className="text-fn-fg font-fn-bold tracking-fn-uppercase-tight text-[12px] uppercase">
             {title}
           </span>
           {count > 0 && (
-            <Badge tone="accent" className="tabular-nums">
+            <span className="rounded-fn-full bg-fn-accent text-fn-accent-fg px-fn-1_5 py-fn-0_5 font-fn-semibold min-w-fn-5 inline-flex items-center justify-center text-[10.5px] tabular-nums">
               {count}
-            </Badge>
+            </span>
           )}
         </div>
         {showClear && (
           <button
             type="button"
             onClick={onClear}
-            className="text-fn-fg-faint hover:text-fn-fg font-fn-medium cursor-pointer text-[11px] hover:underline"
+            className="text-fn-accent hover:text-fn-accent/80 font-fn-medium cursor-pointer text-[12px]"
           >
             Clear
           </button>
         )}
+        <ChevronDown aria-hidden className="text-fn-fg-faint h-fn-3_5 w-fn-3_5 shrink-0" />
       </header>
-      <div className="px-fn-3 py-fn-3">{children}</div>
+      <div className="pb-fn-4">{children}</div>
     </section>
   );
 });

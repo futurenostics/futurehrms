@@ -43,6 +43,28 @@ const CONTRACT_OPTIONS = [
   { id: 'Intern', label: 'Intern' },
 ];
 
+/**
+ * Deterministic OKLCH hue per department slug — drives the colored dot
+ * in the Department checkbox list. Falls back to a hashed hue for
+ * unknown slugs so every department always gets a stable colour.
+ */
+const DEPT_HUES: Record<string, number> = {
+  engineering: 280,
+  'business-development': 22,
+  operations: 145,
+  'people-culture': 165,
+  hr: 22,
+  finance: 220,
+  design: 18,
+  leadership: 265,
+};
+function deptHue(slug: string): number {
+  if (DEPT_HUES[slug] != null) return DEPT_HUES[slug]!;
+  let h = 0;
+  for (const c of slug) h = (h * 31 + c.charCodeAt(0)) | 0;
+  return Math.abs(h) % 360;
+}
+
 const COMPENSATION_OPTIONS = [
   {
     id: 'payoneer',
@@ -143,8 +165,12 @@ export function buildEmployeeFilterSchema({
     title: 'Department',
     icon: React.createElement(DepartmentIcon, { className: 'h-fn-3_5 w-fn-3_5' }),
     type: 'checkbox-list',
-    searchable: true,
-    options: (references?.departments ?? []).map((d) => ({ id: d.id, label: d.name })),
+    searchable: false,
+    options: (references?.departments ?? []).map((d) => ({
+      id: d.id,
+      label: d.name,
+      hue: deptHue(d.slug),
+    })),
   });
 
   sections.push({

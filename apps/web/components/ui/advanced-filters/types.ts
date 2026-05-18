@@ -53,6 +53,12 @@ export interface FilterOption {
   disabled?: boolean;
   /** Semantic colour tone for pill-toggle sections. */
   tone?: 'default' | 'accent' | 'success' | 'warning' | 'danger' | 'info';
+  /**
+   * Hue (0–360) for an OKLCH-derived colored dot rendered before the
+   * label in checkbox-list sections. Used to distinguish departments
+   * by colour in the Department filter.
+   */
+  hue?: number;
 }
 
 interface BaseSection {

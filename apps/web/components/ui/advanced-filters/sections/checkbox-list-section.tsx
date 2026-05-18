@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Search, ChevronDown } from 'lucide-react';
+import { ArrowRight, Search } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -11,12 +11,12 @@ import type { CheckboxListSection as CheckboxListSectionDef, FilterOption } from
 
 /**
  * Searchable / collapsing checkbox list — Department, Designation,
- * Status, etc.
+ * Tenure. Each row:
  *
- * • Reads only its own slice via `useSectionValue(key)` — siblings
- *   never re-render when this list toggles.
- * • Per-option counts dim 0-result options when counts are available.
- * • `showLimit` collapses past N items behind a "Show all (N)" toggle.
+ *   [✓] [hue dot] Engineering                                 28
+ *
+ * Selected rows render with a soft accent-tinted background so the
+ * selection stands out without color-coding every option.
  */
 
 export const CheckboxListSection = React.memo(function CheckboxListSection({
@@ -70,18 +70,18 @@ export const CheckboxListSection = React.memo(function CheckboxListSection({
       {section.searchable && (
         <div className="mb-fn-2 relative">
           <Search
-            className="text-fn-fg-faint left-fn-2 h-fn-3_5 w-fn-3_5 pointer-events-none absolute top-1/2 -translate-y-1/2"
+            className="text-fn-fg-faint left-fn-2_5 h-fn-3_5 w-fn-3_5 pointer-events-none absolute top-1/2 -translate-y-1/2"
             aria-hidden
           />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={`Search ${section.title.toLowerCase()}…`}
-            className="pl-fn-7"
+            className="pl-fn-8"
           />
         </div>
       )}
-      <ul className="gap-fn-1 flex flex-col">
+      <ul className="gap-fn-0_5 flex flex-col">
         {visible.map((opt) => (
           <CheckboxRow
             key={opt.id}
@@ -96,9 +96,9 @@ export const CheckboxListSection = React.memo(function CheckboxListSection({
         <button
           type="button"
           onClick={() => setExpanded(true)}
-          className="text-fn-accent-soft-fg hover:text-fn-accent hover:bg-fn-accent-soft/40 rounded-fn-xs gap-fn-1 mt-fn-2 px-fn-2 py-fn-1_5 font-fn-medium inline-flex w-full cursor-pointer items-center justify-center text-[11.5px]"
+          className="text-fn-accent hover:text-fn-accent/80 gap-fn-1 mt-fn-2 font-fn-semibold inline-flex cursor-pointer items-center text-[12.5px]"
         >
-          <ChevronDown className="h-fn-3 w-fn-3" /> Show all ({filtered.length})
+          Show {hiddenCount} more <ArrowRight className="h-fn-3 w-fn-3" />
         </button>
       )}
       {section.searchable && filtered.length === 0 && (
@@ -126,7 +126,8 @@ const CheckboxRow = React.memo(function CheckboxRow({
     <li>
       <label
         className={cn(
-          'rounded-fn-xs px-fn-2 py-fn-1_5 gap-fn-2 hover:bg-fn-bg-inset flex items-center text-[12.5px] transition-colors',
+          'rounded-fn-xs px-fn-2 py-fn-2 gap-fn-2_5 flex items-center text-[13px] transition-colors',
+          checked ? 'bg-fn-accent-soft/40' : 'hover:bg-fn-bg-inset',
           option.disabled || dimmed ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
         )}
       >
@@ -135,7 +136,14 @@ const CheckboxRow = React.memo(function CheckboxRow({
           disabled={option.disabled}
           onCheckedChange={() => onToggle(option.id)}
         />
-        {option.icon && (
+        {typeof option.hue === 'number' && (
+          <span
+            aria-hidden
+            className="h-fn-2 w-fn-2 rounded-fn-full shrink-0"
+            style={{ background: `oklch(0.6 0.15 ${option.hue})` }}
+          />
+        )}
+        {option.icon && !option.hue && (
           <span
             aria-hidden
             className="text-fn-fg-muted h-fn-3_5 w-fn-3_5 inline-flex shrink-0 items-center justify-center"
@@ -143,9 +151,16 @@ const CheckboxRow = React.memo(function CheckboxRow({
             {option.icon}
           </span>
         )}
-        <span className="text-fn-fg font-fn-medium flex-1 truncate">{option.label}</span>
+        <span
+          className={cn(
+            'flex-1 truncate',
+            checked ? 'text-fn-fg font-fn-semibold' : 'text-fn-fg-muted font-fn-medium',
+          )}
+        >
+          {option.label}
+        </span>
         {typeof count === 'number' && (
-          <span className="text-fn-fg-faint text-[11px] tabular-nums">{count}</span>
+          <span className="text-fn-fg-faint text-[12px] tabular-nums">{count}</span>
         )}
       </label>
     </li>

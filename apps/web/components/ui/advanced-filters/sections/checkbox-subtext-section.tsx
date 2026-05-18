@@ -85,7 +85,8 @@ const Row = React.memo(function Row({
     <li>
       <label
         className={cn(
-          'rounded-fn-xs px-fn-2 py-fn-1_5 gap-fn-2_5 hover:bg-fn-bg-inset flex items-start text-[12.5px] transition-colors',
+          'rounded-fn-xs px-fn-2 py-fn-2 gap-fn-2_5 flex items-start text-[13px] transition-colors',
+          checked ? 'bg-fn-accent-soft/40' : 'hover:bg-fn-bg-inset',
           option.disabled || dimmed ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
         )}
       >
@@ -97,13 +98,20 @@ const Row = React.memo(function Row({
         />
         <div className="gap-fn-0_5 flex min-w-0 flex-1 flex-col">
           <div className="gap-fn-2 flex items-center">
-            <span className="text-fn-fg font-fn-medium flex-1 truncate">{option.label}</span>
+            <span
+              className={cn(
+                'flex-1 truncate',
+                checked ? 'text-fn-fg font-fn-semibold' : 'text-fn-fg font-fn-medium',
+              )}
+            >
+              {option.label}
+            </span>
             {typeof count === 'number' && (
-              <span className="text-fn-fg-faint text-[11px] tabular-nums">{count}</span>
+              <span className="text-fn-fg-faint text-[12px] tabular-nums">{count}</span>
             )}
           </div>
           {option.description && (
-            <span className="text-fn-fg-faint text-[11px]">{option.description}</span>
+            <span className="text-fn-fg-faint text-[11.5px]">{option.description}</span>
           )}
         </div>
       </label>

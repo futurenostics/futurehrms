@@ -8,16 +8,19 @@ import { SectionCard } from '../section-card';
 import type { RangeWithHistogramSection as RangeSectionDef } from '../types';
 
 /**
- * Dual-handle range slider with a histogram backdrop — matches PNG 199
+ * Dual-handle range slider with histogram backdrop — matches PNG 199
  * Salary section.
  *
- * Bars render *behind* the track. Bars inside the active range render
- * filled; outside, dimmed. Handles are absolutely positioned circles.
- * Below: linked PKR-formatted text inputs for min and max.
+ *   Rs 250,000 – Rs 400,000                                  monthly
+ *   ▁▂▃▅▇▆▅▃▂▁▁▁▁
+ *   ●━━━━━━━━━━●
+ *   ┌──────────┐   ┌──────────┐
+ *   │ 250,000  │   │ 400,000  │
+ *   └──────────┘   └──────────┘
  *
- * Histogram data comes from `useSectionMeta(key)` so the primitive can
- * push new buckets in from the counts API without forcing the page to
- * pass them down through the schema.
+ * Histogram bars sit behind the track. Both handles are open circles
+ * (white fill, accent border). The value display above is the primary
+ * affordance — bigger than the manual inputs.
  */
 
 interface HistogramMeta {
@@ -35,8 +38,6 @@ export const RangeHistogramSection = React.memo(function RangeHistogramSection({
   const meta = useSectionMeta<HistogramMeta>(section.key);
   const dispatch = useFilterDispatch();
 
-  // Histogram buckets — prefer live counts from the API, fall back to
-  // the schema default (used in style guide / static demos).
   const buckets =
     meta?.buckets ??
     section.histogram?.map((c, i) => ({
@@ -70,7 +71,6 @@ export const RangeHistogramSection = React.memo(function RangeHistogramSection({
         min: 'min' in next ? (next.min ?? null) : value?.kind === 'range' ? value.min : null,
         max: 'max' in next ? (next.max ?? null) : value?.kind === 'range' ? value.max : null,
       };
-      // Default-bounds → treat as cleared.
       if (merged.min === bounds.min) merged.min = null;
       if (merged.max === bounds.max) merged.max = null;
       dispatch({
@@ -91,26 +91,43 @@ export const RangeHistogramSection = React.memo(function RangeHistogramSection({
 
   return (
     <SectionCard icon={section.icon} title={section.title} count={active ? 1 : 0} onClear={onClear}>
-      {/* Histogram backdrop */}
+      {/* Prominent value display */}
+      <div className="mb-fn-3 flex items-baseline justify-between">
+        <div className="text-fn-fg font-fn-semibold tracking-fn-tight text-[18px] tabular-nums">
+          {format(valueMin)} <span className="text-fn-fg-muted mx-fn-1 font-fn-medium">–</span>{' '}
+          {format(valueMax)}
+        </div>
+        <div className="text-fn-fg-faint text-[12px]">monthly</div>
+      </div>
+
+      {/* Histogram backdrop + track */}
       <div className="relative">
-        <div className="h-fn-12 gap-fn-0_5 flex items-end" aria-hidden>
-          {buckets.map((b, i) => {
-            const insideRange = b.from >= valueMin && b.to <= valueMax;
-            const heightPct = (b.count / peakCount) * 100;
-            return (
-              <div
-                key={i}
-                className={cn(
-                  'rounded-fn-2xs min-h-[2px] flex-1',
-                  insideRange ? 'bg-fn-accent-soft-fg/70' : 'bg-fn-fg-muted/20',
-                )}
-                style={{ height: `${heightPct}%` }}
-              />
-            );
-          })}
+        <div className="h-fn-8 gap-fn-0_5 flex items-end" aria-hidden>
+          {buckets.length > 0
+            ? buckets.map((b, i) => {
+                const insideRange = b.from >= valueMin && b.to <= valueMax;
+                const heightPct = (b.count / peakCount) * 100;
+                return (
+                  <div
+                    key={i}
+                    className={cn(
+                      'rounded-fn-2xs min-h-[2px] flex-1',
+                      insideRange ? 'bg-fn-accent/40' : 'bg-fn-fg-muted/15',
+                    )}
+                    style={{ height: `${heightPct}%` }}
+                  />
+                );
+              })
+            : // Placeholder bars when histogram data isn't loaded yet.
+              Array.from({ length: 24 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="rounded-fn-2xs bg-fn-fg-muted/15 min-h-[2px] flex-1"
+                  style={{ height: `${30 + ((i * 13) % 60)}%` }}
+                />
+              ))}
         </div>
 
-        {/* Track */}
         <div className="mt-fn-2 h-fn-1 relative w-full">
           <div className="bg-fn-bg-inset rounded-fn-full absolute inset-0" />
           <div
@@ -136,25 +153,19 @@ export const RangeHistogramSection = React.memo(function RangeHistogramSection({
             ariaLabel={`Maximum ${section.title}`}
           />
         </div>
-        <div className="text-fn-fg-faint mt-fn-2 flex justify-between text-[11px] tabular-nums">
-          <span>{format(bounds.min)}</span>
-          <span>{format(bounds.max)}</span>
-        </div>
       </div>
 
       {/* Manual min/max inputs */}
-      <div className="gap-fn-2 mt-fn-3 grid grid-cols-2">
+      <div className="gap-fn-2 mt-fn-4 grid grid-cols-2">
         <BoundInput
-          label="Min"
-          unit={section.unit}
+          unit="min"
           value={valueMin}
           bounds={bounds}
           step={section.step ?? 1}
           onCommit={(v) => commit({ min: v })}
         />
         <BoundInput
-          label="Max"
-          unit={section.unit}
+          unit="max"
           value={valueMax}
           bounds={bounds}
           step={section.step ?? 1}
@@ -194,9 +205,9 @@ function RangeThumb({
       className={cn(
         'h-fn-4 w-fn-4 absolute top-1/2 -translate-x-1/2 -translate-y-1/2 cursor-grab appearance-none',
         // eslint-disable-next-line fn-tokens/no-default-utilities
-        '[&::-webkit-slider-thumb]:bg-fn-accent [&::-webkit-slider-thumb]:rounded-fn-full [&::-webkit-slider-thumb]:h-fn-4 [&::-webkit-slider-thumb]:w-fn-4 [&::-webkit-slider-thumb]:shadow-fn-sm [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white',
+        '[&::-webkit-slider-thumb]:rounded-fn-full [&::-webkit-slider-thumb]:h-fn-4 [&::-webkit-slider-thumb]:w-fn-4 [&::-webkit-slider-thumb]:border-fn-accent [&::-webkit-slider-thumb]:shadow-fn-sm [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:bg-white',
         // eslint-disable-next-line fn-tokens/no-default-utilities
-        '[&::-moz-range-thumb]:bg-fn-accent [&::-moz-range-thumb]:rounded-fn-full [&::-moz-range-thumb]:h-fn-4 [&::-moz-range-thumb]:w-fn-4 [&::-moz-range-thumb]:shadow-fn-sm [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white',
+        '[&::-moz-range-thumb]:rounded-fn-full [&::-moz-range-thumb]:h-fn-4 [&::-moz-range-thumb]:w-fn-4 [&::-moz-range-thumb]:border-fn-accent [&::-moz-range-thumb]:shadow-fn-sm [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:bg-white',
         'pointer-events-auto bg-transparent',
       )}
       style={{ left: `${position}%`, width: '24px' }}
@@ -205,52 +216,43 @@ function RangeThumb({
 }
 
 function BoundInput({
-  label,
   unit,
   value,
   bounds,
   step,
   onCommit,
 }: {
-  label: string;
-  unit?: string;
+  unit: string;
   value: number;
   bounds: { min: number; max: number };
   step: number;
   onCommit: (next: number) => void;
 }) {
-  const [draft, setDraft] = React.useState(value.toString());
+  const [draft, setDraft] = React.useState(value.toLocaleString());
   React.useEffect(() => {
-    setDraft(value.toString());
+    setDraft(value.toLocaleString());
   }, [value]);
   return (
-    <label className="gap-fn-1 flex flex-col">
-      <span className="text-fn-fg-faint font-fn-medium tracking-fn-uppercase-tight text-[11px] uppercase">
-        {label}
+    <div className="relative">
+      <Input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          const n = Number(draft.replace(/,/g, ''));
+          if (!Number.isFinite(n)) {
+            setDraft(value.toLocaleString());
+            return;
+          }
+          const clamped = Math.max(bounds.min, Math.min(bounds.max, Math.round(n / step) * step));
+          onCommit(clamped);
+        }}
+        inputMode="numeric"
+        className="pr-fn-9 text-[14px] tabular-nums"
+      />
+      <span className="text-fn-fg-faint right-fn-3 pointer-events-none absolute top-1/2 -translate-y-1/2 text-[12px]">
+        {unit}
       </span>
-      <div className="relative">
-        {unit && (
-          <span className="text-fn-fg-faint left-fn-2 pointer-events-none absolute top-1/2 -translate-y-1/2 text-[12px]">
-            {unit}
-          </span>
-        )}
-        <Input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={() => {
-            const n = Number(draft);
-            if (!Number.isFinite(n)) {
-              setDraft(value.toString());
-              return;
-            }
-            const clamped = Math.max(bounds.min, Math.min(bounds.max, Math.round(n / step) * step));
-            onCommit(clamped);
-          }}
-          inputMode="numeric"
-          className={cn('tabular-nums', unit && 'pl-fn-7')}
-        />
-      </div>
-    </label>
+    </div>
   );
 }
 

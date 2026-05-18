@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { SlidersHorizontal, X, Bookmark, Trash2 } from 'lucide-react';
+import { Bookmark, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -156,14 +156,16 @@ export function AdvancedFilters({ schema, open, onOpenChange, onApply }: Advance
             </div>
           </SheetHeader>
 
-          {store.presets.length > 0 && (
-            <div className="border-fn-divider bg-fn-bg-panel px-fn-5 py-fn-3 border-b">
-              <PresetsRow store={store} />
-            </div>
-          )}
+          <div className="border-fn-divider bg-fn-bg-panel px-fn-sheet-x py-fn-3 border-b">
+            <PresetsRow
+              store={store}
+              onSaveCurrent={() => setPresetDialogOpen(true)}
+              canSaveCurrent={activeCount > 0}
+            />
+          </div>
 
           <SheetBody>
-            <div className="gap-fn-3 px-fn-5 py-fn-4 flex flex-col">
+            <div className="flex flex-col">
               {schema.sections.map((section) => {
                 switch (section.type) {
                   case 'checkbox-list':
@@ -212,22 +214,47 @@ export function AdvancedFilters({ schema, open, onOpenChange, onApply }: Advance
   );
 }
 
-function PresetsRow({ store }: { store: FilterStore }) {
+function PresetsRow({
+  store,
+  onSaveCurrent,
+  canSaveCurrent,
+}: {
+  store: FilterStore;
+  onSaveCurrent: () => void;
+  canSaveCurrent: boolean;
+}) {
   return (
     <div>
-      <p className="text-fn-fg-faint font-fn-semibold mb-fn-1_5 tracking-fn-uppercase-tight text-[11px] uppercase">
-        Saved presets
-      </p>
-      <div className="gap-fn-1_5 flex flex-wrap">
-        {store.presets.map((p) => (
-          <PresetChip
-            key={p.id}
-            preset={p}
-            onApply={() => store.applyPreset(p.id)}
-            onDelete={() => store.deletePreset(p.id)}
-          />
-        ))}
+      <div className="mb-fn-2 flex items-center justify-between">
+        <p className="text-fn-fg-faint font-fn-semibold tracking-fn-uppercase-tight text-[11px] uppercase">
+          Saved filters
+        </p>
+        <button
+          type="button"
+          onClick={onSaveCurrent}
+          disabled={!canSaveCurrent}
+          className="text-fn-accent hover:text-fn-accent/80 font-fn-semibold cursor-pointer text-[12px] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          + Save current
+        </button>
       </div>
+      {store.presets.length === 0 ? (
+        <p className="text-fn-fg-faint py-fn-1 text-[12px]">
+          No saved filters yet — combine filters then tap{' '}
+          <span className="text-fn-fg font-fn-medium">+ Save current</span>.
+        </p>
+      ) : (
+        <div className="gap-fn-1_5 flex flex-wrap">
+          {store.presets.map((p) => (
+            <PresetChip
+              key={p.id}
+              preset={p}
+              onApply={() => store.applyPreset(p.id)}
+              onDelete={() => store.deletePreset(p.id)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -241,20 +268,29 @@ function PresetChip({
   onApply: () => void;
   onDelete: () => void;
 }) {
+  const activeCount = Object.values(preset.state).reduce((n, v) => {
+    if (v.kind === 'multi' || v.kind === 'flags') return n + (v.ids.length > 0 ? 1 : 0);
+    if (v.kind === 'single') return n + (v.id ? 1 : 0);
+    if (v.kind === 'range') return n + (v.min !== null || v.max !== null ? 1 : 0);
+    if (v.kind === 'date-range') return n + (v.preset || v.from || v.to ? 1 : 0);
+    return n;
+  }, 0);
   return (
-    <div className="border-fn-border bg-fn-bg-inset rounded-fn-xs gap-fn-1 inline-flex items-center border text-[12px]">
+    <div className="border-fn-border bg-fn-bg-panel rounded-fn-full gap-fn-1_5 px-fn-3 py-fn-1 group inline-flex items-center border text-[12.5px]">
       <button
         type="button"
         onClick={onApply}
-        className="hover:text-fn-accent text-fn-fg font-fn-medium px-fn-2 py-fn-1 cursor-pointer"
+        className="text-fn-fg font-fn-medium hover:text-fn-accent gap-fn-1_5 inline-flex cursor-pointer items-center"
       >
-        <Bookmark className="h-fn-3 w-fn-3 mr-fn-1 inline" />
-        {preset.name}
+        <span>{preset.name}</span>
+        {activeCount > 0 && (
+          <span className="text-fn-fg-faint text-[11px] tabular-nums">{activeCount}</span>
+        )}
       </button>
       <button
         type="button"
         onClick={onDelete}
-        className="text-fn-fg-faint hover:text-fn-danger pr-fn-1_5 py-fn-1 cursor-pointer"
+        className="text-fn-fg-faint hover:text-fn-danger -mr-fn-1 cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"
         aria-label={`Delete preset ${preset.name}`}
       >
         <Trash2 className="h-fn-3 w-fn-3" />
