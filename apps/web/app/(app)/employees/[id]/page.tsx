@@ -36,6 +36,7 @@ import { EmployeeFormSheet } from '@/components/employees/employee-form-sheet';
 import { ProfileQuickStats } from '@/components/employees/profile-quick-stats';
 import { ProfileTimeline } from '@/components/employees/profile-timeline';
 import { CompensationCard, DocumentsCard } from '@/components/employees/profile-sidebar-cards';
+import { EmployeeCommissionsTab } from '@/components/employees/employee-commissions-tab';
 import { usePermissions } from '@/hooks/use-permissions';
 import { cn } from '@/lib/utils';
 
@@ -186,10 +187,7 @@ export default function EmployeeProfilePage() {
                     />
                   </TabsContent>
                   <TabsContent value="commissions" className="mt-0">
-                    <PlaceholderTab
-                      title="Commissions"
-                      body="Commission history lands with the commissions module."
-                    />
+                    <EmployeeCommissionsTab employeeId={employee.id} />
                   </TabsContent>
                 </div>
 
