@@ -611,7 +611,10 @@ async function seedCommissionRuns(prisma: PrismaClient, superAdminUserId: string
     })),
   }));
 
-  async function ensureRun(monthKey: string, status: 'draft' | 'approved'): Promise<void> {
+  async function ensureRun(
+    monthKey: string,
+    status: 'draft' | 'pending_approval' | 'approved',
+  ): Promise<void> {
     const existing = await prisma.commissionRun.findUnique({ where: { monthKey } });
     if (existing) {
       console.info(
@@ -656,11 +659,22 @@ async function seedCommissionRuns(prisma: PrismaClient, superAdminUserId: string
         await tx.commissionLineItem.createMany({ data: lineItems, skipDuplicates: true });
       }
 
-      // Optionally take the run through submit + approve to land an
-      // approved sample. Audit log captures the transitions; the
+      // Optionally take the run through submit / approve to land a
+      // realistic sample. Audit log captures the transitions; the
       // timeline subscriber lands the per-employee rows via the
-      // commission.run.approved event when the API is up — for seed,
+      // commission.run.approved event when the API is up — for seed
       // we set the lifecycle columns directly.
+      if (status === 'pending_approval') {
+        await tx.commissionRun.update({
+          where: { id: run.id },
+          data: {
+            status: 'pending_approval',
+            submittedAt: new Date(),
+            submittedById: superAdminUserId,
+            notes: 'Submitted by HR — awaiting Finance approval.',
+          },
+        });
+      }
       if (status === 'approved') {
         const expectedPhrase = `APPROVE ${monthLabel(monthKey).toUpperCase()}`;
         await tx.commissionRun.update({
@@ -681,8 +695,65 @@ async function seedCommissionRuns(prisma: PrismaClient, superAdminUserId: string
     console.info(`[phase2] Created ${monthKey} run with status=${status}`);
   }
 
-  await ensureRun(prevMonth, 'approved');
+  const twoMonthsBack = previousMonthKeyOf(prevMonth);
+
+  // Three-state lifecycle sample so the UIs (Approvals inbox,
+  // dashboard widgets, run detail) all have realistic data:
+  //   - 2 months back → approved (a sealed historical run)
+  //   - 1 month back → pending_approval (sits in the Approvals inbox)
+  //   - this month → draft (HR is currently reviewing)
+  await ensureRun(twoMonthsBack, 'approved');
+  await ensureRun(prevMonth, 'pending_approval');
   await ensureRun(thisMonth, 'draft');
+
+  await enrichDraftWithSampleAdjustments(prisma, thisMonth);
+}
+
+/**
+ * Adds demo-quality variety to the draft run: marks one line item as
+ * held (so the carry-forward KPI > 0) and applies a -$24 leave-adj
+ * to another (mirroring the PNG-09 example). Idempotent — looks for
+ * the flag on the row before mutating.
+ */
+async function enrichDraftWithSampleAdjustments(
+  prisma: PrismaClient,
+  draftMonthKey: string,
+): Promise<void> {
+  const run = await prisma.commissionRun.findUnique({
+    where: { monthKey: draftMonthKey },
+    include: { lineItems: { orderBy: { calculatedAmountUsd: 'desc' } } },
+  });
+  if (!run || run.status !== 'draft' || run.lineItems.length < 2) return;
+
+  const alreadyHeld = run.lineItems.find((li) => li.isHeld);
+  const alreadyAdjusted = run.lineItems.find((li) => Number(li.leaveAdjustmentUsd) !== 0);
+  if (alreadyHeld && alreadyAdjusted) return;
+
+  if (!alreadyHeld) {
+    const candidate = run.lineItems[0]; // biggest line — most visible
+    await prisma.commissionLineItem.update({
+      where: { id: candidate.id },
+      data: {
+        isHeld: true,
+      },
+    });
+    console.info(`[phase2] Held sample line item ${candidate.id} for carry-forward demo`);
+  }
+
+  if (!alreadyAdjusted) {
+    const candidate = run.lineItems[1] ?? run.lineItems[0];
+    const leave = -24;
+    const calculated = Number(candidate.calculatedAmountUsd);
+    const final = Math.round((calculated + leave) * 100) / 100;
+    await prisma.commissionLineItem.update({
+      where: { id: candidate.id },
+      data: {
+        leaveAdjustmentUsd: new Prisma.Decimal(leave),
+        finalAmountUsd: new Prisma.Decimal(final),
+      },
+    });
+    console.info(`[phase2] Applied -$24 leave-adj to sample line item ${candidate.id}`);
+  }
 }
 
 function monthKeyOf(d: Date): string {
