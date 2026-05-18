@@ -1,4 +1,16 @@
 import 'reflect-metadata';
+// Pre-warm iconv-lite's lazy encoding loaders. body-parser pulls
+// iconv-lite to decode request bodies and lazily `require`s
+// `encodings/index.js` the first time a non-UTF8 charset is seen
+// (or, on some macOS sandbox setups, the first time it's hit at all).
+// If the dev environment's filesystem sandbox state drifts between
+// "started" and "first POST" — which happened repeatedly during
+// Phase 2 dev when a parent watcher's CWD got invalidated — that
+// lazy require throws EPERM and every body-bearing request dies
+// with a cryptic 400. Loading the encodings module eagerly here
+// resolves the file at boot, when the sandbox is still warm, and
+// the module cache holds it for the lifetime of the process.
+import 'iconv-lite/encodings';
 import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
