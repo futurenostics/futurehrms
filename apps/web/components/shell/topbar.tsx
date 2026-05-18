@@ -1,8 +1,8 @@
 'use client';
 
-import { Bell, ChevronRight, Search } from 'lucide-react';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { ChevronRight, Search } from 'lucide-react';
 import { CurrencyToggle } from './currency-toggle';
+import { NotificationBell } from './notification-bell';
 import { UserMenu } from './user-menu';
 import { ThemeToggle } from './theme-toggle';
 import { cn } from '@/lib/utils';
@@ -45,24 +45,7 @@ export function Topbar({ breadcrumbs }: { breadcrumbs: BreadcrumbItem[] }) {
 
       <CurrencyToggle />
 
-      <TooltipProvider delayDuration={300}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              className="rounded-fn-sm text-fn-fg-muted hover:bg-fn-bg-inset h-fn-8 w-fn-8 relative flex items-center justify-center"
-              aria-label="Notifications"
-            >
-              <Bell className="h-fn-4 w-fn-4" />
-              <span
-                aria-hidden
-                className="border-fn-bg-panel bg-fn-accent right-fn-1_5 top-fn-1_5 h-fn-1_5 w-fn-1_5 rounded-fn-full absolute border-[1.5px]"
-              />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>Notifications</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      <NotificationBell />
 
       <ThemeToggle />
       <UserMenu />
