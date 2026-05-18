@@ -1,7 +1,8 @@
 # Dependencies
 node_modules/
 .pnpm-store/
-
+docs/
+docs/design/
 # Build output
 dist/
 build/
@@ -44,6 +45,7 @@ coverage/
 .nyc_output/
 playwright-report/
 test-results/
+apps/web/tests/.auth/
 
 # Misc
 .cache/
