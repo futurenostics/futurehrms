@@ -396,28 +396,35 @@ function ProjectsListInner({
             </div>
           )}
 
-          <DataTable
-            chrome="plain"
-            columns={columns}
-            rows={rows}
-            getRowKey={(r) => r.id}
-            isLoading={listQuery.isPending}
-            isError={listQuery.isError}
-            onRetry={() => listQuery.refetch()}
-            totalCount={totalCount}
-            hasMore={listQuery.hasNextPage ?? false}
-            isFetchingMore={listQuery.isFetchingNextPage}
-            onLoadMore={() => listQuery.fetchNextPage()}
-            onRowClick={(r) => router.push(`/projects/${r.id}`)}
-            rowActions={rowActions}
-            emptyState={
-              <EmptyState
-                hasFilters={totalActiveCount > 0}
-                canCreate={canCreate}
-                onCreate={openCreate}
-              />
-            }
-          />
+          {/* DataTable owns its own scroll — wrap in min-h-0 flex-1 so it
+              shrinks to fill the remaining vertical space inside the
+              overflow-hidden card. Without this the rows extend past the
+              card's bottom edge and the End-of-list footer gets clipped
+              (the exact bug employees/page.tsx already solves the same way). */}
+          <div className="min-h-0 flex-1">
+            <DataTable
+              chrome="plain"
+              columns={columns}
+              rows={rows}
+              getRowKey={(r) => r.id}
+              isLoading={listQuery.isPending}
+              isError={listQuery.isError}
+              onRetry={() => listQuery.refetch()}
+              totalCount={totalCount}
+              hasMore={listQuery.hasNextPage ?? false}
+              isFetchingMore={listQuery.isFetchingNextPage}
+              onLoadMore={() => listQuery.fetchNextPage()}
+              onRowClick={(r) => router.push(`/projects/${r.id}`)}
+              rowActions={rowActions}
+              emptyState={
+                <EmptyState
+                  hasFilters={totalActiveCount > 0}
+                  canCreate={canCreate}
+                  onCreate={openCreate}
+                />
+              }
+            />
+          </div>
         </div>
       </div>
 
