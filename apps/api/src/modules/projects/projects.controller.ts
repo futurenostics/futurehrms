@@ -16,6 +16,7 @@ import {
   projectCategoryUpdateSchema,
   projectChangeStatusSchema,
   projectCreateSchema,
+  projectFilterCountsQuerySchema,
   projectListQuerySchema,
   projectUpdateSchema,
 } from '@futurenostics/types';
@@ -35,6 +36,23 @@ export class ProjectsController {
   async list(@CurrentUser() user: AuthenticatedUser, @Query() rawQuery: Record<string, unknown>) {
     const query = projectListQuerySchema.parse(rawQuery);
     return this.projects.list(user, query);
+  }
+
+  /**
+   * Powers the Advanced Filters drawer on the projects list page —
+   * returns the matched total plus per-option counts under the
+   * current filter state. The frontend debounces the call around
+   * 250ms and uses the response for the live footer + per-option
+   * dimming + the revenue histogram.
+   */
+  @Get('projects/filter-counts')
+  @RequirePermission('projects:view_own')
+  async filterCounts(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() rawQuery: Record<string, unknown>,
+  ) {
+    const query = projectFilterCountsQuerySchema.parse(rawQuery);
+    return this.projects.getFilterCounts(user, query);
   }
 
   @Get('projects/:id')

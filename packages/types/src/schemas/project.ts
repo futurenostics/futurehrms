@@ -171,20 +171,110 @@ export const projectSortBySchema = z.enum([
 ]);
 export type ProjectSortBy = z.infer<typeof projectSortBySchema>;
 
+/**
+ * Comma-separated id list — mirrors the employees `listCsvIds`
+ * coercer. Lets clients send `?categoryIds=a,b,c` or pass an array
+ * directly when calling the service in tests. Empty inputs collapse
+ * to `[]`.
+ */
+const projCsvIds = z
+  .union([z.string(), z.array(z.string())])
+  .optional()
+  .transform((v) => {
+    if (v === undefined) return [] as string[];
+    if (Array.isArray(v)) return v.filter(Boolean);
+    return v
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  });
+
+/**
+ * ISO-string date — input + output both `string`. Same shape used in
+ * the employees schemas so `EmployeeListQuery`-style date filters
+ * round-trip through URL params without Date/string type drift.
+ */
+const projIsoDate = z
+  .string()
+  .refine((s) => !Number.isNaN(Date.parse(s)), 'Invalid date')
+  .optional();
+
 export const projectListQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
   limit: z.coerce.number().int().min(1).max(10_000).default(50),
   search: z.string().trim().min(1).optional(),
-  categoryId: z.string().optional(),
-  departmentId: z.string().optional(),
-  status: projectStatusSchema.optional(),
-  /** If set, only projects this employee is assigned to. */
-  assignedEmployeeId: z.string().optional(),
+
+  /* Array-shaped filters — single source of truth between the list
+     endpoint and the filter-counts endpoint. */
+  categoryIds: projCsvIds,
+  departmentIds: projCsvIds,
+  statuses: projCsvIds,
+  /** Projects where any of these employees are currently assigned. */
+  assignedEmployeeIds: projCsvIds,
+  /** Flag slugs (`hasOverride` | `lockedFromCommissions` | `hasNotes`). */
+  projectFlags: projCsvIds,
+
+  /* Range + date filters. */
+  revenueMin: z.coerce.number().nonnegative().optional(),
+  revenueMax: z.coerce.number().nonnegative().optional(),
+  startDateFrom: projIsoDate,
+  startDateTo: projIsoDate,
+
   sortBy: projectSortBySchema.default('createdAt'),
   sortDir: z.enum(['asc', 'desc']).default('desc'),
   includeArchived: z.coerce.boolean().default(false),
 });
 export type ProjectListQuery = z.infer<typeof projectListQuerySchema>;
+
+/* ---------- Filter counts (Advanced Filters drawer) ---------- */
+
+export const projectFilterCountsQuerySchema = z.object({
+  categoryIds: projCsvIds,
+  departmentIds: projCsvIds,
+  statuses: projCsvIds,
+  assignedEmployeeIds: projCsvIds,
+  projectFlags: projCsvIds,
+  revenueMin: z.coerce.number().nonnegative().optional(),
+  revenueMax: z.coerce.number().nonnegative().optional(),
+  startDateFrom: projIsoDate,
+  startDateTo: projIsoDate,
+  search: z.string().trim().min(1).optional(),
+  includeArchived: z.coerce.boolean().default(false),
+});
+export type ProjectFilterCountsQuery = z.infer<typeof projectFilterCountsQuerySchema>;
+
+export const projectFilterCountBucketSchema = z.object({
+  from: z.union([z.number(), z.string()]),
+  to: z.union([z.number(), z.string()]),
+  count: z.number().int().nonnegative(),
+});
+export type ProjectFilterCountBucket = z.infer<typeof projectFilterCountBucketSchema>;
+
+export const projectFilterCountsResponseSchema = z.object({
+  /** Total projects matching the current filter state. */
+  total: z.number().int().nonnegative(),
+  byCategory: z.record(z.string(), z.number().int().nonnegative()),
+  byDepartment: z.record(z.string(), z.number().int().nonnegative()),
+  byStatus: z.record(z.string(), z.number().int().nonnegative()),
+  /** Revenue histogram across the active set, plus min/max for the slider extents. */
+  revenue: z.object({
+    min: z.number().nonnegative(),
+    max: z.number().nonnegative(),
+    buckets: z.array(projectFilterCountBucketSchema),
+  }),
+  /** Start-date month buckets between the earliest and latest project. */
+  startDate: z.object({
+    earliest: z.string().nullable(),
+    latest: z.string().nullable(),
+    buckets: z.array(projectFilterCountBucketSchema),
+  }),
+  flags: z.object({
+    hasOverride: z.number().int().nonnegative(),
+    lockedFromCommissions: z.number().int().nonnegative(),
+    hasNotes: z.number().int().nonnegative(),
+  }),
+});
+export type ProjectFilterCountsResponse = z.infer<typeof projectFilterCountsResponseSchema>;
 
 export const projectPublicSchema = z.object({
   id: z.string(),

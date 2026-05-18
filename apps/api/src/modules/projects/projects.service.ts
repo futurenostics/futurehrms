@@ -32,6 +32,8 @@ import {
   type ProjectChangeStatusInput,
   type ProjectCommissionPreview,
   type ProjectCreateInput,
+  type ProjectFilterCountsQuery,
+  type ProjectFilterCountsResponse,
   type ProjectListQuery,
   type ProjectListResponse,
   type ProjectPublic,
@@ -181,29 +183,7 @@ export class ProjectsService {
       return { items: [], total: 0, hasMore: false };
     }
 
-    const filters: Prisma.ProjectWhereInput[] = [];
-    if (!query.includeArchived) filters.push({ deletedAt: null });
-    if (query.categoryId) filters.push({ categoryId: query.categoryId });
-    if (query.departmentId) filters.push({ departmentId: query.departmentId });
-    if (query.status) filters.push({ status: query.status });
-    if (query.assignedEmployeeId) {
-      filters.push({
-        assignments: {
-          some: { employeeId: query.assignedEmployeeId, removedAt: null },
-        },
-      });
-    }
-    if (query.search) {
-      filters.push({
-        OR: [
-          { name: { contains: query.search, mode: 'insensitive' } },
-          { clientName: { contains: query.search, mode: 'insensitive' } },
-        ],
-      });
-    }
-
-    const baseWhere = filters.length > 0 ? { AND: filters } : {};
-    const where = buildProjectScopeWhere(viewer, baseWhere);
+    const where = buildProjectFilterWhere(viewer, query);
     const orderBy: Prisma.ProjectOrderByWithRelationInput = {
       [query.sortBy]: query.sortDir,
     };
@@ -223,6 +203,116 @@ export class ProjectsService {
       items: rows.map(toProjectPublic),
       total,
       hasMore: query.offset + rows.length < total,
+    };
+  }
+
+  /**
+   * Powers the Advanced Filters drawer (`GET /projects/filter-counts`).
+   *
+   * Returns the matched total under the current filter state plus
+   * per-option counts for each filter group, a revenue histogram, and
+   * start-date month buckets. Mirrors the Employees endpoint so the
+   * AdvancedFilters primitive can drive both surfaces with the same
+   * `onCountsRequest` shape.
+   */
+  async getFilterCounts(
+    viewer: AuthenticatedUser,
+    query: ProjectFilterCountsQuery,
+  ): Promise<ProjectFilterCountsResponse> {
+    const scope = computeProjectReadScope(viewer);
+    if (!scope.canRead) {
+      return emptyProjectFilterCountsResponse();
+    }
+
+    const where = buildProjectFilterWhere(viewer, query);
+
+    const [
+      total,
+      byCategoryRows,
+      byDepartmentRows,
+      byStatusRows,
+      revenueAgg,
+      revenueRows,
+      startAgg,
+      startRows,
+      hasOverrideCount,
+      lockedCount,
+      hasNotesCount,
+    ] = await Promise.all([
+      prisma.project.count({ where }),
+      prisma.project.groupBy({ by: ['categoryId'], where, _count: { _all: true } }),
+      prisma.project.groupBy({ by: ['departmentId'], where, _count: { _all: true } }),
+      prisma.project.groupBy({ by: ['status'], where, _count: { _all: true } }),
+      prisma.project.aggregate({
+        where,
+        _min: { revenueUsd: true },
+        _max: { revenueUsd: true },
+      }),
+      prisma.project.findMany({ where, select: { revenueUsd: true }, take: 10_000 }),
+      prisma.project.aggregate({
+        where,
+        _min: { startDate: true },
+        _max: { startDate: true },
+      }),
+      prisma.project.findMany({ where, select: { startDate: true }, take: 10_000 }),
+      prisma.project.count({ where: { ...where, hasOverride: true } }),
+      prisma.project.count({
+        where: { ...where, status: { in: ['cancelled', 'refunded'] } },
+      }),
+      prisma.project.count({ where: { ...where, NOT: { notes: null } } }),
+    ]);
+
+    const byCategory = aggToCountRecord(byCategoryRows, 'categoryId');
+    const byDepartment = aggToCountRecord(byDepartmentRows, 'departmentId');
+    const byStatus = aggToCountRecord(byStatusRows, 'status');
+
+    /* Revenue histogram — 20 buckets across the visible range. */
+    let revenue: ProjectFilterCountsResponse['revenue'];
+    if (revenueRows.length > 0) {
+      const min = revenueAgg._min.revenueUsd ? Number(revenueAgg._min.revenueUsd.toString()) : 0;
+      const max = revenueAgg._max.revenueUsd ? Number(revenueAgg._max.revenueUsd.toString()) : 0;
+      revenue = {
+        min,
+        max,
+        buckets: bucketizeNumbers(
+          revenueRows.map((r) => Number(r.revenueUsd.toString())),
+          min,
+          max,
+          20,
+        ),
+      };
+    } else {
+      revenue = { min: 0, max: 0, buckets: [] };
+    }
+
+    /* Start-date histogram — one bucket per month. */
+    const earliest = startAgg._min.startDate ?? null;
+    const latest = startAgg._max.startDate ?? null;
+    const startDate = {
+      earliest: earliest ? earliest.toISOString() : null,
+      latest: latest ? latest.toISOString() : null,
+      buckets:
+        earliest && latest
+          ? monthBucketsForDates(
+              startRows.map((r) => r.startDate),
+              earliest,
+              latest,
+            )
+          : [],
+    };
+
+    return {
+      total,
+      byCategory,
+      byDepartment,
+      byStatus,
+      revenue,
+      startDate,
+      flags: {
+        hasOverride: hasOverrideCount,
+        lockedFromCommissions: lockedCount,
+        hasNotes: hasNotesCount,
+      },
     };
   }
 
@@ -687,4 +777,160 @@ export class ProjectsService {
     });
     return toProjectCategoryPublic(updated);
   }
+}
+
+/* ---------- Filter-counts helpers (shared with service.list) ---------- */
+
+/**
+ * Builds the canonical `Prisma.ProjectWhereInput` for the projects
+ * list + filter-counts endpoints. Both query shapes share the same
+ * filter fields; the list query just adds offset/limit/sortBy.
+ *
+ * Single source of truth for "what filters mean" so the count footer,
+ * the per-option counts, and the list table always agree.
+ */
+type ProjectFilterableQuery = Pick<
+  ProjectFilterCountsQuery,
+  | 'categoryIds'
+  | 'departmentIds'
+  | 'statuses'
+  | 'assignedEmployeeIds'
+  | 'projectFlags'
+  | 'revenueMin'
+  | 'revenueMax'
+  | 'startDateFrom'
+  | 'startDateTo'
+  | 'search'
+  | 'includeArchived'
+>;
+
+function buildProjectFilterWhere(
+  viewer: AuthenticatedUser,
+  query: ProjectFilterableQuery,
+): Prisma.ProjectWhereInput {
+  const filters: Prisma.ProjectWhereInput[] = [];
+  if (!query.includeArchived) filters.push({ deletedAt: null });
+  if (query.categoryIds.length > 0) filters.push({ categoryId: { in: query.categoryIds } });
+  if (query.departmentIds.length > 0) filters.push({ departmentId: { in: query.departmentIds } });
+  if (query.statuses.length > 0) {
+    filters.push({ status: { in: query.statuses as ProjectStatus[] } });
+  }
+  if (query.assignedEmployeeIds.length > 0) {
+    filters.push({
+      assignments: {
+        some: { employeeId: { in: query.assignedEmployeeIds }, removedAt: null },
+      },
+    });
+  }
+  if (query.revenueMin !== undefined) filters.push({ revenueUsd: { gte: query.revenueMin } });
+  if (query.revenueMax !== undefined) filters.push({ revenueUsd: { lte: query.revenueMax } });
+  if (query.startDateFrom) {
+    filters.push({ startDate: { gte: new Date(query.startDateFrom) } });
+  }
+  if (query.startDateTo) {
+    filters.push({ startDate: { lte: new Date(query.startDateTo) } });
+  }
+
+  if (query.projectFlags.length > 0) {
+    for (const flag of query.projectFlags) {
+      switch (flag) {
+        case 'hasOverride':
+          filters.push({ hasOverride: true });
+          break;
+        case 'lockedFromCommissions':
+          filters.push({ status: { in: ['cancelled', 'refunded'] } });
+          break;
+        case 'hasNotes':
+          filters.push({ NOT: { notes: null } });
+          break;
+      }
+    }
+  }
+
+  if (query.search) {
+    filters.push({
+      OR: [
+        { name: { contains: query.search, mode: 'insensitive' } },
+        { clientName: { contains: query.search, mode: 'insensitive' } },
+      ],
+    });
+  }
+
+  const baseWhere = filters.length > 0 ? { AND: filters } : {};
+  return buildProjectScopeWhere(viewer, baseWhere);
+}
+
+function emptyProjectFilterCountsResponse(): ProjectFilterCountsResponse {
+  return {
+    total: 0,
+    byCategory: {},
+    byDepartment: {},
+    byStatus: {},
+    revenue: { min: 0, max: 0, buckets: [] },
+    startDate: { earliest: null, latest: null, buckets: [] },
+    flags: { hasOverride: 0, lockedFromCommissions: 0, hasNotes: 0 },
+  };
+}
+
+function aggToCountRecord<K extends string>(
+  rows: Array<Record<K, string | null> & { _count: { _all: number } }>,
+  key: K,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const r of rows) {
+    const id = r[key];
+    if (!id) continue;
+    out[id] = r._count._all;
+  }
+  return out;
+}
+
+function bucketizeNumbers(
+  values: number[],
+  min: number,
+  max: number,
+  bucketCount: number,
+): Array<{ from: number; to: number; count: number }> {
+  if (values.length === 0 || max <= min) return [];
+  const width = (max - min) / bucketCount;
+  const buckets = Array.from({ length: bucketCount }, (_, i) => ({
+    from: min + i * width,
+    to: min + (i + 1) * width,
+    count: 0,
+  }));
+  for (const v of values) {
+    let idx = Math.floor((v - min) / width);
+    if (idx >= bucketCount) idx = bucketCount - 1;
+    if (idx < 0) idx = 0;
+    buckets[idx]!.count++;
+  }
+  return buckets;
+}
+
+function monthBucketsForDates(
+  dates: Date[],
+  earliest: Date,
+  latest: Date,
+): Array<{ from: string; to: string; count: number }> {
+  if (dates.length === 0) return [];
+  const start = new Date(earliest.getFullYear(), earliest.getMonth(), 1);
+  const end = new Date(latest.getFullYear(), latest.getMonth() + 1, 1);
+  const buckets: Array<{ from: string; to: string; count: number; fromMs: number; toMs: number }> =
+    [];
+  for (let d = new Date(start); d < end; d.setMonth(d.getMonth() + 1)) {
+    const next = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    buckets.push({
+      from: d.toISOString(),
+      to: next.toISOString(),
+      count: 0,
+      fromMs: d.getTime(),
+      toMs: next.getTime(),
+    });
+  }
+  for (const dt of dates) {
+    const t = dt.getTime();
+    const idx = buckets.findIndex((b) => t >= b.fromMs && t < b.toMs);
+    if (idx >= 0) buckets[idx]!.count++;
+  }
+  return buckets.map(({ from, to, count }) => ({ from, to, count }));
 }
