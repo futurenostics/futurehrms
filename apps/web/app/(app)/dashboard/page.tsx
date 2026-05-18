@@ -6,6 +6,11 @@ import { AppShell } from '@/components/shell/app-shell';
 import { useUser } from '@/hooks/use-user';
 import { usePermissions } from '@/hooks/use-permissions';
 import { TotalEmployeesWidget } from '@/components/employees/widgets/total-employees-widget';
+import {
+  CommissionRunStatusWidget,
+  MyCommissionTrendWidget,
+  MyCommissionWidget,
+} from '@/components/dashboard/commission-widgets';
 
 export default function DashboardPage() {
   const { data: user } = useUser();
@@ -28,6 +33,19 @@ export default function DashboardPage() {
         {perms.has('employees:view_all') && (
           <div className="gap-fn-4 grid sm:grid-cols-2 lg:grid-cols-3">
             <TotalEmployeesWidget />
+          </div>
+        )}
+
+        {/* Commission widgets */}
+        {(perms.has('commissions:view_own_breakdown') || perms.has('commissions:view_runs')) && (
+          <div className="gap-fn-4 grid sm:grid-cols-2 lg:grid-cols-3">
+            {perms.has('commissions:view_own_breakdown') && (
+              <>
+                <MyCommissionWidget employeeId={user?.employeeId ?? null} />
+                <MyCommissionTrendWidget employeeId={user?.employeeId ?? null} />
+              </>
+            )}
+            {perms.has('commissions:view_runs') && <CommissionRunStatusWidget />}
           </div>
         )}
 
