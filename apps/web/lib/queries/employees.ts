@@ -14,6 +14,7 @@ import type {
   CsvImportCommitResult,
   CsvImportPreview,
   EmployeeCreateInput,
+  EmployeeFilterCountsResponse,
   EmployeeListQuery,
   EmployeeListResponse,
   EmployeePublic,
@@ -93,6 +94,50 @@ export function useEmployee(id: string | null | undefined) {
     queryFn: () => apiFetch<EmployeePublic>(`/api/employees/${id}`),
     enabled: Boolean(id),
   });
+}
+
+/**
+ * Filter-counts fetcher — directly callable from the AdvancedFilters
+ * primitive (which debounces its own calls). Not a React-Query hook
+ * because the primitive owns its own caching boundary (it'd be wasteful
+ * to spin up a separate cache key for what's effectively a transient
+ * view-state computation).
+ */
+export interface EmployeeFilterCountsParams {
+  departmentIds?: string[];
+  designationIds?: string[];
+  statusIds?: string[];
+  contractTypes?: string[];
+  managerIds?: string[];
+  employmentRecords?: string[];
+  tenureBuckets?: string[];
+  compensationFlags?: string[];
+  documentFlags?: string[];
+  salaryMin?: number;
+  salaryMax?: number;
+  joinDateFrom?: string;
+  joinDateTo?: string;
+  search?: string;
+  includeArchived?: boolean;
+}
+
+export async function fetchEmployeeFilterCounts(
+  params: EmployeeFilterCountsParams,
+): Promise<EmployeeFilterCountsResponse> {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null || v === '') continue;
+    if (Array.isArray(v)) {
+      if (v.length === 0) continue;
+      qs.set(k, v.join(','));
+    } else {
+      qs.set(k, String(v));
+    }
+  }
+  const tail = qs.toString();
+  return apiFetch<EmployeeFilterCountsResponse>(
+    `/api/employees/filter-counts${tail ? `?${tail}` : ''}`,
+  );
 }
 
 export function useReferences() {
