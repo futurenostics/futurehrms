@@ -37,6 +37,8 @@ model User {
   refreshTokens           RefreshToken[]
   notifications           Notification[]            @relation("UserNotifications")
   notificationPreferences NotificationPreference[]
+  submittedApprovals      Approval[]                @relation("ApprovalSubmitter")
+  approvalDecisions       ApprovalDecision[]
 
   isActive            Boolean   @default(true)
   failedLoginAttempts Int       @default(0)
@@ -798,4 +800,72 @@ model NotificationPreference {
 
   @@unique([userId, type, channel])
   @@index([userId])
+}
+
+// ---------- Approvals (Phase 3) ----------
+
+/// Generic approval record. One row per (sourceType, sourceId) under
+/// active review, regardless of the underlying module.
+///
+/// Modules register an ApprovalType (in the in-memory registry — see
+/// approval-type.registry.ts) that declares:
+///   - decisionPolicy (single / multi / threshold)
+///   - requiredPermission (who can act on this kind)
+///   - softSoD (whether the submitter may also approve)
+///   - sourceResolver (load the source for display)
+///   - confirmationPhraseFor (the PNG-10-style typed phrase if any)
+///   - onApproved / onRejected / onCancelled side effects
+///
+/// `requiredPermission` is denormalised onto the row so the inbox can
+/// filter purely on the DB without the registry having to be queried —
+/// the cluster of (type, status, requiredPermission) is the inbox's
+/// hot index.
+model Approval {
+  id                 String   @id @default(cuid())
+  type               String
+  sourceType         String
+  sourceId           String
+  status             String   @default("pending")  // pending | approved | rejected | cancelled
+  submittedById      String
+  submittedBy        User     @relation("ApprovalSubmitter", fields: [submittedById], references: [id])
+  submittedAt        DateTime @default(now())
+  requiredPermission String
+  decisionPolicy     String   @default("single")  // single | multi | threshold
+  thresholdCount     Int?
+  /// Display metadata captured at submit time — frees the inbox row
+  /// from a per-render lookup against the source entity. The frontend
+  /// reads { title, sub, meta, requesterName, requesterRole,
+  /// requesterHue, severity, … } off this blob.
+  metadata           Json?
+  resolvedAt         DateTime?
+  resolvedById       String?
+  resolveReason      String?
+
+  decisions ApprovalDecision[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([type, status, submittedAt])
+  @@index([status, submittedAt])
+  @@index([sourceType, sourceId, status])
+  @@index([submittedById])
+}
+
+/// One row per individual approver action. For `single`-policy
+/// approvals there's at most one row; multi/threshold accumulate
+/// multiple. `confirmationData` is type-specific JSON the registered
+/// validator interprets (typed phrase, free-form notes, etc.).
+model ApprovalDecision {
+  id               String   @id @default(cuid())
+  approvalId       String
+  approval         Approval @relation(fields: [approvalId], references: [id], onDelete: Cascade)
+  decidedById      String
+  decidedBy        User     @relation(fields: [decidedById], references: [id])
+  decision         String   // approve | reject
+  confirmationData Json?
+  decidedAt        DateTime @default(now())
+
+  @@index([approvalId, decidedAt])
+  @@index([decidedById])
 }
