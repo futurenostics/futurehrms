@@ -14,30 +14,124 @@ import {
   type DataTableColumn,
   type DataTableRowAction,
 } from '@/components/ui/data-table';
+import {
+  AdvancedFilters,
+  AdvancedFiltersRoot,
+  AdvancedFiltersTrigger,
+  ChipsBar,
+  useAdvancedFiltersActiveCount,
+  useAdvancedFiltersValue,
+  useFilterDispatch,
+  type FilterCounts,
+  type FilterState,
+} from '@/components/ui/advanced-filters';
+import {
+  buildProjectFilterSchema,
+  toProjectFilterCounts,
+} from '@/components/projects/project-filter-schema';
 import { ProjectFormSheet } from '@/components/projects/project-form-sheet';
 import {
+  fetchProjectFilterCounts,
+  type ProjectFilterCountsParams,
+  useDeleteProject,
   useInfiniteProjects,
   useProjectCategories,
-  useDeleteProject,
 } from '@/lib/queries/projects';
+import { useEmployeesList, useReferences } from '@/lib/queries/employees';
 import { usePermissions } from '@/hooks/use-permissions';
-import { cn } from '@/lib/utils';
 
 const PAGE_SIZE = 50;
 
 /**
- * Projects list page — matches PNG 07.
- *
- * Layout: page header (h1 + subtitle + Export + New project), three
- * category KPI cards (External / Upwork / B2B with active count +
- * revenue total + commission accrual), filter chip row (All
- * categories + per-top-level chips), search input, DataTable.
- *
- * Per the locked design source for Phase 2 the only authoritative
- * reference for this page is `docs/design/screens/commissions-design/
- * 07 _ Projects _ all categories.png`.
+ * Translate the AdvancedFilters state into the params both
+ * `/projects` and `/projects/filter-counts` accept. Single source of
+ * truth — the table and the counts footer always agree.
  */
+function stateToProjectFilterParams(state: FilterState): ProjectFilterCountsParams {
+  const params: ProjectFilterCountsParams = {};
+  for (const [k, v] of Object.entries(state)) {
+    switch (k) {
+      case 'category':
+        if (v.kind === 'multi') params.categoryIds = v.ids;
+        break;
+      case 'department':
+        if (v.kind === 'multi') params.departmentIds = v.ids;
+        break;
+      case 'status':
+        if (v.kind === 'multi') params.statuses = v.ids;
+        break;
+      case 'assignedEmployee':
+        if (v.kind === 'multi') params.assignedEmployeeIds = v.ids;
+        break;
+      case 'flags':
+        if (v.kind === 'flags') params.projectFlags = v.ids;
+        break;
+      case 'revenue':
+        if (v.kind === 'range') {
+          if (v.min !== null) params.revenueMin = v.min;
+          if (v.max !== null) params.revenueMax = v.max;
+        }
+        break;
+      case 'startDate':
+        if (v.kind === 'date-range') {
+          if (v.from) params.startDateFrom = v.from;
+          if (v.to) params.startDateTo = v.to;
+        }
+        break;
+      case 'archived':
+        if (v.kind === 'flags') params.includeArchived = v.ids.includes('archived');
+        break;
+    }
+  }
+  return params;
+}
+
 export default function ProjectsListPage() {
+  const perms = usePermissions();
+  const categoriesQuery = useProjectCategories();
+  const referencesQuery = useReferences();
+  // Bounded candidate set for the Assigned-To combobox. 200 covers
+  // every active employee; the picker filters in-memory after that.
+  const assigneesQuery = useEmployeesList({ limit: 200 });
+
+  const canSeeArchived = perms.has('projects:view_all');
+
+  const categories = categoriesQuery.data ?? [];
+  const assignees = React.useMemo(
+    () => assigneesQuery.data?.items.map((e) => ({ id: e.id, fullName: e.fullName })) ?? [],
+    [assigneesQuery.data],
+  );
+
+  const schema = React.useMemo(
+    () =>
+      buildProjectFilterSchema({
+        categories,
+        references: referencesQuery.data,
+        assignees,
+        canSeeArchived,
+      }),
+    [categories, referencesQuery.data, assignees, canSeeArchived],
+  );
+
+  const onCountsRequest = React.useCallback(async (state: FilterState): Promise<FilterCounts> => {
+    const response = await fetchProjectFilterCounts(stateToProjectFilterParams(state));
+    return toProjectFilterCounts(response);
+  }, []);
+
+  return (
+    <AdvancedFiltersRoot schema={schema} onCountsRequest={onCountsRequest}>
+      <ProjectsListInner schema={schema} categories={categories} />
+    </AdvancedFiltersRoot>
+  );
+}
+
+function ProjectsListInner({
+  schema,
+  categories,
+}: {
+  schema: ReturnType<typeof buildProjectFilterSchema>;
+  categories: Array<{ id: string; slug: string; name: string; parentId: string | null }>;
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const perms = usePermissions();
@@ -45,7 +139,7 @@ export default function ProjectsListPage() {
   const canCreate = perms.has('projects:create');
   const canDelete = perms.has('projects:delete');
 
-  /* ---------- Filters + search ---------- */
+  /* ---------- Search ---------- */
   const [search, setSearch] = React.useState('');
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
   React.useEffect(() => {
@@ -53,9 +147,23 @@ export default function ProjectsListPage() {
     return () => window.clearTimeout(id);
   }, [search]);
 
-  const [categorySlug, setCategorySlug] = React.useState<string>('all');
+  /* ---------- Filter state ---------- */
+  const filterState = useAdvancedFiltersValue();
+  const activeFiltersCount = useAdvancedFiltersActiveCount();
+  const dispatch = useFilterDispatch();
 
-  /* ---------- Sheet ---------- */
+  const queryFilters = React.useMemo(() => stateToProjectFilterParams(filterState), [filterState]);
+  const totalActiveCount = activeFiltersCount + (debouncedSearch ? 1 : 0);
+
+  function clearFilters() {
+    setSearch('');
+    setDebouncedSearch('');
+    dispatch({ type: 'CLEAR_ALL' });
+  }
+
+  const [filterPanelOpen, setFilterPanelOpen] = React.useState(false);
+
+  /* ---------- Sheet (create / edit) ---------- */
   const sheetMode = searchParams.get('sheet');
   const sheetProjectId = searchParams.get('id') ?? null;
   const sheetOpen = sheetMode === 'create' || sheetMode === 'edit';
@@ -81,18 +189,12 @@ export default function ProjectsListPage() {
   }
 
   /* ---------- Data ---------- */
-  const categoriesQuery = useProjectCategories();
-  const categories = categoriesQuery.data ?? [];
-  const topLevel = categories.filter((c) => !c.parentId && !c.archived);
-  const selectedCategoryId =
-    categorySlug === 'all' ? undefined : categories.find((c) => c.slug === categorySlug)?.id;
-
   const listQuery = useInfiniteProjects(
     {
-      search: debouncedSearch || undefined,
-      categoryId: selectedCategoryId,
       sortBy: 'createdAt',
       sortDir: 'desc',
+      ...(debouncedSearch ? { search: debouncedSearch } : {}),
+      ...queryFilters,
     },
     PAGE_SIZE,
   );
@@ -194,23 +296,19 @@ export default function ProjectsListPage() {
     [router, canDelete, deleteProject],
   );
 
-  /* ---------- KPI strip totals ---------- */
+  /* ---------- KPI strip — three top-level category cards ---------- */
   const kpis = React.useMemo(() => {
     const groups = new Map<
       string,
       { name: string; active: number; revenue: number; commission: number }
     >();
     for (const row of rows) {
-      const key = row.category.parentId
-        ? (categories.find((c) => c.id === row.category.parentId)?.slug ?? row.category.slug)
-        : row.category.slug;
-      const cat = categories.find((c) => c.slug === key);
-      const g = groups.get(key) ?? {
-        name: cat?.name ?? row.category.name,
-        active: 0,
-        revenue: 0,
-        commission: 0,
-      };
+      const parent = row.category.parentId
+        ? categories.find((c) => c.id === row.category.parentId)
+        : row.category;
+      const slug = parent?.slug ?? row.category.slug;
+      const name = parent?.name ?? row.category.name;
+      const g = groups.get(slug) ?? { name, active: 0, revenue: 0, commission: 0 };
       const isActive = row.status === 'active' || row.status === 'in_billing';
       if (isActive) g.active += 1;
       g.revenue += row.revenueUsd;
@@ -218,7 +316,7 @@ export default function ProjectsListPage() {
       const pool =
         cr.poolMode === 'percentage' ? (row.revenueUsd * cr.poolValue) / 100 : cr.poolValue;
       g.commission += pool;
-      groups.set(key, g);
+      groups.set(slug, g);
     }
     return ['external', 'upwork', 'b2b'].map((slug) => ({
       slug,
@@ -255,7 +353,7 @@ export default function ProjectsListPage() {
           </div>
         </div>
 
-        {/* KPI strip — three category cards */}
+        {/* KPI strip */}
         <div className="gap-fn-4 grid grid-cols-1 md:grid-cols-3">
           {kpis.map((k) => (
             <CategoryKpiCard key={k.slug} {...k} color={catColorFor(k.slug)} />
@@ -266,24 +364,37 @@ export default function ProjectsListPage() {
         <div className="border-fn-border bg-fn-bg-panel rounded-fn-xs flex min-h-0 flex-1 flex-col overflow-hidden border">
           {/* Toolbar */}
           <div className="border-fn-divider gap-fn-2_5 px-fn-5 py-fn-3_5 flex shrink-0 flex-wrap items-center border-b">
-            <CategoryFilterChips
-              value={categorySlug}
-              onChange={setCategorySlug}
-              categories={[
-                { slug: 'all', name: 'All categories' },
-                ...topLevel.map((c) => ({ slug: c.slug, name: c.name })),
-              ]}
-            />
-            <div className="relative ml-auto w-full max-w-[280px]">
+            <div className="relative w-full max-w-[340px] flex-1">
               <Search className="text-fn-fg-faint left-fn-2_5 h-fn-3_5 w-fn-3_5 pointer-events-none absolute top-1/2 -translate-y-1/2" />
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Find project…"
+                placeholder="Find project, client, or PRJ-…"
                 className="pl-fn-8"
               />
             </div>
+            <AdvancedFiltersTrigger onClick={() => setFilterPanelOpen(true)} />
+            {(activeFiltersCount > 0 || debouncedSearch) && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="text-fn-accent-soft-fg font-fn-semibold cursor-pointer text-[12.5px] hover:underline"
+              >
+                Clear ({totalActiveCount})
+              </button>
+            )}
+            <div className="gap-fn-2 ml-auto flex items-center">
+              {listQuery.isFetching && !listQuery.isPending && (
+                <span className="text-fn-fg-faint text-[11.5px]">Refreshing…</span>
+              )}
+            </div>
           </div>
+
+          {activeFiltersCount > 0 && (
+            <div className="px-fn-5 pt-fn-3">
+              <ChipsBar schema={schema} />
+            </div>
+          )}
 
           <DataTable
             chrome="plain"
@@ -300,22 +411,11 @@ export default function ProjectsListPage() {
             onRowClick={(r) => router.push(`/projects/${r.id}`)}
             rowActions={rowActions}
             emptyState={
-              <div className="gap-fn-3 py-fn-12 flex flex-col items-center text-center">
-                <Briefcase className="text-fn-fg-faint h-fn-8 w-fn-8" />
-                <div className="gap-fn-1 flex flex-col">
-                  <p className="text-fn-fg font-fn-semibold text-[14px]">No projects yet</p>
-                  <p className="text-fn-fg-muted max-w-[340px] text-[12.5px]">
-                    {canCreate
-                      ? 'Start by creating a project — pick its category to pull in the right commission rule.'
-                      : 'No projects to show.'}
-                  </p>
-                </div>
-                {canCreate && (
-                  <Button onClick={openCreate}>
-                    <Plus className="h-fn-4 w-fn-4" /> New project
-                  </Button>
-                )}
-              </div>
+              <EmptyState
+                hasFilters={totalActiveCount > 0}
+                canCreate={canCreate}
+                onCreate={openCreate}
+              />
             }
           />
         </div>
@@ -331,6 +431,8 @@ export default function ProjectsListPage() {
           }}
         />
       )}
+
+      <AdvancedFilters schema={schema} open={filterPanelOpen} onOpenChange={setFilterPanelOpen} />
     </AppShell>
   );
 }
@@ -379,39 +481,6 @@ function CategoryKpiCard({
         <span className="font-fn-medium">Commission</span>
         <span className="text-fn-fg font-fn-semibold tabular-nums">{formatUsd(commission)}</span>
       </div>
-    </div>
-  );
-}
-
-function CategoryFilterChips({
-  value,
-  onChange,
-  categories,
-}: {
-  value: string;
-  onChange: (slug: string) => void;
-  categories: Array<{ slug: string; name: string }>;
-}) {
-  return (
-    <div className="gap-fn-1_5 flex flex-wrap items-center">
-      {categories.map((cat) => {
-        const active = value === cat.slug;
-        return (
-          <button
-            key={cat.slug}
-            type="button"
-            onClick={() => onChange(cat.slug)}
-            className={cn(
-              'rounded-fn-xs px-fn-2_5 py-fn-1 font-fn-medium cursor-pointer border text-[12.5px] transition-colors',
-              active
-                ? 'border-fn-accent/30 bg-fn-accent-soft text-fn-accent-soft-fg'
-                : 'border-fn-border bg-fn-bg-panel text-fn-fg-muted hover:border-fn-fg-faint',
-            )}
-          >
-            {cat.name}
-          </button>
-        );
-      })}
     </div>
   );
 }
@@ -498,6 +567,39 @@ function ProjectStatusPill({ status }: { status: ProjectStatus }) {
   );
 }
 
+function EmptyState({
+  hasFilters,
+  canCreate,
+  onCreate,
+}: {
+  hasFilters: boolean;
+  canCreate: boolean;
+  onCreate: () => void;
+}) {
+  return (
+    <div className="gap-fn-3 py-fn-12 flex flex-col items-center text-center">
+      <Briefcase className="text-fn-fg-faint h-fn-8 w-fn-8" />
+      <div className="gap-fn-1 flex flex-col">
+        <p className="text-fn-fg font-fn-semibold text-[14px]">
+          {hasFilters ? 'No projects match your filters' : 'No projects yet'}
+        </p>
+        <p className="text-fn-fg-muted max-w-[340px] text-[12.5px]">
+          {hasFilters
+            ? 'Try clearing one of the filters or searching for something else.'
+            : canCreate
+              ? 'Start by creating a project — pick its category to pull in the right commission rule.'
+              : 'No projects to show.'}
+        </p>
+      </div>
+      {canCreate && !hasFilters && (
+        <Button onClick={onCreate}>
+          <Plus className="h-fn-4 w-fn-4" /> New project
+        </Button>
+      )}
+    </div>
+  );
+}
+
 /* ───────────────────────── Helpers ───────────────────────── */
 
 function formatUsd(value: number, compact = false): string {
@@ -537,7 +639,6 @@ function colorToHue(color: string): number {
     case 'rose':
       return 350;
     default: {
-      // hash unknown to a stable hue
       let h = 0;
       for (const c of color) h = (h * 31 + c.charCodeAt(0)) | 0;
       return Math.abs(h) % 360;

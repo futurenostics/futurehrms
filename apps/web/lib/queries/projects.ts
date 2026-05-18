@@ -16,6 +16,7 @@ import type {
   ProjectCategoryUpdateInput,
   ProjectCommissionPreview,
   ProjectCreateInput,
+  ProjectFilterCountsResponse,
   ProjectListQuery,
   ProjectListResponse,
   ProjectPublic,
@@ -38,10 +39,54 @@ function buildQs(query: Partial<ProjectListQuery>): string {
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(query)) {
     if (v === undefined || v === null || v === '') continue;
+    // Array-shaped filters (categoryIds, statuses, …) encode as a
+    // comma-joined id list — matches the server-side `projCsvIds`.
+    if (Array.isArray(v)) {
+      if (v.length === 0) continue;
+      params.set(k, v.join(','));
+      continue;
+    }
     params.set(k, String(v));
   }
   const qs = params.toString();
   return qs ? `?${qs}` : '';
+}
+
+/**
+ * Filter-counts fetcher — called by the AdvancedFilters primitive
+ * (debounce owned by the primitive). Mirrors the Employees fetcher.
+ */
+export interface ProjectFilterCountsParams {
+  categoryIds?: string[];
+  departmentIds?: string[];
+  statuses?: string[];
+  assignedEmployeeIds?: string[];
+  projectFlags?: string[];
+  revenueMin?: number;
+  revenueMax?: number;
+  startDateFrom?: string;
+  startDateTo?: string;
+  search?: string;
+  includeArchived?: boolean;
+}
+
+export async function fetchProjectFilterCounts(
+  params: ProjectFilterCountsParams,
+): Promise<ProjectFilterCountsResponse> {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null || v === '') continue;
+    if (Array.isArray(v)) {
+      if (v.length === 0) continue;
+      qs.set(k, v.join(','));
+    } else {
+      qs.set(k, String(v));
+    }
+  }
+  const tail = qs.toString();
+  return apiFetch<ProjectFilterCountsResponse>(
+    `/api/projects/filter-counts${tail ? `?${tail}` : ''}`,
+  );
 }
 
 /* ---------- Projects ---------- */
