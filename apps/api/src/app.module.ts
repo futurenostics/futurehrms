@@ -18,6 +18,7 @@ import { TimelineModule } from './core/timeline/timeline.module';
 import { EmployeesModule } from './modules/employees/employees.module';
 import { ProjectsModule } from './modules/projects/projects.module';
 import { CommissionsModule } from './modules/commissions/commissions.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -37,6 +38,7 @@ import { HealthController } from './health.controller';
     EmployeesModule,
     ProjectsModule,
     CommissionsModule,
+    NotificationsModule,
   ],
   controllers: [HealthController],
   providers: [
