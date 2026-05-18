@@ -77,7 +77,7 @@ export const navGroups: NavGroup[] = [
         key: 'approvals',
         label: 'Approvals',
         icon: CheckSquare,
-        href: '/commissions/approvals',
+        href: '/approvals',
         badge: '2',
       },
       { key: 'rules', label: 'Commission Rules', icon: Scale, href: '/commission-rules' },
