@@ -77,19 +77,6 @@ export function useFilterStore(options: UseFilterStoreOptions): FilterStore {
   const stateRef = React.useRef<FilterState>(initialState);
   const listenersRef = React.useRef<Set<() => void>>(new Set());
 
-  /** Decode the initial URL once on mount. */
-  const initialDecodeDoneRef = React.useRef(false);
-  React.useEffect(() => {
-    if (initialDecodeDoneRef.current) return;
-    initialDecodeDoneRef.current = true;
-    if (!syncUrl || typeof window === 'undefined') return;
-    const fromUrl = decodeStateFromUrl(schema, initialState, searchParams);
-    if (serializeState(fromUrl) !== serializeState(stateRef.current)) {
-      stateRef.current = fromUrl;
-      notify();
-    }
-  }, [syncUrl, schema, initialState, searchParams, notify]);
-
   const notify = React.useCallback(() => {
     for (const l of listenersRef.current) l();
   }, []);
@@ -102,6 +89,19 @@ export function useFilterStore(options: UseFilterStoreOptions): FilterStore {
   }, []);
 
   const getSnapshot = React.useCallback(() => stateRef.current, []);
+
+  /** Decode the initial URL once on mount. */
+  const initialDecodeDoneRef = React.useRef(false);
+  React.useEffect(() => {
+    if (initialDecodeDoneRef.current) return;
+    initialDecodeDoneRef.current = true;
+    if (!syncUrl || typeof window === 'undefined') return;
+    const fromUrl = decodeStateFromUrl(schema, initialState, searchParams);
+    if (serializeState(fromUrl) !== serializeState(stateRef.current)) {
+      stateRef.current = fromUrl;
+      notify();
+    }
+  }, [syncUrl, schema, initialState, searchParams, notify]);
 
   /* --- Action dispatch ------------------------------------------ */
 
