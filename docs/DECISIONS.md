@@ -456,3 +456,72 @@ lands with Phase 10).
   whether a second approval is required for overrides) — currently any
   user with `projects:override` can flip `hasOverride` + provide a
   reason. Revisit if overrides become common.
+
+### Phase 2 — Done checklist
+
+Locked + verified at end of Session 6. The QA report sits next to
+this file at `docs/qa-reports/phase-2/README.md`.
+
+**Backend**
+- `ProjectCategory` (tree + archive + default-rule pointer), `Project`
+  (FK to immutable rule version + status state-machine),
+  `ProjectAssignment` (soft-remove via `removedAt`), `CommissionRule`
+  (versioned per dept × category, `*` org-wide fallback),
+  `CommissionRun` (lifecycle columns + pinned FX), `CommissionLineItem`
+  (snapshot + leave/manual adj + carry-forward bidirectional links).
+- Projects module: CRUD, scoping, change-status with transition
+  guards, role assignment / removal, commission preview endpoint,
+  categories CRUD. 6 lifecycle events.
+- Commissions module: rules CRUD + publish (immutable-via-version),
+  run lifecycle (draft / pending_approval / approved / rejected /
+  locked) with soft SoD + typed-phrase confirmation, line-item adjust
+  endpoint, per-employee breakdown + trend, BullMQ monthly scheduler
+  (`0 2 1 * *` Asia/Karachi), CSV export.
+- Pure calc engine in `commission-calc.ts` with 23 unit tests
+  covering single-shot, multi-month, threshold, status filter,
+  percentage vs fixed pool, role splits.
+- Timeline subscriber for `commission.run.approved` fans out one
+  TimelineEntry per recipient (`module='commissions'`).
+
+**Frontend**
+- `/projects` list (PNG 07), project create/edit sheet (PNG 08),
+  project detail with tabs (Overview / Role assignments /
+  Commission history placeholder / Timeline placeholder / Settings).
+- `/commission-rules` list (PNG 11), rule editor sheet (PNG 12) with
+  live preview + compare-to-current diff.
+- `/monthly-processing` list, run detail (PNG 09) with inline
+  leave/manual adjustments + per-row hold toggle, Approve & Lock
+  dialog (PNG 10).
+- `/commissions/approvals` inbox.
+- Dashboard widgets: My commission this month, My commission trend
+  (12-month sparkline), Commission run status (HR/Finance).
+- Employee profile Commissions tab with month picker + 12-month
+  trend chart.
+
+**Seed**
+- 6 ProjectCategories (External, Upwork + Johnny / Michele sub-cats,
+  B2B, Internal R&D archived).
+- 8 CommissionRules at v1.0 (one explicit `pending` for BD/B2B).
+- 15 sample Projects spanning every category × status × department.
+- 3 sample CommissionRuns (March approved, April approved, May
+  draft) with one held line item + one leave-adjusted line item for
+  demo variety.
+
+**Out-of-scope (explicit deferrals)**
+- Payslip PDF generation, Payoneer CSV export, disbursement emails
+  → Phase 7 (PKR Payroll). The Approve & Lock dialog renders these
+  as `Phase 7` placeholder rows.
+- Tax math, PKR conversion in calc → Phase 10.
+- Project pipeline / opportunity tracking → future CRM module.
+- Time tracking against projects → not a Phase-2 concept.
+- Client entity → "client name" is a string on Project for now.
+- Multi-currency commissions → USD-only.
+
+**Known gaps captured in the QA report**
+- Project list Export, Rule set Export, Version history page (UI
+  hooks present, server side TBD).
+- Per-category tabs on Monthly Processing list (client-side filter,
+  small follow-up).
+- DataTable `rowClassName` prop (would tint pending rule rows).
+- Project Commission History tab + Project Timeline tab still
+  placeholders pending per-project breakdown/timeline endpoints.
