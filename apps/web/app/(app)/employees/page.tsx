@@ -6,15 +6,21 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   Archive,
   Briefcase as BriefcaseIcon,
+  CalendarDays,
   CircleDot,
+  Clock,
   Download,
   Building2 as DepartmentIcon,
+  FileCheck,
+  IdCard,
   LayoutGrid,
   List,
   Plus,
   Search,
   Upload,
+  UserCog,
   Users as UsersIcon,
+  Wallet,
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -30,10 +36,14 @@ import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   FilterChipsBar,
+  FilterDateRange,
+  FilterMultiSelect,
   FilterPanel,
   FilterPanelTrigger,
   FilterPillGroup,
   FilterPresetsBar,
+  FilterRangeSlider,
+  FilterSearchableList,
   FilterSection,
   FilterToggleList,
   type SectionDescriptor,
@@ -50,6 +60,7 @@ import { EmployeeFormSheet } from '@/components/employees/employee-form-sheet';
 import { KpiStrip } from '@/components/employees/kpi-strip';
 import {
   useEmployee,
+  useEmployeesList,
   useEmployeeStats,
   useInfiniteEmployees,
   useReferences,
@@ -61,6 +72,84 @@ const PAGE_SIZE = 50;
 const CONTRACT_OPTIONS: ContractType[] = ['FullTime', 'PartTime', 'Contractor', 'Intern'];
 
 type ViewMode = 'list' | 'grid';
+
+/* ---------- Filter section option lists ---------- */
+
+const COMPENSATION_OPTIONS = [
+  {
+    id: 'payoneer',
+    label: 'Payoneer linked (USD payouts)',
+    description: 'Earns commission via Payoneer',
+  },
+  { id: 'pkr-only', label: 'PKR salary only', description: 'Monthly payroll only' },
+  {
+    id: 'has-bonus',
+    label: 'Has active bonus / advance',
+    description: 'In-progress bonus or advance',
+  },
+  { id: 'has-loan', label: 'Has active loan', description: 'Outstanding loan balance' },
+] as const;
+const COMPENSATION_LABEL: Record<string, string> = Object.fromEntries(
+  COMPENSATION_OPTIONS.map((o) => [o.id, o.label]),
+);
+
+const TENURE_OPTIONS = [
+  { id: 'under-6m', label: 'Less than 6 months' },
+  { id: '6m-1y', label: '6 months – 1 year' },
+  { id: '1y-3y', label: '1 – 3 years' },
+  { id: '3y-5y', label: '3 – 5 years' },
+  { id: 'over-5y', label: 'Over 5 years' },
+] as const;
+const TENURE_LABEL: Record<string, string> = Object.fromEntries(
+  TENURE_OPTIONS.map((o) => [o.id, o.label]),
+);
+
+const DOCUMENT_OPTIONS = [
+  {
+    id: 'cnic-expiring',
+    label: 'CNIC expiring within 90 days',
+    description: 'National ID needs renewal soon',
+  },
+  {
+    id: 'missing-emergency',
+    label: 'Missing emergency contact',
+    description: 'No emergency contact on file',
+  },
+  {
+    id: 'pending-policy',
+    label: 'Pending policy acknowledgments',
+    description: 'Unsigned employee handbook updates',
+  },
+] as const;
+const DOCUMENTS_LABEL: Record<string, string> = Object.fromEntries(
+  DOCUMENT_OPTIONS.map((o) => [o.id, o.label]),
+);
+
+const JOIN_DATE_PRESET_LABEL: Record<string, string> = {
+  'last-30d': 'Last 30 days',
+  'last-90d': 'Last 90 days',
+  'this-year': 'This year',
+  'last-year': 'Last year',
+};
+
+/** Deterministic OKLCH hue for a department slug, used by the
+ *  filter-row colored dot. Falls back to a hashed hue for unknown
+ *  slugs so every department gets a stable colour. */
+const DEPT_HUES: Record<string, number> = {
+  engineering: 280,
+  'business-development': 175,
+  operations: 145,
+  hr: 22,
+  finance: 220,
+  design: 320,
+  leadership: 295,
+};
+function deptHue(slug: string): number {
+  if (DEPT_HUES[slug] != null) return DEPT_HUES[slug]!;
+  let h = 0;
+  for (const c of slug) h = (h * 31 + c.charCodeAt(0)) | 0;
+  return Math.abs(h) % 360;
+}
 
 /**
  * Maps DataTable column ids (which double as sort keys) to the API's
@@ -99,30 +188,70 @@ export default function EmployeesListPage() {
   const [search, setSearch] = React.useState('');
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
 
-  // Advanced filters: single source of truth via useFilterState. The
-  // existing single-id query params (`departmentId`, `statusId`,
-  // `contractType`) are derived from the state below so the API
-  // contract is unchanged.
+  // Advanced filters — every section from PNG 199–201:
+  //   department / designation / status / contract     → multi
+  //   salary (PKR)                                     → range
+  //   joinedAt                                         → date-range
+  //   manager (Reports to)                             → single
+  //   compensation / tenure-bucket / documents         → toggles
+  //   archived                                         → toggles (single)
+  //
+  // The Employees API still takes singular `departmentId / statusId /
+  // contractType / managerId` query params today; until it grows
+  // array support we send the FIRST selected id from each
+  // multi-select. The UI honours the design's multi-select semantics
+  // (chips accumulate, all chips show in the bar) and the URL +
+  // presets round-trip correctly; only the API call is single-id.
   const filterUi = useFilterState({
     entity: 'employees',
     initial: {
-      department: { kind: 'single', id: null },
-      status: { kind: 'single', id: null },
-      contract: { kind: 'single', id: null },
+      department: { kind: 'multi', ids: [] },
+      designation: { kind: 'multi', ids: [] },
+      status: { kind: 'multi', ids: [] },
+      contract: { kind: 'multi', ids: [] },
+      salary: { kind: 'range', min: null, max: null },
+      joinedAt: { kind: 'date-range', preset: null, from: null, to: null },
+      manager: { kind: 'single', id: null },
+      compensation: { kind: 'toggles', ids: [] },
+      tenure: { kind: 'toggles', ids: [] },
+      documents: { kind: 'toggles', ids: [] },
       archived: { kind: 'toggles', ids: [] },
     },
   });
-  const departmentId =
-    filterUi.state.department?.kind === 'single' ? (filterUi.state.department.id ?? '') : '';
-  const statusId = filterUi.state.status?.kind === 'single' ? (filterUi.state.status.id ?? '') : '';
-  const contractType =
-    filterUi.state.contract?.kind === 'single'
-      ? ((filterUi.state.contract.id as ContractType | null) ?? '')
-      : '';
+
+  const departmentIds =
+    filterUi.state.department?.kind === 'multi' ? filterUi.state.department.ids : [];
+  const designationIds =
+    filterUi.state.designation?.kind === 'multi' ? filterUi.state.designation.ids : [];
+  const statusIds = filterUi.state.status?.kind === 'multi' ? filterUi.state.status.ids : [];
+  const contractTypes =
+    filterUi.state.contract?.kind === 'multi'
+      ? (filterUi.state.contract.ids as ContractType[])
+      : [];
+  const salaryRange =
+    filterUi.state.salary?.kind === 'range'
+      ? { min: filterUi.state.salary.min, max: filterUi.state.salary.max }
+      : { min: null, max: null };
+  const joinedAt =
+    filterUi.state.joinedAt?.kind === 'date-range'
+      ? filterUi.state.joinedAt
+      : { kind: 'date-range' as const, preset: null, from: null, to: null };
+  const managerId =
+    filterUi.state.manager?.kind === 'single' ? (filterUi.state.manager.id ?? '') : '';
+  const compensationToggles =
+    filterUi.state.compensation?.kind === 'toggles' ? filterUi.state.compensation.ids : [];
+  const tenureToggles = filterUi.state.tenure?.kind === 'toggles' ? filterUi.state.tenure.ids : [];
+  const documentToggles =
+    filterUi.state.documents?.kind === 'toggles' ? filterUi.state.documents.ids : [];
   const includeArchived =
     filterUi.state.archived?.kind === 'toggles'
       ? filterUi.state.archived.ids.includes('archived')
       : false;
+
+  // API call uses the first id from each multi-select (single-id API).
+  const departmentId = departmentIds[0] ?? '';
+  const statusId = statusIds[0] ?? '';
+  const contractType = contractTypes[0] ?? '';
 
   const [filterPanelOpen, setFilterPanelOpen] = React.useState(false);
 
@@ -201,9 +330,19 @@ export default function EmployeesListPage() {
       ...(departmentId ? { departmentId } : {}),
       ...(statusId ? { statusId } : {}),
       ...(contractType ? { contractType } : {}),
+      ...(managerId ? { managerId } : {}),
       includeArchived,
     }),
-    [sortBy, sortDir, debouncedSearch, departmentId, statusId, contractType, includeArchived],
+    [
+      sortBy,
+      sortDir,
+      debouncedSearch,
+      departmentId,
+      statusId,
+      contractType,
+      managerId,
+      includeArchived,
+    ],
   );
 
   const {
@@ -243,6 +382,16 @@ export default function EmployeesListPage() {
     filterUi.clearAll();
   }
 
+  // Manager picker — single-page list (cap 200); the picker's own
+  // search input narrows it down further. Declared here (before
+  // `chipSections` below) because chipSections's renderChip for
+  // 'manager' closes over it.
+  const managerListQuery = useEmployeesList({ limit: 200 });
+  const managerOptions = React.useMemo(
+    () => managerListQuery.data?.items.map((e) => ({ id: e.id, fullName: e.fullName })) ?? [],
+    [managerListQuery.data],
+  );
+
   /* ---------- Advanced-filter chip descriptors ----------
    * One per section. Each knows how to render its active value as a
    * single chip text (used by FilterChipsBar above the table).
@@ -253,24 +402,98 @@ export default function EmployeesListPage() {
         key: 'department',
         label: 'Department',
         renderChip: (v) => {
-          if (!v || v.kind !== 'single' || !v.id) return null;
-          return referencesQuery.data?.departments.find((d) => d.id === v.id)?.name ?? v.id;
+          if (!v || v.kind !== 'multi' || v.ids.length === 0) return null;
+          const names = v.ids.map(
+            (id) => referencesQuery.data?.departments.find((d) => d.id === id)?.name ?? id,
+          );
+          return names.length === 1 ? names[0] : `${names[0]} +${names.length - 1}`;
+        },
+      },
+      {
+        key: 'designation',
+        label: 'Designation',
+        renderChip: (v) => {
+          if (!v || v.kind !== 'multi' || v.ids.length === 0) return null;
+          const names = v.ids.map(
+            (id) => referencesQuery.data?.designations.find((d) => d.id === id)?.name ?? id,
+          );
+          return names.length === 1 ? names[0] : `${names[0]} +${names.length - 1}`;
         },
       },
       {
         key: 'status',
         label: 'Status',
         renderChip: (v) => {
-          if (!v || v.kind !== 'single' || !v.id) return null;
-          return referencesQuery.data?.statuses.find((s) => s.id === v.id)?.name ?? v.id;
+          if (!v || v.kind !== 'multi' || v.ids.length === 0) return null;
+          const names = v.ids.map(
+            (id) => referencesQuery.data?.statuses.find((s) => s.id === id)?.name ?? id,
+          );
+          return names.length === 1 ? names[0] : `${names[0]} +${names.length - 1}`;
         },
       },
       {
         key: 'contract',
         label: 'Contract',
         renderChip: (v) => {
+          if (!v || v.kind !== 'multi' || v.ids.length === 0) return null;
+          return v.ids.length === 1 ? v.ids[0] : `${v.ids[0]} +${v.ids.length - 1}`;
+        },
+      },
+      {
+        key: 'salary',
+        label: 'Salary',
+        renderChip: (v) => {
+          if (!v || v.kind !== 'range') return null;
+          if (v.min === null && v.max === null) return null;
+          const fmt = (n: number) => `${Math.round(n / 1000)}k`;
+          return `${v.min !== null ? fmt(v.min) : '0'}–${v.max !== null ? fmt(v.max) : 'max'} PKR`;
+        },
+      },
+      {
+        key: 'joinedAt',
+        label: 'Joined',
+        renderChip: (v) => {
+          if (!v || v.kind !== 'date-range') return null;
+          if (v.preset && v.preset !== 'custom') {
+            return JOIN_DATE_PRESET_LABEL[v.preset] ?? v.preset;
+          }
+          if (!v.from && !v.to) return null;
+          return `${v.from ?? '…'} → ${v.to ?? '…'}`;
+        },
+      },
+      {
+        key: 'manager',
+        label: 'Reports to',
+        renderChip: (v) => {
           if (!v || v.kind !== 'single' || !v.id) return null;
-          return v.id;
+          return managerOptions.find((m) => m.id === v.id)?.fullName ?? v.id;
+        },
+      },
+      {
+        key: 'compensation',
+        label: 'Compensation',
+        renderChip: (v) => {
+          if (!v || v.kind !== 'toggles' || v.ids.length === 0) return null;
+          const labels = v.ids.map((id) => COMPENSATION_LABEL[id] ?? id);
+          return labels.length === 1 ? labels[0] : `${labels[0]} +${labels.length - 1}`;
+        },
+      },
+      {
+        key: 'tenure',
+        label: 'Tenure',
+        renderChip: (v) => {
+          if (!v || v.kind !== 'toggles' || v.ids.length === 0) return null;
+          const labels = v.ids.map((id) => TENURE_LABEL[id] ?? id);
+          return labels.length === 1 ? labels[0] : `${labels[0]} +${labels.length - 1}`;
+        },
+      },
+      {
+        key: 'documents',
+        label: 'Documents',
+        renderChip: (v) => {
+          if (!v || v.kind !== 'toggles' || v.ids.length === 0) return null;
+          const labels = v.ids.map((id) => DOCUMENTS_LABEL[id] ?? id);
+          return labels.length === 1 ? labels[0] : `${labels[0]} +${labels.length - 1}`;
         },
       },
       {
@@ -282,7 +505,10 @@ export default function EmployeesListPage() {
         },
       },
     ];
-  }, [referencesQuery.data]);
+    // managerOptions referenced via the closure below; the chip text
+    // it resolves is stable for the same id, so leaving it out of
+    // deps is safe.
+  }, [referencesQuery.data, managerOptions]);
 
   function handleSortChange(key: string, direction: 'asc' | 'desc') {
     const apiKey = SORT_KEY_TO_API[key];
@@ -511,34 +737,54 @@ export default function EmployeesListPage() {
             />
           }
         >
+          {/* 1. Department — multi-select with colored dots, matches PNG 199 */}
           <FilterSection
             icon={<DepartmentIcon className="h-fn-3_5 w-fn-3_5" />}
             title="Department"
-            count={departmentId ? 1 : 0}
+            count={departmentIds.length}
             onClear={() => filterUi.clearSection('department')}
           >
-            <FilterPillGroup
-              mode="single"
-              value={departmentId || null}
-              onValueChange={(id) => filterUi.setSection('department', { kind: 'single', id })}
+            <FilterMultiSelect
+              values={departmentIds}
+              onValuesChange={(ids) => filterUi.setSection('department', { kind: 'multi', ids })}
               options={(referencesQuery.data?.departments ?? []).map((d) => ({
+                id: d.id,
+                label: d.name,
+                hue: deptHue(d.slug),
+              }))}
+            />
+          </FilterSection>
+
+          {/* 2. Designation — searchable list, matches PNG 199 */}
+          <FilterSection
+            icon={<IdCard className="h-fn-3_5 w-fn-3_5" />}
+            title="Designation"
+            count={designationIds.length}
+            onClear={() => filterUi.clearSection('designation')}
+          >
+            <FilterSearchableList
+              placeholder="Search designations…"
+              values={designationIds}
+              onValuesChange={(ids) => filterUi.setSection('designation', { kind: 'multi', ids })}
+              options={(referencesQuery.data?.designations ?? []).map((d) => ({
                 id: d.id,
                 label: d.name,
               }))}
             />
           </FilterSection>
 
+          {/* 3. Status — multi pill chips with warning tone, matches PNG 199 */}
           <FilterSection
             icon={<CircleDot className="h-fn-3_5 w-fn-3_5" />}
             title="Status"
-            count={statusId ? 1 : 0}
+            count={statusIds.length}
             onClear={() => filterUi.clearSection('status')}
           >
             <FilterPillGroup
-              mode="single"
+              mode="multi"
               activeTone="warning"
-              value={statusId || null}
-              onValueChange={(id) => filterUi.setSection('status', { kind: 'single', id })}
+              values={statusIds}
+              onValuesChange={(ids) => filterUi.setSection('status', { kind: 'multi', ids })}
               options={(referencesQuery.data?.statuses ?? []).map((s) => ({
                 id: s.id,
                 label: s.name,
@@ -546,26 +792,131 @@ export default function EmployeesListPage() {
             />
           </FilterSection>
 
+          {/* 4. Contract type — multi pill chips */}
           <FilterSection
             icon={<BriefcaseIcon className="h-fn-3_5 w-fn-3_5" />}
             title="Contract type"
-            count={contractType ? 1 : 0}
+            count={contractTypes.length}
             onClear={() => filterUi.clearSection('contract')}
           >
             <FilterPillGroup
-              mode="single"
-              value={contractType || null}
-              onValueChange={(id) => filterUi.setSection('contract', { kind: 'single', id })}
+              mode="multi"
+              values={contractTypes}
+              onValuesChange={(ids) => filterUi.setSection('contract', { kind: 'multi', ids })}
               options={CONTRACT_OPTIONS.map((c) => ({ id: c, label: c }))}
             />
           </FilterSection>
 
+          {/* 5. Monthly Salary (PKR) — range slider, matches PNG 199 */}
+          {canViewSalary && (
+            <FilterSection
+              icon={<Wallet className="h-fn-3_5 w-fn-3_5" />}
+              title="Monthly salary (PKR)"
+              count={salaryRange.min !== null || salaryRange.max !== null ? 1 : 0}
+              onClear={() => filterUi.clearSection('salary')}
+            >
+              <FilterRangeSlider
+                min={0}
+                max={2_000_000}
+                step={5_000}
+                value={salaryRange}
+                onValueChange={(next) => filterUi.setSection('salary', { kind: 'range', ...next })}
+                formatValue={(n) => `Rs ${n.toLocaleString()}`}
+                unitNote="monthly"
+                inputSuffix="MIN"
+              />
+            </FilterSection>
+          )}
+
+          {/* 6. Joining Date — preset chips + date inputs, matches PNG 199 + PNG 201 */}
+          <FilterSection
+            icon={<CalendarDays className="h-fn-3_5 w-fn-3_5" />}
+            title="Joining date"
+            count={joinedAt.preset || joinedAt.from || joinedAt.to ? 1 : 0}
+            onClear={() => filterUi.clearSection('joinedAt')}
+          >
+            <FilterDateRange
+              value={{ preset: joinedAt.preset, from: joinedAt.from, to: joinedAt.to }}
+              onValueChange={(next) =>
+                filterUi.setSection('joinedAt', { kind: 'date-range', ...next })
+              }
+            />
+          </FilterSection>
+
+          {/* 7. Reports To — searchable picker, matches PNG 199 (collapsed) */}
+          <FilterSection
+            icon={<UserCog className="h-fn-3_5 w-fn-3_5" />}
+            title="Reports to"
+            count={managerId ? 1 : 0}
+            onClear={() => filterUi.clearSection('manager')}
+            defaultOpen={false}
+          >
+            <FilterSearchableList
+              placeholder="Search managers…"
+              values={managerId ? [managerId] : []}
+              onValuesChange={(ids) =>
+                filterUi.setSection('manager', { kind: 'single', id: ids[0] ?? null })
+              }
+              options={managerOptions.map((m) => ({ id: m.id, label: m.fullName }))}
+            />
+          </FilterSection>
+
+          {/* 8. Compensation — toggle list, matches PNG 199 */}
+          {canViewSalary && (
+            <FilterSection
+              icon={<Wallet className="h-fn-3_5 w-fn-3_5" />}
+              title="Compensation"
+              count={compensationToggles.length}
+              onClear={() => filterUi.clearSection('compensation')}
+            >
+              <FilterToggleList
+                options={[...COMPENSATION_OPTIONS]}
+                values={compensationToggles}
+                onValuesChange={(ids) =>
+                  filterUi.setSection('compensation', { kind: 'toggles', ids })
+                }
+              />
+            </FilterSection>
+          )}
+
+          {/* 9. Tenure — toggle list, matches PNG 200 (collapsed by default) */}
+          <FilterSection
+            icon={<Clock className="h-fn-3_5 w-fn-3_5" />}
+            title="Tenure"
+            count={tenureToggles.length}
+            onClear={() => filterUi.clearSection('tenure')}
+            defaultOpen={false}
+          >
+            <FilterToggleList
+              options={[...TENURE_OPTIONS]}
+              values={tenureToggles}
+              onValuesChange={(ids) => filterUi.setSection('tenure', { kind: 'toggles', ids })}
+            />
+          </FilterSection>
+
+          {/* 10. Documents & Compliance — toggle list, matches PNG 200 */}
+          <FilterSection
+            icon={<FileCheck className="h-fn-3_5 w-fn-3_5" />}
+            title="Documents & compliance"
+            count={documentToggles.length}
+            onClear={() => filterUi.clearSection('documents')}
+            defaultOpen={false}
+          >
+            <FilterToggleList
+              options={[...DOCUMENT_OPTIONS]}
+              values={documentToggles}
+              onValuesChange={(ids) => filterUi.setSection('documents', { kind: 'toggles', ids })}
+            />
+          </FilterSection>
+
+          {/* 11. Visibility — archived toggle (HR / Super Admin only) */}
           {canSeeArchived && (
             <FilterSection
               icon={<Archive className="h-fn-3_5 w-fn-3_5" />}
               title="Visibility"
               count={includeArchived ? 1 : 0}
               onClear={() => filterUi.clearSection('archived')}
+              defaultOpen={false}
             >
               <FilterToggleList
                 options={[
