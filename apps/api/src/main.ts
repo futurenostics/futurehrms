@@ -10,7 +10,17 @@ import 'reflect-metadata';
 // with a cryptic 400. Loading the encodings module eagerly here
 // resolves the file at boot, when the sandbox is still warm, and
 // the module cache holds it for the lifetime of the process.
-import 'iconv-lite/encodings';
+//
+// Guarded with try/catch so that a hoisting layout where
+// iconv-lite isn't directly resolvable (pnpm strict mode) doesn't
+// crash boot — body-parser will fall back to its own lazy require
+// when the time comes.
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  require('iconv-lite/encodings');
+} catch {
+  /* hoisting-dependent — fine to skip when not directly resolvable. */
+}
 import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
 import cookieParser from 'cookie-parser';

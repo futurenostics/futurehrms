@@ -44,6 +44,7 @@ import {
   type EmployeeCommissionTrend,
 } from '@futurenostics/types';
 import type { AuthenticatedUser } from '../../core/auth/types';
+import { AuditService } from '../../core/audit/audit.service';
 import { EventBusService } from '../../core/events/event-bus.service';
 import {
   calcProjectLineItems,
@@ -63,7 +64,10 @@ import {
 export class CommissionRunsService {
   private readonly logger = new Logger(CommissionRunsService.name);
 
-  constructor(private readonly events: EventBusService) {}
+  constructor(
+    private readonly events: EventBusService,
+    private readonly audit: AuditService,
+  ) {}
 
   /* ---------- Permission helpers ---------- */
 
@@ -592,61 +596,188 @@ export class CommissionRunsService {
 
   /* ---------- CSV export ---------- */
 
-  async exportCsv(viewer: AuthenticatedUser, id: string): Promise<string> {
-    this.require('commissions:export_run', viewer);
+  /**
+   * Export a commission run as a self-contained CSV.
+   *
+   * Permission: `commissions:view_runs` — if a viewer can see the run
+   * detail page, they can download the CSV. There's a separate
+   * `commissions:export_run` permission used by the frontend button's
+   * visibility gate, but the endpoint itself only requires view.
+   *
+   * Returns `{ filename, csv }` so the controller can stamp the right
+   * Content-Disposition header. Filename pattern:
+   * `commission-run-{monthKey}-{status}.csv` (e.g.
+   * `commission-run-2026-04-approved.csv`).
+   *
+   * The CSV body has two parts:
+   *   1. Header row + one row per line item — RFC 4180 with 19 columns
+   *      covering employee, project, role, calc inputs, adjustments,
+   *      and the final amount. Amounts use 2-decimal formatting.
+   *   2. Blank row + a summary block (Month / Status / approval chain
+   *      / FX rate / totals) so the file is self-contained for
+   *      external review.
+   *
+   * Emits `commission.run.exported` for the audit trail.
+   */
+  async exportCsv(
+    viewer: AuthenticatedUser,
+    id: string,
+  ): Promise<{ filename: string; csv: string }> {
+    this.require('commissions:view_runs', viewer);
+
     const run = await prisma.commissionRun.findUnique({
       where: { id },
       include: COMMISSION_RUN_INCLUDE,
     });
     if (!run) throw new NotFoundException('Commission run not found');
 
+    // Resolve creator / submitter / approver labels for the summary
+    // block. Each is a User → Employee lookup; the User may not have
+    // a linked Employee (system / admin accounts), so fall back to the
+    // user's email when no employee profile is wired.
+    const userIds = [run.createdById, run.submittedById, run.approvedById].filter(
+      (uid): uid is string => Boolean(uid),
+    );
+    const users = userIds.length
+      ? await prisma.user.findMany({
+          where: { id: { in: userIds } },
+          include: { employee: { select: { fullName: true } } },
+        })
+      : [];
+    const userById = new Map(users.map((u) => [u.id, u]));
+    const userLabel = (uid: string | null): string => {
+      if (!uid) return '';
+      const u = userById.get(uid);
+      if (!u) return uid;
+      const name = u.employee?.fullName;
+      return name ? `${name} <${u.email}>` : u.email;
+    };
+
+    const lineItems = run.lineItems;
+
+    /* ---------- Header + line item rows ---------- */
     const headers = [
-      'Run',
-      'Status',
+      'Line Item ID',
       'Employee EID',
       'Employee Name',
-      'Department',
-      'Project',
-      'Client',
-      'Category',
-      'Role',
-      'Snapshot %',
+      'Employee Email',
+      'Project Name',
+      'Project Category',
+      'Project Status',
+      'Role on Project',
+      'Snapshot Percentage',
       'Base Revenue USD',
       'Month Fraction',
-      'Calculated USD',
+      'Calculated Amount USD',
       'Leave Adjustment USD',
       'Manual Adjustment USD',
-      'Manual Note',
-      'Held',
-      'Carry-forward from',
-      'Final USD',
+      'Manual Adjustment Note',
+      'Is Held',
+      'Carry-forward To Run',
+      'Carry-forward From Run',
+      'Final Amount USD',
     ];
+
     const rows: string[][] = [headers];
-    for (const li of run.lineItems) {
+    for (const li of lineItems) {
       rows.push([
-        run.monthKey,
-        run.status,
+        li.id,
         li.employee.eid,
         li.employee.fullName,
-        li.employee.department?.name ?? '',
+        li.employee.email,
         li.project.name,
-        li.project.clientName,
         li.project.category.name,
+        li.project.status,
         li.roleName,
-        String(Number(li.snapshotPercentage)),
-        String(Number(li.baseRevenueUsd)),
+        formatPercentage(Number(li.snapshotPercentage)),
+        formatAmount(Number(li.baseRevenueUsd)),
         `${li.monthFractionNumerator}/${li.monthFractionDenominator}`,
-        String(Number(li.calculatedAmountUsd)),
-        String(Number(li.leaveAdjustmentUsd)),
-        String(Number(li.manualAdjustmentUsd)),
+        formatAmount(Number(li.calculatedAmountUsd)),
+        formatAmount(Number(li.leaveAdjustmentUsd)),
+        formatAmount(Number(li.manualAdjustmentUsd)),
         li.manualAdjustmentNote ?? '',
         li.isHeld ? 'yes' : 'no',
+        li.carryForwardToRunId ?? '',
         li.carryForwardFromRunId ?? '',
-        String(Number(li.finalAmountUsd)),
+        formatAmount(Number(li.finalAmountUsd)),
       ]);
     }
 
-    return rows.map((row) => row.map(csvEscape).join(',')).join('\n');
+    /* ---------- Summary block ---------- */
+    // Format: the summary sits in the rightmost columns so a
+    // spreadsheet reader sees a visually distinct "metadata" trailer.
+    // Empty columns left of the label keep alignment with the data
+    // rows above.
+    const summaryColPrefix = Array.from({ length: 7 }).fill('');
+    const summaryRow = (label: string, value: string): string[] => [
+      ...(summaryColPrefix as string[]),
+      label,
+      value,
+    ];
+
+    const distinctRecipients = new Set(lineItems.map((li) => li.employeeId)).size;
+    const distinctProjects = new Set(lineItems.map((li) => li.projectId)).size;
+    const runTotal = lineItems.reduce((sum, li) => sum + Number(li.finalAmountUsd), 0);
+
+    const summary: string[][] = [
+      [], // blank separator
+      [...(summaryColPrefix as string[]), 'Run Summary'],
+      summaryRow('Month', run.monthKey),
+      summaryRow('Status', run.status),
+      summaryRow('Created By', userLabel(run.createdById)),
+      summaryRow('Created At', run.createdAt.toISOString()),
+      summaryRow('Submitted By', userLabel(run.submittedById)),
+      summaryRow('Submitted At', run.submittedAt?.toISOString() ?? ''),
+      summaryRow('Approved By', userLabel(run.approvedById)),
+      summaryRow('Approved At', run.approvedAt?.toISOString() ?? ''),
+      summaryRow('Approver Is Submitter', run.approverIsSubmitter ? 'yes' : 'no'),
+      summaryRow('FX Rate USD-PKR', String(Number(run.fxRateUsdToPkr))),
+      summaryRow('Total Recipients', String(distinctRecipients)),
+      summaryRow('Total Projects', String(distinctProjects)),
+      summaryRow('Run Total USD', formatAmount(runTotal)),
+    ];
+
+    const csv = [...rows, ...summary]
+      .map((row) => row.map((cell) => csvEscape(cell ?? '')).join(','))
+      .join('\n');
+
+    const filename = `commission-run-${run.monthKey}-${run.status}.csv`;
+
+    // Audit trail — exporting financial data is a sensitive action.
+    // We do BOTH:
+    //   1. emit a domain event so any future subscriber (timeline,
+    //      notifications, BI sink) can react;
+    //   2. write directly to AuditLog via AuditService since the
+    //      Prisma middleware only fires on Prisma writes — a read-only
+    //      action like export wouldn't otherwise leave a trace.
+    const exportedAt = new Date();
+    this.events.emit(
+      'commission.run.exported',
+      {
+        runId: run.id,
+        monthKey: run.monthKey,
+        status: run.status,
+        exportedById: viewer.id,
+        exportedAt: exportedAt.toISOString(),
+        rowCount: lineItems.length,
+      },
+      { actorId: viewer.id },
+    );
+    await this.audit.record({
+      module: 'commissions',
+      entity: 'CommissionRun',
+      entityId: run.id,
+      action: 'exported',
+      after: {
+        monthKey: run.monthKey,
+        status: run.status,
+        rowCount: lineItems.length,
+        filename,
+      },
+      actorId: viewer.id,
+    });
+
+    return { filename, csv };
   }
 
   /* ---------- Per-employee breakdowns ---------- */
@@ -749,6 +880,16 @@ export class CommissionRunsService {
 function csvEscape(value: string): string {
   if (/["\n,]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
   return value;
+}
+
+/** Two-decimal amount string ("1440.00"). Column headers carry the currency hint. */
+function formatAmount(value: number): string {
+  return value.toFixed(2);
+}
+
+/** Percentage as a plain decimal string ("50" / "33.33"). */
+function formatPercentage(value: number): string {
+  return Number.isInteger(value) ? value.toString() : value.toFixed(2);
 }
 
 /** 'YYYY-MM' → previous month 'YYYY-MM'. */

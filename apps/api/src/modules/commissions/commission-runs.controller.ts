@@ -30,16 +30,26 @@ export class CommissionRunsController {
     return this.runs.findOne(user, id);
   }
 
+  /**
+   * Export the run as CSV. Permission `view_runs` (not `export_run`)
+   * because the design intent is "if you can see the run, you can
+   * export it" — the frontend's separate `export_run`-gated button
+   * is just convenience; the endpoint itself is gated on view.
+   *
+   * Filename pattern: `commission-run-{monthKey}-{status}.csv` so a
+   * downloaded file is self-describing (e.g.
+   * `commission-run-2026-04-approved.csv`).
+   */
   @Get(':id/export')
-  @RequirePermission('commissions:export_run')
+  @RequirePermission('commissions:view_runs')
   async exportCsv(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
     @Res({ passthrough: false }) res: Response,
   ) {
-    const csv = await this.runs.exportCsv(user, id);
+    const { filename, csv } = await this.runs.exportCsv(user, id);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="commission-run-${id}.csv"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(csv);
   }
 
