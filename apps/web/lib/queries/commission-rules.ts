@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tansta
 import type {
   CommissionRuleAffectedProjects,
   CommissionRuleCreateInput,
+  CommissionRuleFilterCountsResponse,
   CommissionRuleListQuery,
   CommissionRuleListResponse,
   CommissionRulePublic,
@@ -22,10 +23,53 @@ function buildQs(query: Partial<CommissionRuleListQuery>): string {
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(query)) {
     if (v === undefined || v === null || v === '') continue;
+    // Array filters (departments, categoryIds, …) → comma-joined ids.
+    if (Array.isArray(v)) {
+      if (v.length === 0) continue;
+      params.set(k, v.join(','));
+      continue;
+    }
     params.set(k, String(v));
   }
   const qs = params.toString();
   return qs ? `?${qs}` : '';
+}
+
+/**
+ * Filter-counts fetcher — called by the AdvancedFilters primitive
+ * (debounce owned by the primitive). Mirrors the employees + projects
+ * fetchers.
+ */
+export interface CommissionRuleFilterCountsParams {
+  departments?: string[];
+  categoryIds?: string[];
+  statuses?: string[];
+  poolModes?: string[];
+  poolValueMin?: number;
+  poolValueMax?: number;
+  effectiveFromStart?: string;
+  effectiveFromEnd?: string;
+  search?: string;
+  activeOnly?: boolean;
+}
+
+export async function fetchCommissionRuleFilterCounts(
+  params: CommissionRuleFilterCountsParams,
+): Promise<CommissionRuleFilterCountsResponse> {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null || v === '') continue;
+    if (Array.isArray(v)) {
+      if (v.length === 0) continue;
+      qs.set(k, v.join(','));
+    } else {
+      qs.set(k, String(v));
+    }
+  }
+  const tail = qs.toString();
+  return apiFetch<CommissionRuleFilterCountsResponse>(
+    `/api/commission-rules/filter-counts${tail ? `?${tail}` : ''}`,
+  );
 }
 
 export function useCommissionRulesList(query: Partial<CommissionRuleListQuery> = {}) {
