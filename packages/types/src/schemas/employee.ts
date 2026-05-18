@@ -187,6 +187,107 @@ export const employeeListQuerySchema = z.object({
 });
 export type EmployeeListQuery = z.infer<typeof employeeListQuerySchema>;
 
+/* ---------- Filter counts (Advanced Filters drawer) ---------- */
+
+/**
+ * Inputs for the filter-counts endpoint. Mirrors `employeeListQuerySchema`
+ * but every constraint is an *array* of IDs (matching the multi-select
+ * shape of the Advanced Filters drawer) plus the salary/date range pairs
+ * and the compensation/tenure/document boolean toggles.
+ *
+ * Each value is encoded as a comma-separated id list in the URL —
+ * the schema accepts both `string[]` and `string` (which is split on
+ * commas) so it round-trips through `searchParams.get()`.
+ */
+const csvIds = z
+  .union([z.string(), z.array(z.string())])
+  .optional()
+  .transform((v) => {
+    if (v === undefined) return [] as string[];
+    if (Array.isArray(v)) return v.filter(Boolean);
+    return v
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  });
+
+export const employeeFilterCountsQuerySchema = z.object({
+  departmentIds: csvIds,
+  designationIds: csvIds,
+  statusIds: csvIds,
+  contractTypes: csvIds,
+  managerIds: csvIds,
+  employmentRecords: csvIds,
+  /** Tenure bucket slugs the user selected (`lt1` | `1to3` | `3to5` | `5to10` | `10plus`). */
+  tenureBuckets: csvIds,
+  /** Compensation flag slugs (`payoneer` | `pkrOnly` | `processedExternally` | `eligibleCommissions`). */
+  compensationFlags: csvIds,
+  /** Document-gap flag slugs (`missingEmergencyContact` | `missingProbationEndDate` | `missingPhoto`). */
+  documentFlags: csvIds,
+  salaryMin: z.coerce.number().int().nonnegative().optional(),
+  salaryMax: z.coerce.number().int().nonnegative().optional(),
+  joinDateFrom: z.coerce.date().optional(),
+  joinDateTo: z.coerce.date().optional(),
+  search: z.string().trim().min(1).optional(),
+  includeArchived: z.coerce.boolean().default(false),
+});
+export type EmployeeFilterCountsQuery = z.infer<typeof employeeFilterCountsQuerySchema>;
+
+export const filterCountBucketSchema = z.object({
+  /** Inclusive lower edge of the bucket (PKR for salary, ISO date for joinDate). */
+  from: z.union([z.number(), z.string()]),
+  /** Exclusive upper edge. */
+  to: z.union([z.number(), z.string()]),
+  count: z.number().int().nonnegative(),
+});
+export type FilterCountBucket = z.infer<typeof filterCountBucketSchema>;
+
+export const employeeFilterCountsResponseSchema = z.object({
+  /** Total employees matching the current filter state. */
+  total: z.number().int().nonnegative(),
+  /** Per-option counts. Keys are option IDs; values are the count under the current filter state. */
+  byDepartment: z.record(z.string(), z.number().int().nonnegative()),
+  byDesignation: z.record(z.string(), z.number().int().nonnegative()),
+  byStatus: z.record(z.string(), z.number().int().nonnegative()),
+  byContract: z.record(z.string(), z.number().int().nonnegative()),
+  byManager: z.record(z.string(), z.number().int().nonnegative()),
+  byEmploymentRecord: z.record(z.string(), z.number().int().nonnegative()),
+  /** 20-bucket histogram across the salary range, plus min/max for the slider extents. */
+  salary: z.object({
+    min: z.number().nonnegative(),
+    max: z.number().nonnegative(),
+    buckets: z.array(filterCountBucketSchema),
+  }),
+  /** 12-month buckets covering the past 5 years + future joiners. */
+  joinDate: z.object({
+    earliest: z.string().nullable(),
+    latest: z.string().nullable(),
+    buckets: z.array(filterCountBucketSchema),
+  }),
+  /** Tenure buckets — fixed slugs. */
+  tenure: z.object({
+    lt1: z.number().int().nonnegative(),
+    oneToThree: z.number().int().nonnegative(),
+    threeToFive: z.number().int().nonnegative(),
+    fiveToTen: z.number().int().nonnegative(),
+    tenPlus: z.number().int().nonnegative(),
+  }),
+  /** Compensation flags. */
+  compensation: z.object({
+    payoneer: z.number().int().nonnegative(),
+    pkrOnly: z.number().int().nonnegative(),
+    processedExternally: z.number().int().nonnegative(),
+    eligibleCommissions: z.number().int().nonnegative(),
+  }),
+  /** Document-gap counts. */
+  documents: z.object({
+    missingEmergencyContact: z.number().int().nonnegative(),
+    missingProbationEndDate: z.number().int().nonnegative(),
+    missingPhoto: z.number().int().nonnegative(),
+  }),
+});
+export type EmployeeFilterCountsResponse = z.infer<typeof employeeFilterCountsResponseSchema>;
+
 /* ---------- Public response shape ---------- */
 
 const employeeRefSchema = z.object({

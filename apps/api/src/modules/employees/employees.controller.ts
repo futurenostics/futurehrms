@@ -23,6 +23,7 @@ import {
   changeSalarySchema,
   changeStatusSchema,
   employeeCreateSchema,
+  employeeFilterCountsQuerySchema,
   employeeListQuerySchema,
   employeeUpdateSchema,
   moveToNoticeSchema,
@@ -59,6 +60,22 @@ export class EmployeesController {
   @RequirePermission('employees:view_team')
   async references() {
     return this.employees.references();
+  }
+
+  /**
+   * Powers the Advanced Filters drawer — returns the matched total
+   * plus per-option counts under the current filter state. The
+   * frontend debounces this around 250ms and uses it for the live
+   * footer count + zero-result option dimming + salary histogram.
+   */
+  @Get('filter-counts')
+  @RequirePermission('employees:view_team')
+  async filterCounts(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() rawQuery: Record<string, unknown>,
+  ) {
+    const query = employeeFilterCountsQuerySchema.parse(rawQuery);
+    return this.employees.getFilterCounts(user, query);
   }
 
   @Get('total')

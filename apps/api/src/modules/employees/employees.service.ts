@@ -12,6 +12,8 @@ import type {
   ChangeSalaryInput,
   ChangeStatusInput,
   EmployeeCreateInput,
+  EmployeeFilterCountsQuery,
+  EmployeeFilterCountsResponse,
   EmployeeListQuery,
   EmployeeListResponse,
   EmployeePublic,
@@ -347,6 +349,200 @@ export class EmployeesService {
       avgTenureYears: Math.round(avgTenureYears * 10) / 10,
       tenureOver3yPercent: Math.round(tenureOver3yPercent),
       distinctDepartments: deptGroups.length,
+    };
+  }
+
+  /* ---------- Filter counts ---------- */
+
+  /**
+   * Powers the Advanced Filters drawer (`GET /employees/filter-counts`).
+   *
+   * Returns the **total** matching the current filter state plus
+   * per-option counts for every group the drawer surfaces. The
+   * per-option counts are computed under the *current* filter state
+   * (Amazon-style facet refinement — "if you keep these filters, this
+   * is what each option still resolves to"). The frontend uses them to
+   * surface zero-result options and to populate the salary histogram +
+   * date-range bars.
+   *
+   * Each group runs as a parallel `groupBy` / aggregate to keep total
+   * wall time roughly equal to a single count query.
+   */
+  async getFilterCounts(
+    viewer: AuthenticatedUser,
+    query: EmployeeFilterCountsQuery,
+  ): Promise<EmployeeFilterCountsResponse> {
+    const scope = computeEmployeeReadScope(viewer);
+    if (!scope.canRead) {
+      return emptyFilterCountsResponse();
+    }
+
+    const where = buildEmployeeFilterCountsWhere(viewer, query);
+    const seeSalary = canViewSalary(viewer);
+
+    const [
+      total,
+      byDepartmentRows,
+      byDesignationRows,
+      byStatusRows,
+      byContractRows,
+      byManagerRows,
+      byEmploymentRecordRows,
+      salaryAgg,
+      salaryRows,
+      joinAgg,
+      joinRows,
+      tenureRows,
+      payoneerCount,
+      pkrOnlyCount,
+      processedExternallyCount,
+      eligibleCommissionsCount,
+      missingEmergencyCount,
+      missingProbationCount,
+      missingPhotoCount,
+    ] = await Promise.all([
+      prisma.employee.count({ where }),
+      prisma.employee.groupBy({
+        by: ['departmentId'],
+        where,
+        _count: { _all: true },
+      }),
+      prisma.employee.groupBy({
+        by: ['designationId'],
+        where,
+        _count: { _all: true },
+      }),
+      prisma.employee.groupBy({ by: ['statusId'], where, _count: { _all: true } }),
+      prisma.employee.groupBy({
+        by: ['contractType'],
+        where,
+        _count: { _all: true },
+      }),
+      prisma.employee.groupBy({ by: ['managerId'], where, _count: { _all: true } }),
+      prisma.employee.groupBy({
+        by: ['employmentRecord'],
+        where,
+        _count: { _all: true },
+      }),
+      seeSalary
+        ? prisma.employee.aggregate({
+            where: { ...where, salaryPkr: { not: null } },
+            _min: { salaryPkr: true },
+            _max: { salaryPkr: true },
+          })
+        : Promise.resolve(null as null),
+      seeSalary
+        ? prisma.employee.findMany({
+            where: { ...where, salaryPkr: { not: null } },
+            select: { salaryPkr: true },
+            take: 10_000,
+          })
+        : Promise.resolve([] as Array<{ salaryPkr: unknown }>),
+      prisma.employee.aggregate({
+        where,
+        _min: { joinDate: true },
+        _max: { joinDate: true },
+      }),
+      prisma.employee.findMany({
+        where,
+        select: { joinDate: true },
+        take: 10_000,
+      }),
+      prisma.employee.findMany({
+        where,
+        select: { joinDate: true },
+        take: 10_000,
+      }),
+      prisma.employee.count({ where: { ...where, hasPayoneer: true } }),
+      prisma.employee.count({ where: { ...where, hasPayoneer: false } }),
+      prisma.employee.count({ where: { ...where, salaryProcessedExternally: true } }),
+      prisma.employee.count({ where: { ...where, eligibleForCommissions: true } }),
+      prisma.employee.count({
+        where: { ...where, OR: [{ emergencyContact: { equals: Prisma.JsonNull } }] },
+      }),
+      prisma.employee.count({ where: { ...where, probationEndDate: null } }),
+      prisma.employee.count({
+        where: { ...where, documents: { none: { kind: 'photo' } } },
+      }),
+    ]);
+
+    const byDepartment = aggToRecord(byDepartmentRows, 'departmentId');
+    const byDesignation = aggToRecord(byDesignationRows, 'designationId');
+    const byStatus = aggToRecord(byStatusRows, 'statusId');
+    const byContract = aggToRecord(byContractRows, 'contractType');
+    const byManager = aggToRecord(byManagerRows, 'managerId');
+    const byEmploymentRecord = aggToRecord(byEmploymentRecordRows, 'employmentRecord');
+
+    /* Salary histogram — 20 buckets across the full range. */
+    let salary: EmployeeFilterCountsResponse['salary'];
+    if (seeSalary && salaryAgg && salaryRows.length > 0) {
+      const min = salaryAgg._min.salaryPkr ? Number(salaryAgg._min.salaryPkr.toString()) : 0;
+      const max = salaryAgg._max.salaryPkr ? Number(salaryAgg._max.salaryPkr.toString()) : 0;
+      salary = {
+        min,
+        max,
+        buckets: bucketize(
+          salaryRows.map((r) => Number((r.salaryPkr as { toString(): string }).toString())),
+          min,
+          max,
+          20,
+        ),
+      };
+    } else {
+      salary = { min: 0, max: 0, buckets: [] };
+    }
+
+    /* Join-date histogram — month buckets between earliest and latest. */
+    const earliest = joinAgg._min.joinDate ?? null;
+    const latest = joinAgg._max.joinDate ?? null;
+    const joinDate = {
+      earliest: earliest ? earliest.toISOString() : null,
+      latest: latest ? latest.toISOString() : null,
+      buckets:
+        earliest && latest
+          ? monthBuckets(
+              joinRows.map((r) => r.joinDate),
+              earliest,
+              latest,
+            )
+          : [],
+    };
+
+    /* Tenure buckets. */
+    const now = Date.now();
+    const yearMs = 365.25 * 24 * 60 * 60 * 1000;
+    const tenure = { lt1: 0, oneToThree: 0, threeToFive: 0, fiveToTen: 0, tenPlus: 0 };
+    for (const r of tenureRows) {
+      const yrs = (now - r.joinDate.getTime()) / yearMs;
+      if (yrs < 1) tenure.lt1++;
+      else if (yrs < 3) tenure.oneToThree++;
+      else if (yrs < 5) tenure.threeToFive++;
+      else if (yrs < 10) tenure.fiveToTen++;
+      else tenure.tenPlus++;
+    }
+
+    return {
+      total,
+      byDepartment,
+      byDesignation,
+      byStatus,
+      byContract,
+      byManager,
+      byEmploymentRecord,
+      salary,
+      joinDate,
+      tenure,
+      compensation: {
+        payoneer: payoneerCount,
+        pkrOnly: pkrOnlyCount,
+        processedExternally: processedExternallyCount,
+        eligibleCommissions: eligibleCommissionsCount,
+      },
+      documents: {
+        missingEmergencyContact: missingEmergencyCount,
+        missingProbationEndDate: missingProbationCount,
+        missingPhoto: missingPhotoCount,
+      },
     };
   }
 
@@ -1142,4 +1338,191 @@ export class EmployeesService {
 function pctChange(prev: number, next: number): number | null {
   if (prev <= 0) return next > 0 ? null : 0;
   return Math.round(((next - prev) / prev) * 1000) / 10;
+}
+
+/* ---------- Filter-counts helpers ---------- */
+
+function emptyFilterCountsResponse(): EmployeeFilterCountsResponse {
+  return {
+    total: 0,
+    byDepartment: {},
+    byDesignation: {},
+    byStatus: {},
+    byContract: {},
+    byManager: {},
+    byEmploymentRecord: {},
+    salary: { min: 0, max: 0, buckets: [] },
+    joinDate: { earliest: null, latest: null, buckets: [] },
+    tenure: { lt1: 0, oneToThree: 0, threeToFive: 0, fiveToTen: 0, tenPlus: 0 },
+    compensation: { payoneer: 0, pkrOnly: 0, processedExternally: 0, eligibleCommissions: 0 },
+    documents: { missingEmergencyContact: 0, missingProbationEndDate: 0, missingPhoto: 0 },
+  };
+}
+
+function buildEmployeeFilterCountsWhere(
+  viewer: AuthenticatedUser,
+  query: EmployeeFilterCountsQuery,
+): Prisma.EmployeeWhereInput {
+  const filters: Prisma.EmployeeWhereInput[] = [];
+  if (!query.includeArchived) filters.push({ deletedAt: null });
+  if (query.departmentIds.length > 0) filters.push({ departmentId: { in: query.departmentIds } });
+  if (query.designationIds.length > 0)
+    filters.push({ designationId: { in: query.designationIds } });
+  if (query.statusIds.length > 0) filters.push({ statusId: { in: query.statusIds } });
+  if (query.contractTypes.length > 0) filters.push({ contractType: { in: query.contractTypes } });
+  if (query.managerIds.length > 0) filters.push({ managerId: { in: query.managerIds } });
+  if (query.employmentRecords.length > 0)
+    filters.push({ employmentRecord: { in: query.employmentRecords } });
+  if (query.salaryMin !== undefined) filters.push({ salaryPkr: { gte: query.salaryMin } });
+  if (query.salaryMax !== undefined) filters.push({ salaryPkr: { lte: query.salaryMax } });
+  if (query.joinDateFrom) filters.push({ joinDate: { gte: query.joinDateFrom } });
+  if (query.joinDateTo) filters.push({ joinDate: { lte: query.joinDateTo } });
+
+  if (query.compensationFlags.length > 0) {
+    for (const flag of query.compensationFlags) {
+      switch (flag) {
+        case 'payoneer':
+          filters.push({ hasPayoneer: true });
+          break;
+        case 'pkrOnly':
+          filters.push({ hasPayoneer: false });
+          break;
+        case 'processedExternally':
+          filters.push({ salaryProcessedExternally: true });
+          break;
+        case 'eligibleCommissions':
+          filters.push({ eligibleForCommissions: true });
+          break;
+      }
+    }
+  }
+
+  if (query.documentFlags.length > 0) {
+    for (const flag of query.documentFlags) {
+      switch (flag) {
+        case 'missingEmergencyContact':
+          filters.push({ emergencyContact: { equals: Prisma.JsonNull } });
+          break;
+        case 'missingProbationEndDate':
+          filters.push({ probationEndDate: null });
+          break;
+        case 'missingPhoto':
+          filters.push({ documents: { none: { kind: 'photo' } } });
+          break;
+      }
+    }
+  }
+
+  if (query.tenureBuckets.length > 0) {
+    const now = new Date();
+    const tenureOrs: Prisma.EmployeeWhereInput[] = [];
+    for (const slug of query.tenureBuckets) {
+      const range = tenureSlugToRange(slug, now);
+      if (range) tenureOrs.push({ joinDate: range });
+    }
+    if (tenureOrs.length > 0) filters.push({ OR: tenureOrs });
+  }
+
+  if (query.search) {
+    filters.push({
+      OR: [
+        { fullName: { contains: query.search, mode: 'insensitive' } },
+        { email: { contains: query.search, mode: 'insensitive' } },
+        { eid: { contains: query.search, mode: 'insensitive' } },
+      ],
+    });
+  }
+
+  return buildEmployeeScopeWhere(
+    viewer,
+    filters.length === 0 ? {} : filters.length === 1 ? filters[0]! : { AND: filters },
+  );
+}
+
+function tenureSlugToRange(
+  slug: string,
+  now: Date,
+): { gt?: Date; gte?: Date; lt?: Date; lte?: Date } | null {
+  const yrs = (n: number) => {
+    const d = new Date(now);
+    d.setFullYear(d.getFullYear() - n);
+    return d;
+  };
+  switch (slug) {
+    case 'lt1':
+      return { gte: yrs(1) };
+    case '1to3':
+      return { lt: yrs(1), gte: yrs(3) };
+    case '3to5':
+      return { lt: yrs(3), gte: yrs(5) };
+    case '5to10':
+      return { lt: yrs(5), gte: yrs(10) };
+    case '10plus':
+      return { lt: yrs(10) };
+    default:
+      return null;
+  }
+}
+
+function aggToRecord<K extends string>(
+  rows: Array<Record<K, string | null> & { _count: { _all: number } }>,
+  key: K,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const r of rows) {
+    const id = r[key];
+    if (!id) continue;
+    out[id] = r._count._all;
+  }
+  return out;
+}
+
+function bucketize(
+  values: number[],
+  min: number,
+  max: number,
+  bucketCount: number,
+): Array<{ from: number; to: number; count: number }> {
+  if (values.length === 0 || max <= min) return [];
+  const width = (max - min) / bucketCount;
+  const buckets = Array.from({ length: bucketCount }, (_, i) => ({
+    from: min + i * width,
+    to: min + (i + 1) * width,
+    count: 0,
+  }));
+  for (const v of values) {
+    let idx = Math.floor((v - min) / width);
+    if (idx >= bucketCount) idx = bucketCount - 1;
+    if (idx < 0) idx = 0;
+    buckets[idx]!.count++;
+  }
+  return buckets;
+}
+
+function monthBuckets(
+  dates: Date[],
+  earliest: Date,
+  latest: Date,
+): Array<{ from: string; to: string; count: number }> {
+  if (dates.length === 0) return [];
+  const start = new Date(earliest.getFullYear(), earliest.getMonth(), 1);
+  const end = new Date(latest.getFullYear(), latest.getMonth() + 1, 1);
+  const buckets: Array<{ from: string; to: string; count: number; fromDate: Date; toDate: Date }> =
+    [];
+  for (let d = new Date(start); d < end; d.setMonth(d.getMonth() + 1)) {
+    const next = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    buckets.push({
+      from: d.toISOString(),
+      to: next.toISOString(),
+      count: 0,
+      fromDate: new Date(d),
+      toDate: next,
+    });
+  }
+  for (const dt of dates) {
+    const t = dt.getTime();
+    const idx = buckets.findIndex((b) => t >= b.fromDate.getTime() && t < b.toDate.getTime());
+    if (idx >= 0) buckets[idx]!.count++;
+  }
+  return buckets.map(({ from, to, count }) => ({ from, to, count }));
 }
