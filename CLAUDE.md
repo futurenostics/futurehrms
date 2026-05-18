@@ -211,6 +211,90 @@ date-range      → "preset|from..to"
 
 If a section needs behaviour the primitives don't support (e.g. creatable options, cascading filters, async paged options), **extend the primitive in place** — don't roll a parallel implementation. The Employees list at `apps/web/app/(app)/employees/page.tsx` is the canonical adoption example (4 sections — Department / Status / Contract type / Visibility, plus the active-chips bar above the DataTable).
 
+## Phase 2 — Commissions Module
+
+Phase 2 added Projects + Commissions on top of the HR Core. The
+locked patterns below are the contract; future sessions should read
+this section before touching commission code.
+
+### Module locations
+
+| What                     | Where                                                                                                                                                          |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Projects backend         | `apps/api/src/modules/projects/` (`projects.{controller,service,scope,mapper,manifest,module}.ts`)                                                             |
+| Commissions backend      | `apps/api/src/modules/commissions/` (rules, runs, calc engine, scheduler, timeline subscriber, employee-breakdown controller)                                  |
+| Pure calc engine         | `apps/api/src/modules/commissions/commission-calc.ts` + 23 vitest unit tests in `commission-calc.spec.ts` — canonical source of truth for calculation behavior |
+| Projects frontend        | `apps/web/app/(app)/projects/` + `apps/web/components/projects/`                                                                                               |
+| `/commission-rules`      | rule list + editor sheet                                                                                                                                       |
+| `/monthly-processing`    | run list + `[runId]` detail with line items                                                                                                                    |
+| `/commissions/approvals` | filtered approvals inbox                                                                                                                                       |
+| Commission components    | `apps/web/components/commissions/` (approve-lock dialog + run-detail building blocks) + `apps/web/components/dashboard/commission-widgets.tsx`                 |
+| Project detail tabs      | Overview · Role Assignments · Commission History · Timeline · Settings                                                                                         |
+| Run state machine        | `draft → pending_approval → approved → locked`; `rejected` is a side branch back to `draft` via `reopenRejected`                                               |
+| E2E tests                | `apps/web/tests/e2e/commissions/` — Playwright; run with `pnpm test:e2e` after `pnpm test:e2e:install`                                                         |
+
+### Key architectural patterns
+
+**FK-to-immutable-rule pattern (NOT denormalized snapshots).**
+Projects do not snapshot commission rule percentages into denormalized columns. Instead, `Project.commissionRuleId` FKs directly to a specific `CommissionRule` _version row_. The integrity contract:
+
+- A `CommissionRule`, once published, is immutable. `commission-rules.service.ts:update()` rejects edits to non-draft rules.
+- To change a rule, the publish flow creates a NEW row with a bumped version. The previous row's `effectiveTo` is stamped to `now`.
+- Existing Projects keep their `commissionRuleId` FK pointing at the original row. Their percentages are read through the rule, never duplicated.
+- Result: the same integrity property as snapshotting (past calculations remain stable) with fewer columns and no risk of snapshot drift.
+
+See `docs/DECISIONS.md` lines 295–310 for the full rationale.
+
+**Soft separation of duties on approval.**
+Commission run approval does NOT block the same user who submitted the run from also approving it. The `approverIsSubmitter` boolean is persisted on the run for audit transparency, but no exception is thrown. See `docs/DECISIONS.md` lines 401–412. If you need hard SoD later, add the guard in `commission-runs.service.ts:approve()` — currently a one-line addition.
+
+**Typed confirmation phrase on approval.**
+Approval requires a typed confirmation phrase (e.g. `APPROVE MAY 2026`) in the approve dialog — see the schema at `packages/types/src/schemas/commission-run.ts:commissionRunApproveSchema` and the dialog at `apps/web/components/commissions/approve-lock-dialog.tsx`. The phrase must match exactly. This is the design's enforced intentional-act control (PNG 10 in `docs/design/screens/commissions-design/`). The free-form `notes` field is optional.
+
+**Audit middleware does not cover seed inserts.**
+The Prisma audit middleware (`apps/api/src/core/audit/prisma-audit.middleware.ts`) is installed during NestJS `onApplicationBootstrap`. Seed scripts run as standalone Node processes — they call `prisma.$transaction(...)` directly without bootstrapping Nest, so seed writes do NOT generate `AuditLog` rows. This is intentional; seed data should not flood the audit log. Runtime API writes are audited normally. If you need to log an action that doesn't go through Prisma writes (e.g. an export, a read-only sensitive operation), use `AuditService.record(...)` explicitly — see the `exportCsv` method in `commission-runs.service.ts` for the canonical pattern.
+
+**FX rate pinning.**
+At run-create time, `CommissionRun.fxRateUsdToPkr` is stamped from `COMMISSION_DEFAULT_FX_RATE` env var (or `0.0035` fallback). HR can edit the rate on the run-detail screen before submitting. Once the run is approved, the rate is frozen — Phase 7+ PKR Payroll reads this snapshot rather than the current rate. See `docs/DECISIONS.md` line 394.
+
+### Permission model
+
+**Projects** (10 perms; see `projects.manifest.ts`):
+
+- Scoping: `view_own` · `view_team` · `view_all`
+- Writes: `create` · `update` · `delete` · `change_status` · `assign_roles`
+- Special: `override` (flip a project off rule defaults; audited with mandatory `overrideReason`)
+- Taxonomy: `manage_categories`
+
+**Commissions** (12 perms; see `commissions.manifest.ts`):
+
+- Per-employee: `view_own_breakdown` (every authenticated user) · `view_all_breakdowns` (HR/Finance)
+- Read: `view_rules` · `view_runs`
+- Rules: `manage_rules`
+- Runs: `create_run` · `adjust_line_item` (draft only) · `submit_run` · `approve_run` · `reject_run` · `lock_run`
+- Export: `export_run` (frontend button visibility gate; the backend endpoint is gated on `view_runs` per the design intent "if you can see the run you can export it")
+
+Default role bindings live in each manifest's `defaultRolePermissions`. HR Admin gets the create/manage half; Finance Manager gets the approve/lock half — separation of duties through permission grants, not through hard runtime checks.
+
+### Events emitted
+
+The EventBus is the audit + side-effect highway. Subscribers (timeline, future notifications/BI sinks) listen here.
+
+**Projects:** `project.created`, `project.updated`, `project.deleted`, `project.status.changed`, `project.role.assigned`, `project.role.removed`.
+
+**Commission rules:** `commission.rule.published`.
+
+**Commission runs:** `commission.run.created`, `commission.run.recalculated`, `commission.run.submitted_for_approval`, `commission.run.approved`, `commission.run.rejected`, `commission.run.locked`, `commission.run.exported`, `commission.line_item.adjusted`.
+
+The timeline subscriber (`commission-timeline.subscriber.ts`) listens to `commission.run.approved` and fans out one `TimelineEntry` per affected employee with `module='commissions'`. Other events have no subscribers yet but the bus call is in place for future hooks.
+
+### Reference for future work
+
+- Business rule details: `docs/DECISIONS.md` § "Phase 2 — Commissions module — Business rules" (lines 219–526).
+- Visual references: PNGs in `docs/design/screens/commissions-design/` (07 projects list, 08 new-project live preview, 09 run detail, 10 approve dialog, 11 rules list, 12 rule editor).
+- Calculation behavior: the 23-passing vitest suite in `apps/api/src/modules/commissions/commission-calc.spec.ts` is the canonical reference. Reach for it before re-deriving any formulas.
+- E2E regression net: `apps/web/tests/e2e/commissions/` — covers the lifecycle (draft → submit → approve), rejection + reopen, confirmation-phrase validation, and line-item adjustment guards.
+
 ## Asking for clarification
 
 - When something is genuinely ambiguous, ask before deciding.
