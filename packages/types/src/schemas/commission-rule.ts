@@ -95,13 +95,46 @@ export const commissionRulePublicSchema = z.object({
 });
 export type CommissionRulePublic = z.infer<typeof commissionRulePublicSchema>;
 
+/**
+ * Comma-separated id list — same coercer pattern used by the employees
+ * and projects schemas. Accepts a string[] or a comma-joined string.
+ */
+const ruleCsvIds = z
+  .union([z.string(), z.array(z.string())])
+  .optional()
+  .transform((v) => {
+    if (v === undefined) return [] as string[];
+    if (Array.isArray(v)) return v.filter(Boolean);
+    return v
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  });
+
+/** ISO-string date — input + output both `string` so the type round-trips through URL params. */
+const ruleIsoDate = z
+  .string()
+  .refine((s) => !Number.isNaN(Date.parse(s)), 'Invalid date')
+  .optional();
+
 export const commissionRuleListQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
   limit: z.coerce.number().int().min(1).max(10_000).default(200),
-  /** Filter by department slug or '*'. */
-  department: z.string().optional(),
-  categoryId: z.string().optional(),
-  status: commissionRuleStatusSchema.optional(),
+  search: z.string().trim().min(1).optional(),
+
+  /* Array-shaped filters — array IDs / slugs / status. */
+  departments: ruleCsvIds,
+  categoryIds: ruleCsvIds,
+  statuses: ruleCsvIds,
+  /** Pool mode slugs (`percentage` | `fixed`). */
+  poolModes: ruleCsvIds,
+
+  /* Range filters. */
+  poolValueMin: z.coerce.number().nonnegative().optional(),
+  poolValueMax: z.coerce.number().nonnegative().optional(),
+  effectiveFromStart: ruleIsoDate,
+  effectiveFromEnd: ruleIsoDate,
+
   /** When true, only currently-active (effectiveFrom <= now < effectiveTo) rows. */
   activeOnly: z.coerce.boolean().default(false),
 });
@@ -113,6 +146,52 @@ export const commissionRuleListResponseSchema = z.object({
   hasMore: z.boolean(),
 });
 export type CommissionRuleListResponse = z.infer<typeof commissionRuleListResponseSchema>;
+
+/* ---------- Filter counts (Advanced Filters drawer) ---------- */
+
+export const commissionRuleFilterCountsQuerySchema = z.object({
+  departments: ruleCsvIds,
+  categoryIds: ruleCsvIds,
+  statuses: ruleCsvIds,
+  poolModes: ruleCsvIds,
+  poolValueMin: z.coerce.number().nonnegative().optional(),
+  poolValueMax: z.coerce.number().nonnegative().optional(),
+  effectiveFromStart: ruleIsoDate,
+  effectiveFromEnd: ruleIsoDate,
+  search: z.string().trim().min(1).optional(),
+  activeOnly: z.coerce.boolean().default(false),
+});
+export type CommissionRuleFilterCountsQuery = z.infer<typeof commissionRuleFilterCountsQuerySchema>;
+
+export const commissionRuleFilterCountBucketSchema = z.object({
+  from: z.union([z.number(), z.string()]),
+  to: z.union([z.number(), z.string()]),
+  count: z.number().int().nonnegative(),
+});
+export type CommissionRuleFilterCountBucket = z.infer<typeof commissionRuleFilterCountBucketSchema>;
+
+export const commissionRuleFilterCountsResponseSchema = z.object({
+  total: z.number().int().nonnegative(),
+  byDepartment: z.record(z.string(), z.number().int().nonnegative()),
+  byCategory: z.record(z.string(), z.number().int().nonnegative()),
+  byStatus: z.record(z.string(), z.number().int().nonnegative()),
+  byPoolMode: z.record(z.string(), z.number().int().nonnegative()),
+  /** Pool value histogram across the active set. */
+  poolValue: z.object({
+    min: z.number().nonnegative(),
+    max: z.number().nonnegative(),
+    buckets: z.array(commissionRuleFilterCountBucketSchema),
+  }),
+  /** Effective-from month buckets between earliest and latest. */
+  effectiveFrom: z.object({
+    earliest: z.string().nullable(),
+    latest: z.string().nullable(),
+    buckets: z.array(commissionRuleFilterCountBucketSchema),
+  }),
+});
+export type CommissionRuleFilterCountsResponse = z.infer<
+  typeof commissionRuleFilterCountsResponseSchema
+>;
 
 /**
  * Helper response for "GET /commission-rules/:id/affected-projects" —

@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import {
   commissionRuleCreateSchema,
+  commissionRuleFilterCountsQuerySchema,
   commissionRuleListQuerySchema,
   commissionRulePublishSchema,
   commissionRuleUpdateSchema,
@@ -25,6 +26,18 @@ export class CommissionsController {
   @RequirePermission('commissions:view_rules')
   async listActive() {
     return this.rules.list(commissionRuleListQuerySchema.parse({ activeOnly: true, limit: 1000 }));
+  }
+
+  /**
+   * Powers the Advanced Filters drawer on the commission-rules page —
+   * returns matched total + per-option counts under the current
+   * filter state. Mirrors the employees + projects endpoints.
+   */
+  @Get('filter-counts')
+  @RequirePermission('commissions:view_rules')
+  async filterCounts(@Query() rawQuery: Record<string, unknown>) {
+    const query = commissionRuleFilterCountsQuerySchema.parse(rawQuery);
+    return this.rules.getFilterCounts(query);
   }
 
   @Get(':id')

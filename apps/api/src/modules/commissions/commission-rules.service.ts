@@ -23,11 +23,15 @@ import { Prisma } from '@prisma/client';
 import type {
   CommissionRuleAffectedProjects,
   CommissionRuleCreateInput,
+  CommissionRuleFilterCountsQuery,
+  CommissionRuleFilterCountsResponse,
   CommissionRuleListQuery,
   CommissionRuleListResponse,
   CommissionRulePublic,
   CommissionRulePublishInput,
+  CommissionRuleStatus,
   CommissionRuleUpdateInput,
+  PoolMode,
   RolePercentages,
 } from '@futurenostics/types';
 import type { AuthenticatedUser } from '../../core/auth/types';
@@ -72,16 +76,7 @@ export class CommissionRulesService {
   /* ---------- Reads ---------- */
 
   async list(query: CommissionRuleListQuery): Promise<CommissionRuleListResponse> {
-    const where: Prisma.CommissionRuleWhereInput = {};
-    if (query.department) where.department = query.department;
-    if (query.categoryId) where.categoryId = query.categoryId;
-    if (query.status) where.status = query.status;
-    if (query.activeOnly) {
-      const now = new Date();
-      where.status = 'active';
-      where.effectiveFrom = { lte: now };
-      where.OR = [{ effectiveTo: null }, { effectiveTo: { gt: now } }];
-    }
+    const where = buildCommissionRuleFilterWhere(query);
 
     const [rows, total] = await Promise.all([
       prisma.commissionRule.findMany({
@@ -98,6 +93,100 @@ export class CommissionRulesService {
       items: rows.map(toCommissionRulePublic),
       total,
       hasMore: query.offset + rows.length < total,
+    };
+  }
+
+  /**
+   * Powers the Advanced Filters drawer (`GET /commission-rules/filter-counts`).
+   *
+   * Mirrors employees + projects: returns matched total + per-option
+   * counts under the current filter state, plus a pool-value histogram
+   * and effective-from month buckets so the drawer's range/date
+   * sections can render their backdrops without a second round-trip.
+   */
+  async getFilterCounts(
+    query: CommissionRuleFilterCountsQuery,
+  ): Promise<CommissionRuleFilterCountsResponse> {
+    const where = buildCommissionRuleFilterWhere(query);
+
+    const [
+      total,
+      byDepartmentRows,
+      byCategoryRows,
+      byStatusRows,
+      byPoolModeRows,
+      poolAgg,
+      poolRows,
+      effFromAgg,
+      effFromRows,
+    ] = await Promise.all([
+      prisma.commissionRule.count({ where }),
+      prisma.commissionRule.groupBy({ by: ['department'], where, _count: { _all: true } }),
+      prisma.commissionRule.groupBy({ by: ['categoryId'], where, _count: { _all: true } }),
+      prisma.commissionRule.groupBy({ by: ['status'], where, _count: { _all: true } }),
+      prisma.commissionRule.groupBy({ by: ['poolMode'], where, _count: { _all: true } }),
+      prisma.commissionRule.aggregate({
+        where,
+        _min: { poolValue: true },
+        _max: { poolValue: true },
+      }),
+      prisma.commissionRule.findMany({ where, select: { poolValue: true }, take: 10_000 }),
+      prisma.commissionRule.aggregate({
+        where,
+        _min: { effectiveFrom: true },
+        _max: { effectiveFrom: true },
+      }),
+      prisma.commissionRule.findMany({ where, select: { effectiveFrom: true }, take: 10_000 }),
+    ]);
+
+    const byDepartment = aggToCountRecord(byDepartmentRows, 'department');
+    const byCategory = aggToCountRecord(byCategoryRows, 'categoryId');
+    const byStatus = aggToCountRecord(byStatusRows, 'status');
+    const byPoolMode = aggToCountRecord(byPoolModeRows, 'poolMode');
+
+    /* Pool-value histogram — 20 buckets. */
+    let poolValue: CommissionRuleFilterCountsResponse['poolValue'];
+    if (poolRows.length > 0) {
+      const min = poolAgg._min.poolValue ? Number(poolAgg._min.poolValue.toString()) : 0;
+      const max = poolAgg._max.poolValue ? Number(poolAgg._max.poolValue.toString()) : 0;
+      poolValue = {
+        min,
+        max,
+        buckets: bucketizeNumbers(
+          poolRows.map((r) => Number(r.poolValue.toString())),
+          min,
+          max,
+          20,
+        ),
+      };
+    } else {
+      poolValue = { min: 0, max: 0, buckets: [] };
+    }
+
+    /* Effective-from histogram — month buckets. */
+    const earliest = effFromAgg._min.effectiveFrom ?? null;
+    const latest = effFromAgg._max.effectiveFrom ?? null;
+    const effectiveFrom = {
+      earliest: earliest ? earliest.toISOString() : null,
+      latest: latest ? latest.toISOString() : null,
+      buckets:
+        earliest && latest
+          ? monthBucketsForDates(
+              effFromRows.map((r) => r.effectiveFrom),
+              earliest,
+              latest,
+            )
+          : [],
+    };
+
+    return {
+      total,
+      byDepartment,
+      byCategory,
+      byStatus,
+      byPoolMode,
+      poolValue,
+      effectiveFrom,
     };
   }
 
@@ -305,4 +394,128 @@ export class CommissionRulesService {
       totalRevenueUsd: projects.reduce((sum, p) => sum + Number(p.revenueUsd), 0),
     };
   }
+}
+
+/* ---------- Filter-counts helpers (shared with service.list) ---------- */
+
+/**
+ * Builds the canonical `Prisma.CommissionRuleWhereInput` for the list
+ * + filter-counts endpoints. Both query shapes carry the same filter
+ * fields; the list query just adds offset/limit. Mirrors
+ * `buildEmployeeFilterWhere` / `buildProjectFilterWhere`.
+ */
+type CommissionRuleFilterableQuery = Pick<
+  CommissionRuleFilterCountsQuery,
+  | 'departments'
+  | 'categoryIds'
+  | 'statuses'
+  | 'poolModes'
+  | 'poolValueMin'
+  | 'poolValueMax'
+  | 'effectiveFromStart'
+  | 'effectiveFromEnd'
+  | 'search'
+  | 'activeOnly'
+>;
+
+function buildCommissionRuleFilterWhere(
+  query: CommissionRuleFilterableQuery,
+): Prisma.CommissionRuleWhereInput {
+  const filters: Prisma.CommissionRuleWhereInput[] = [];
+  if (query.departments.length > 0) filters.push({ department: { in: query.departments } });
+  if (query.categoryIds.length > 0) filters.push({ categoryId: { in: query.categoryIds } });
+  if (query.statuses.length > 0) {
+    filters.push({ status: { in: query.statuses as CommissionRuleStatus[] } });
+  }
+  if (query.poolModes.length > 0) {
+    filters.push({ poolMode: { in: query.poolModes as PoolMode[] } });
+  }
+  if (query.poolValueMin !== undefined) filters.push({ poolValue: { gte: query.poolValueMin } });
+  if (query.poolValueMax !== undefined) filters.push({ poolValue: { lte: query.poolValueMax } });
+  if (query.effectiveFromStart) {
+    filters.push({ effectiveFrom: { gte: new Date(query.effectiveFromStart) } });
+  }
+  if (query.effectiveFromEnd) {
+    filters.push({ effectiveFrom: { lte: new Date(query.effectiveFromEnd) } });
+  }
+  if (query.activeOnly) {
+    const now = new Date();
+    filters.push({ status: 'active' });
+    filters.push({ effectiveFrom: { lte: now } });
+    filters.push({ OR: [{ effectiveTo: null }, { effectiveTo: { gt: now } }] });
+  }
+  if (query.search) {
+    filters.push({
+      OR: [
+        { department: { contains: query.search, mode: 'insensitive' } },
+        { pendingReason: { contains: query.search, mode: 'insensitive' } },
+        { category: { name: { contains: query.search, mode: 'insensitive' } } },
+      ],
+    });
+  }
+
+  return filters.length > 0 ? { AND: filters } : {};
+}
+
+function aggToCountRecord<K extends string>(
+  rows: Array<Record<K, string | null> & { _count: { _all: number } }>,
+  key: K,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const r of rows) {
+    const id = r[key];
+    if (!id) continue;
+    out[id] = r._count._all;
+  }
+  return out;
+}
+
+function bucketizeNumbers(
+  values: number[],
+  min: number,
+  max: number,
+  bucketCount: number,
+): Array<{ from: number; to: number; count: number }> {
+  if (values.length === 0 || max <= min) return [];
+  const width = (max - min) / bucketCount;
+  const buckets = Array.from({ length: bucketCount }, (_, i) => ({
+    from: min + i * width,
+    to: min + (i + 1) * width,
+    count: 0,
+  }));
+  for (const v of values) {
+    let idx = Math.floor((v - min) / width);
+    if (idx >= bucketCount) idx = bucketCount - 1;
+    if (idx < 0) idx = 0;
+    buckets[idx]!.count++;
+  }
+  return buckets;
+}
+
+function monthBucketsForDates(
+  dates: Date[],
+  earliest: Date,
+  latest: Date,
+): Array<{ from: string; to: string; count: number }> {
+  if (dates.length === 0) return [];
+  const start = new Date(earliest.getFullYear(), earliest.getMonth(), 1);
+  const end = new Date(latest.getFullYear(), latest.getMonth() + 1, 1);
+  const buckets: Array<{ from: string; to: string; count: number; fromMs: number; toMs: number }> =
+    [];
+  for (let d = new Date(start); d < end; d.setMonth(d.getMonth() + 1)) {
+    const next = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    buckets.push({
+      from: d.toISOString(),
+      to: next.toISOString(),
+      count: 0,
+      fromMs: d.getTime(),
+      toMs: next.getTime(),
+    });
+  }
+  for (const dt of dates) {
+    const t = dt.getTime();
+    const idx = buckets.findIndex((b) => t >= b.fromMs && t < b.toMs);
+    if (idx >= 0) buckets[idx]!.count++;
+  }
+  return buckets.map(({ from, to, count }) => ({ from, to, count }));
 }
