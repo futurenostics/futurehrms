@@ -33,8 +33,10 @@ model User {
   employeeId   String?   @unique
   employee     Employee? @relation(fields: [employeeId], references: [id])
 
-  roles         UserRole[]
-  refreshTokens RefreshToken[]
+  roles                   UserRole[]
+  refreshTokens           RefreshToken[]
+  notifications           Notification[]            @relation("UserNotifications")
+  notificationPreferences NotificationPreference[]
 
   isActive            Boolean   @default(true)
   failedLoginAttempts Int       @default(0)
@@ -623,4 +625,77 @@ model AuditLog {
   @@index([entity, entityId])
   @@index([actorId, createdAt])
   @@index([module, createdAt])
+}
+
+// ---------- Notifications (Phase 3) ----------
+
+/// One row per delivered notification, regardless of channel.
+///
+/// The `channel` column records what was attempted; the `status` column
+/// tracks the in-app lifecycle (unread → read → dismissed). For email-only
+/// notifications the row still lands here (with sentAt populated) so the
+/// audit trail has a single source of truth — the in-app status just
+/// stays `sent` rather than progressing through read/dismissed.
+///
+/// Polymorphic source via (sourceType, sourceId) so a notification can
+/// link back to whatever triggered it (a commission run, a reminder, an
+/// approval, an employee profile change).
+model Notification {
+  id              String  @id @default(cuid())
+  recipientUserId String
+  recipient       User    @relation("UserNotifications", fields: [recipientUserId], references: [id], onDelete: Cascade)
+  /// Type key — registered via the NotificationTypes registry on module
+  /// init. e.g. "commission.run.approved", "employee.probation.ending".
+  type            String
+  title           String
+  body            String
+  /// Optional in-app deep link. Clicking the notification navigates here
+  /// and auto-marks as read.
+  link            String?
+  /// Arbitrary type-specific data the renderer + email template can read.
+  payload         Json?
+  /// `info` | `success` | `warning` | `danger`. Drives the badge tone in
+  /// the bell popover and any future inbox UI.
+  severity        String  @default("info")
+  /// `in_app` | `email` | `both`. What was actually attempted at send
+  /// time — derived from the user's NotificationPreference at send.
+  channel         String  @default("in_app")
+  /// `unread` | `read` | `dismissed` | `sent` (email-only flows).
+  status          String  @default("unread")
+  sourceType      String?
+  sourceId        String?
+  createdAt       DateTime  @default(now())
+  readAt          DateTime?
+  sentAt          DateTime?
+  /// Email-channel idempotency — populated when the email transport
+  /// reports a provider message id (Resend) or a queued indicator (SMTP).
+  emailMessageId  String?
+
+  @@index([recipientUserId, status, createdAt])
+  @@index([recipientUserId, type, createdAt])
+  @@index([sourceType, sourceId])
+  @@index([type, createdAt])
+}
+
+/// Per-user, per-type, per-channel toggle.
+///
+/// Absence implies the type's registered default (in-app on, email on for
+/// `severity >= warning`). A row exists only when the user has explicitly
+/// overridden a default — keeps the table small and lookups cheap.
+model NotificationPreference {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Notification type key.
+  type      String
+  /// `in_app` | `email` | `push` | `slack`. push + slack are accepted
+  /// here so future channels don't need a migration; they're not honored
+  /// by any sender in Phase 3.
+  channel   String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, type, channel])
+  @@index([userId])
 }
