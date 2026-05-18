@@ -14,6 +14,9 @@ import { CurrentUser } from '../../core/auth/decorators/current-user.decorator';
 import { RequirePermission } from '../../core/auth/decorators/require-permission.decorator';
 import type { AuthenticatedUser } from '../../core/auth/types';
 import { ReminderRulesService } from './reminder-rules.service';
+import { RemindersReadService } from './reminders-read.service';
+import { ReminderSchedulerService } from './reminder-scheduler.service';
+import { RecipientResolverRegistry } from './recipient-resolver';
 import { triggerSpecSchema } from './reminder-trigger.types';
 
 const listQuerySchema = z.object({
@@ -34,6 +37,7 @@ const createSchema = z.object({
   triggerSpec: triggerSpecSchema,
   notificationType: z.string().trim().min(1).max(120),
   recipientResolver: z.string().trim().min(1).max(80),
+  departmentId: z.string().nullable().optional(),
 });
 
 const updateSchema = z.object({
@@ -42,33 +46,78 @@ const updateSchema = z.object({
   triggerSpec: triggerSpecSchema.optional(),
   notificationType: z.string().trim().min(1).max(120).optional(),
   recipientResolver: z.string().trim().min(1).max(80).optional(),
+  departmentId: z.string().nullable().optional(),
+  isEnabled: z.boolean().optional(),
 });
 
-@Controller('reminder-rules')
-export class RemindersController {
-  constructor(private readonly rules: ReminderRulesService) {}
+const scheduledQuerySchema = z.object({
+  status: z.enum(['scheduled', 'fired', 'cancelled', 'all']).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
 
-  @Get()
+const cancelScheduledSchema = z.object({
+  reason: z.string().trim().min(1).max(500),
+});
+
+/**
+ * Single controller with no prefix — routes are grouped under
+ * /reminder-rules (rule CRUD + publish + archive + test) and
+ * /reminders (scheduled list, status, timeline, cancel).
+ */
+@Controller()
+export class RemindersController {
+  constructor(
+    private readonly rules: ReminderRulesService,
+    private readonly read: RemindersReadService,
+    private readonly scheduler: ReminderSchedulerService,
+    private readonly resolvers: RecipientResolverRegistry,
+  ) {}
+
+  /* ---------- Rule lifecycle ---------- */
+
+  @Get('reminder-rules')
   @RequirePermission('reminders:view_rules')
-  async list(@CurrentUser() user: AuthenticatedUser, @Query() rawQuery: Record<string, unknown>) {
+  async listRules(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() rawQuery: Record<string, unknown>,
+  ) {
     const query = listQuerySchema.parse(rawQuery);
     return this.rules.list(user, query);
   }
 
-  @Get(':id')
+  @Get('reminder-rules/recipient-resolvers')
+  @RequirePermission('reminders:view_rules')
+  async listResolvers() {
+    return {
+      items: this.resolvers.list().map((r) => ({
+        key: r.key,
+        label: r.label,
+        description: r.description ?? null,
+      })),
+    };
+  }
+
+  @Get('reminder-rules/trigger-counts')
+  @RequirePermission('reminders:view_rules')
+  async triggerCounts(@CurrentUser() user: AuthenticatedUser) {
+    return this.read.triggerCountsNext30Days(user);
+  }
+
+  @Get('reminder-rules/:id')
   @RequirePermission('reminders:view_rules')
   async findOne(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.rules.findOne(user, id);
   }
 
-  @Post()
+  @Post('reminder-rules')
   @RequirePermission('reminders:create_rule')
   async create(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     const input = createSchema.parse(body);
     return this.rules.create(user, input);
   }
 
-  @Patch(':id')
+  @Patch('reminder-rules/:id')
   @RequirePermission('reminders:update_rule')
   async update(
     @CurrentUser() user: AuthenticatedUser,
@@ -79,24 +128,71 @@ export class RemindersController {
     return this.rules.update(user, id, input);
   }
 
-  @Post(':id/publish')
+  @Post('reminder-rules/:id/publish')
   @RequirePermission('reminders:publish_rule')
   @HttpCode(HttpStatus.OK)
   async publish(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.rules.publish(user, id);
   }
 
-  @Post(':id/archive')
+  @Post('reminder-rules/:id/archive')
   @RequirePermission('reminders:archive_rule')
   @HttpCode(HttpStatus.OK)
   async archive(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.rules.archive(user, id);
   }
 
-  @Post(':id/trigger-test')
+  @Post('reminder-rules/:id/trigger-test')
   @RequirePermission('reminders:trigger_test')
   @HttpCode(HttpStatus.OK)
   async triggerTest(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.rules.triggerTest(user, id);
+  }
+
+  /* ---------- Scheduled reminders + scheduler status ---------- */
+
+  @Get('reminders/status')
+  @RequirePermission('reminders:view_rules')
+  async schedulerStatus() {
+    return this.scheduler.getStatus();
+  }
+
+  @Get('reminders/timeline')
+  @RequirePermission('reminders:view_rules')
+  async timeline(@CurrentUser() user: AuthenticatedUser) {
+    return this.read.timelineNext30Days(user);
+  }
+
+  @Get('reminders')
+  @RequirePermission('reminders:view_scheduled')
+  async listScheduled(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() rawQuery: Record<string, unknown>,
+  ) {
+    const query = scheduledQuerySchema.parse(rawQuery);
+    return this.read.listScheduled(user, query);
+  }
+
+  @Post('reminders/:id/cancel')
+  @RequirePermission('reminders:view_scheduled')
+  @HttpCode(HttpStatus.OK)
+  async cancelScheduled(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const input = cancelScheduledSchema.parse(body);
+    return this.read.cancelScheduled(user, id, input.reason);
+  }
+
+  /**
+   * Manual tick — admin/test affordance to advance the scheduler
+   * without waiting for the cron. Gated on view_scheduled (HR Admin).
+   */
+  @Post('reminders/run-now')
+  @RequirePermission('reminders:view_scheduled')
+  @HttpCode(HttpStatus.OK)
+  async runNow() {
+    return this.scheduler.tickHandler();
   }
 }

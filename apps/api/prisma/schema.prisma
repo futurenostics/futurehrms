@@ -125,9 +125,10 @@ model Department {
   slug     String  @unique
   isActive Boolean @default(true)
 
-  employees    Employee[]
-  designations Designation[]
-  projects     Project[]
+  employees     Employee[]
+  designations  Designation[]
+  projects      Project[]
+  reminderRules ReminderRule[] @relation("ReminderRulesByDepartment")
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -707,6 +708,17 @@ model ReminderRule {
   name              String
   description       String?
   status            String   @default("draft")  // draft | active | archived
+  /// Per-design (PNG 12): each rule can be scoped to a department.
+  /// null = applies org-wide ("All"). Drives the Dept column + chip
+  /// color in the rules library, and is read by the trigger
+  /// evaluator to narrow the source-entity match set.
+  departmentId      String?
+  department        Department? @relation("ReminderRulesByDepartment", fields: [departmentId], references: [id])
+  /// Per-design: each row has an ON/OFF toggle independent of the
+  /// active/archived versioning state. A rule can be active + disabled
+  /// (i.e. scheduled to evaluate but currently muted). Defaults to
+  /// true so a freshly-published rule starts firing immediately.
+  isEnabled         Boolean  @default(true)
   /// `event` or `cron`.
   triggerType       String
   /// JSON spec — shape depends on triggerType. See module docstring.
