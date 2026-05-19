@@ -182,6 +182,16 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
   // Switch instead, where the per-row mutation lives.
   const readonly = !isDraft;
 
+  // Required-field validation. Mirrors the BE zod schema so the user
+  // gets inline feedback before the request lands and the Save button
+  // doesn't fire a doomed POST.
+  const keyError =
+    mode === 'create' && (key.trim().length === 0 || !/^[a-z0-9][a-z0-9-]*$/.test(key.trim()))
+      ? 'lowercase letters, digits, dashes — used in seeds + URLs'
+      : null;
+  const nameError = isDraft && name.trim().length === 0 ? 'Name is required' : null;
+  const canSave = !busy && !keyError && !nameError;
+
   function buildTriggerSpec(): TriggerSpec {
     if (triggerType === 'event') {
       const offset = `${offsetDirection === 'before' ? '-' : ''}P${
@@ -288,20 +298,26 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
           <div className="gap-fn-5 flex flex-col">
             {/* Basics */}
             <FormSection title="Basics">
-              <Field label="Key" hint="lowercase letters, digits, dashes — used in seeds + URLs">
+              <Field
+                label="Key"
+                hint="lowercase letters, digits, dashes — used in seeds + URLs"
+                error={key.length > 0 ? keyError : null}
+              >
                 <Input
                   value={key}
                   onChange={(e) => setKey(e.target.value)}
                   disabled={mode === 'edit'}
                   placeholder="probation-end-eng"
+                  aria-invalid={!!(key.length > 0 && keyError)}
                 />
               </Field>
-              <Field label="Name">
+              <Field label="Name" error={name.length === 0 ? null : nameError}>
                 <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   disabled={readonly}
                   placeholder="Probation end"
+                  aria-invalid={!!nameError && name.length > 0}
                 />
               </Field>
               <Field label="Description">
@@ -558,7 +574,12 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
           </Button>
           {isDraft && (
             <>
-              <Button variant="secondary" onClick={handleSaveDraft} disabled={busy}>
+              <Button
+                variant="secondary"
+                onClick={handleSaveDraft}
+                disabled={!canSave}
+                title={keyError ?? nameError ?? undefined}
+              >
                 {busy ? <Loader2 className="h-fn-3_5 w-fn-3_5 animate-spin" /> : null}
                 Save draft
               </Button>
@@ -589,17 +610,23 @@ function FormSection({ title, children }: { title: string; children: React.React
 function Field({
   label,
   hint,
+  error,
   children,
 }: {
   label: string;
   hint?: string;
+  error?: string | null;
   children: React.ReactNode;
 }) {
   return (
     <div className="gap-fn-1 flex flex-col">
       <Label className="text-fn-fg-muted text-[12.5px]">{label}</Label>
       {children}
-      {hint && <p className="text-fn-fg-faint text-[11px]">{hint}</p>}
+      {error ? (
+        <p className="text-fn-danger text-[11px]">{error}</p>
+      ) : hint ? (
+        <p className="text-fn-fg-faint text-[11px]">{hint}</p>
+      ) : null}
     </div>
   );
 }
