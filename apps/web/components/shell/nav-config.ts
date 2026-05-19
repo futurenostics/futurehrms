@@ -27,6 +27,14 @@ export interface NavItem {
   badge?: string;
   /** Permission key — when set, the item only renders for users with the perm. */
   requires?: string;
+  /**
+   * When true, the item is only active on an exact path match. Use
+   * for landing-page items whose href is a prefix of sibling routes
+   * (e.g. `/settings` is the General item but `/settings/roles` is a
+   * sibling — without exact: true, both would highlight on the
+   * sibling page).
+   */
+  exact?: boolean;
 }
 
 export interface NavGroup {
@@ -91,7 +99,7 @@ export const navGroups: NavGroup[] = [
         key: 'reminder-rules',
         label: 'Reminder Rules',
         icon: BellRing,
-        href: '/settings/reminder-rules',
+        href: '/reminder-rules',
         requires: 'reminders:view_rules',
       },
       {
@@ -114,7 +122,7 @@ export const navGroups: NavGroup[] = [
         href: '/settings/roles',
         requires: 'settings:roles:view',
       },
-      { key: 'general', label: 'General', icon: Settings, href: '/settings' },
+      { key: 'general', label: 'General', icon: Settings, href: '/settings', exact: true },
     ],
   },
 ];

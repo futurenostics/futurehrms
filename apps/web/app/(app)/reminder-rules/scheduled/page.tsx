@@ -21,7 +21,7 @@ import { ruleHue } from '@/components/reminders/rule-visuals';
 import { cn } from '@/lib/utils';
 
 /**
- * /settings/reminder-rules/scheduled — HR-admin debug view of every
+ * /reminder-rules/scheduled — HR-admin debug view of every
  * scheduled, fired, or cancelled Reminder row.
  *
  * Use case: "why didn't <person> get the reminder?" — admin opens
@@ -52,16 +52,12 @@ export default function ScheduledRemindersPage() {
           <div className="gap-fn-2 flex min-w-0 items-center">
             <span
               aria-hidden
-              className="h-fn-2 w-fn-2 shrink-0 rounded-fn-full"
+              className="h-fn-2 w-fn-2 rounded-fn-full shrink-0"
               style={{ background: `oklch(0.60 0.16 ${ruleHue(r.ruleKey)})` }}
             />
             <div className="gap-fn-0_5 flex min-w-0 flex-col">
-              <span className="text-fn-fg font-fn-semibold truncate text-[13px]">
-                {r.ruleName}
-              </span>
-              <span className="text-fn-fg-faint font-mono truncate text-[10.5px]">
-                {r.ruleKey}
-              </span>
+              <span className="text-fn-fg font-fn-semibold truncate text-[13px]">{r.ruleName}</span>
+              <span className="text-fn-fg-faint truncate font-mono text-[10.5px]">{r.ruleKey}</span>
             </div>
           </div>
         ),
@@ -75,7 +71,7 @@ export default function ScheduledRemindersPage() {
               {r.recipientName ?? r.recipientEmail}
             </span>
             {r.recipientName && (
-              <span className="text-fn-fg-faint font-mono truncate text-[10.5px]">
+              <span className="text-fn-fg-faint truncate font-mono text-[10.5px]">
                 {r.recipientEmail}
               </span>
             )}
@@ -141,22 +137,12 @@ export default function ScheduledRemindersPage() {
   );
 
   return (
-    <AppShell
-      breadcrumbs={[
-        { label: 'Reminders' },
-        { label: 'Rules' },
-        { label: 'Scheduled' },
-      ]}
-    >
+    <AppShell breadcrumbs={[{ label: 'Reminders' }, { label: 'Rules' }, { label: 'Scheduled' }]}>
       <div className="gap-fn-5 flex h-full flex-col">
         <div className="gap-fn-3 flex flex-wrap items-end justify-between">
           <div className="gap-fn-1_5 flex flex-col">
             <div className="gap-fn-1_5 flex items-center">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => router.push('/settings/reminder-rules')}
-              >
+              <Button variant="ghost" size="sm" onClick={() => router.push('/reminder-rules')}>
                 <ArrowLeft className="h-fn-3_5 w-fn-3_5" /> Back to rules
               </Button>
             </div>
@@ -167,8 +153,8 @@ export default function ScheduledRemindersPage() {
               Scheduled reminders
             </h1>
             <p className="text-fn-fg-muted max-w-[640px] text-[14px]">
-              Inbox view of every Reminder row produced by event triggers + cron evaluations.
-              Cancel a scheduled row if a rule mis-fired or the source entity changed.
+              Inbox view of every Reminder row produced by event triggers + cron evaluations. Cancel
+              a scheduled row if a rule mis-fired or the source entity changed.
             </p>
           </div>
         </div>
@@ -228,8 +214,7 @@ export default function ScheduledRemindersPage() {
 }
 
 function StatusPill({ status }: { status: ReminderPublic['status'] }) {
-  const tone =
-    status === 'scheduled' ? 'info' : status === 'fired' ? 'success' : 'default';
+  const tone = status === 'scheduled' ? 'info' : status === 'fired' ? 'success' : 'default';
   const label = status[0]!.toUpperCase() + status.slice(1);
   return (
     <Badge tone={tone} dot>

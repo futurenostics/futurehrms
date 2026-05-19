@@ -142,7 +142,7 @@ function NavList({
       <ul className="flex flex-col">
         {items.map((item) => (
           <li key={item.key}>
-            <NavRow item={item} active={isActive(pathname, item.href)} collapsed={collapsed} />
+            <NavRow item={item} active={isActive(pathname, item)} collapsed={collapsed} />
           </li>
         ))}
       </ul>
@@ -150,10 +150,10 @@ function NavList({
   );
 }
 
-function isActive(pathname: string | null, href: string): boolean {
+function isActive(pathname: string | null, item: NavItem): boolean {
   if (!pathname) return false;
-  if (href === '/dashboard') return pathname === '/dashboard';
-  return pathname === href || pathname.startsWith(`${href}/`);
+  if (item.exact || item.href === '/dashboard') return pathname === item.href;
+  return pathname === item.href || pathname.startsWith(`${item.href}/`);
 }
 
 function NavRow({

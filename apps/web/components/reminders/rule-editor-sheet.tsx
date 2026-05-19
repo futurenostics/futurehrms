@@ -175,13 +175,16 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
   const isDraft = existing.data?.status === 'draft' || mode === 'create';
   const isActive = existing.data?.status === 'active';
   const isArchived = existing.data?.status === 'archived';
-  const busy =
-    create.isPending || update.isPending || publish.isPending || archive.isPending;
+  const busy = create.isPending || update.isPending || publish.isPending || archive.isPending;
 
   function buildTriggerSpec(): TriggerSpec {
     if (triggerType === 'event') {
       const offset = `${offsetDirection === 'before' ? '-' : ''}P${
-        offsetUnit === 'W' ? `${offsetValue}W` : offsetUnit === 'D' ? `${offsetValue}D` : `T${offsetValue}H`
+        offsetUnit === 'W'
+          ? `${offsetValue}W`
+          : offsetUnit === 'D'
+            ? `${offsetValue}D`
+            : `T${offsetValue}H`
       }`;
       const spec: EventTriggerSpec = {
         kind: 'event',
@@ -217,7 +220,7 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
           departmentId,
         });
         toast.success(`Draft "${created.key}" created`);
-        router.push(`/settings/reminder-rules/${created.id}/edit`);
+        router.push(`/reminder-rules?sheet=edit&id=${encodeURIComponent(created.id)}`);
       } else if (ruleId) {
         await update.mutateAsync({
           name,
@@ -447,9 +450,7 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
                   <Field label="Query">
                     <Select
                       value={queryKind}
-                      onValueChange={(v) =>
-                        setQueryKind(v as CronTriggerSpec['query']['kind'])
-                      }
+                      onValueChange={(v) => setQueryKind(v as CronTriggerSpec['query']['kind'])}
                       disabled={!isDraft}
                     >
                       <SelectTrigger>
@@ -522,8 +523,7 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
 
             {isArchived && (
               <p className="rounded-fn-xs border-fn-warning-soft-fg/35 bg-fn-warning-soft/40 text-fn-warning-soft-fg px-fn-3 py-fn-2 border text-[12.5px]">
-                This is an archived version. Draft a new version from the rule list to make
-                changes.
+                This is an archived version. Draft a new version from the rule list to make changes.
               </p>
             )}
           </div>
@@ -561,13 +561,7 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
   );
 }
 
-function FormSection({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
+function FormSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="gap-fn-3 flex flex-col">
       <h3 className="text-fn-fg-faint font-fn-semibold tracking-fn-uppercase-tight text-[11px] uppercase">
