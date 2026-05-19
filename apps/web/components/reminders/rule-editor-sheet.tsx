@@ -39,6 +39,7 @@ import { ConditionBuilder, countLeaves } from '@/components/reminders/condition-
 import { EventPicker } from '@/components/reminders/event-picker';
 import { RecipientList } from '@/components/reminders/recipient-list';
 import { NotificationTypePicker } from '@/components/reminders/notification-type-picker';
+import { CronPicker } from '@/components/reminders/cron-picker';
 import type { RecipientEntry } from '@/lib/queries/reminders';
 
 /**
@@ -68,13 +69,6 @@ const RELATIVE_FIELDS = [
   { key: 'probationEndDate', label: 'probationEndDate' },
   { key: 'internshipEndDate', label: 'internshipEndDate' },
   { key: 'dateOfBirth', label: 'dateOfBirth' },
-];
-
-const CRON_PRESETS = [
-  { value: '0 9 * * *', label: 'Daily at 9:00 PKT' },
-  { value: '0 6 * * *', label: 'Daily at 6:00 PKT' },
-  { value: '0 9 * * 1', label: 'Monday 9:00 PKT' },
-  { value: '0 9 1 * *', label: '1st of month 9:00 PKT' },
 ];
 
 export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditorSheetProps) {
@@ -113,7 +107,7 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
   const [offsetDirection, setOffsetDirection] = React.useState<'before' | 'after'>('before');
 
   // cron-trigger fields
-  const [cron, setCron] = React.useState(CRON_PRESETS[0]!.value);
+  const [cron, setCron] = React.useState('0 9 * * *');
 
   // condition-tree (shared across both trigger types)
   const [conditions, setConditions] = React.useState<ConditionGroup | null>(null);
@@ -502,19 +496,8 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
                 </>
               ) : (
                 <>
-                  <Field label="Cron schedule" hint="Asia/Karachi">
-                    <Select value={cron} onValueChange={setCron} disabled={!isDraft}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {CRON_PRESETS.map((p) => (
-                          <SelectItem key={p.value} value={p.value}>
-                            {p.label} <span className="text-fn-fg-faint font-mono">{p.value}</span>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                  <Field label="Cron schedule">
+                    <CronPicker value={cron} onChange={setCron} disabled={!isDraft} />
                   </Field>
                   <p className="text-fn-fg-faint -mt-fn-1 text-[11.5px]">
                     The scheduler scans whichever entities your conditions reference at each tick.
