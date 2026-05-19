@@ -99,6 +99,7 @@ export class NotificationsController {
         defaultChannels: t.defaultChannels,
         titleTemplate: t.titleTemplate,
         bodyTemplate: t.bodyTemplate,
+        linkTemplate: t.linkTemplate ?? null,
       })),
     };
   }

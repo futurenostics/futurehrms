@@ -11,9 +11,10 @@ import { useNotificationTypes } from '@/lib/queries/notifications';
  * each type's `module` so `reminders.*`, `custom.*`, etc. visually
  * separate.
  *
- * Selecting a type reveals a read-only preview of its title and body
- * templates with `{{variable}}` placeholders highlighted so the rule
- * author can see what the recipient will actually receive.
+ * Selecting a type reveals a read-only preview of its title, body,
+ * and (when set) link templates with `{{variable}}` placeholders
+ * highlighted so the rule author can see what the recipient will
+ * actually receive.
  *
  * No freeform escape hatch: notification types are strict-validated
  * at send time, so picking an unregistered string would just blow up
@@ -55,6 +56,9 @@ export function NotificationTypePicker({
         <div className="rounded-fn-xs border-fn-border bg-fn-bg-subtle/40 gap-fn-2 px-fn-3 py-fn-2_5 flex flex-col border">
           <TemplateRow label="Title" template={selected.titleTemplate} />
           <TemplateRow label="Body" template={selected.bodyTemplate} multiline />
+          {selected.linkTemplate && (
+            <TemplateRow label="Link" template={selected.linkTemplate} mono />
+          )}
         </div>
       )}
     </div>
@@ -65,10 +69,12 @@ function TemplateRow({
   label,
   template,
   multiline,
+  mono,
 }: {
   label: string;
   template: string;
   multiline?: boolean;
+  mono?: boolean;
 }) {
   return (
     <div className="gap-fn-1 flex flex-col">
@@ -77,9 +83,11 @@ function TemplateRow({
       </span>
       <p
         className={
-          multiline
-            ? 'text-fn-fg leading-fn-snug whitespace-pre-wrap font-mono text-[11.5px]'
-            : 'text-fn-fg font-mono text-[12px]'
+          mono
+            ? 'text-fn-fg font-mono text-[11px]'
+            : multiline
+              ? 'text-fn-fg leading-fn-snug whitespace-pre-wrap font-mono text-[11.5px]'
+              : 'text-fn-fg font-mono text-[12px]'
         }
       >
         {highlight(template)}

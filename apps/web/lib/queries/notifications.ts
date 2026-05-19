@@ -44,6 +44,7 @@ export interface NotificationTypePublic {
   defaultChannels: Channel[];
   titleTemplate: string;
   bodyTemplate: string;
+  linkTemplate: string | null;
 }
 
 export interface CustomNotificationTypePublic {
@@ -133,6 +134,21 @@ export function useArchiveCustomType() {
     mutationFn: (id: string) =>
       apiFetch<CustomNotificationTypePublic>(`/api/notifications/custom-types/${id}/archive`, {
         method: 'POST',
+      }),
+    onSuccess: () => invalidateAll(qc),
+  });
+}
+
+/** Re-enables an archived custom type by flipping `isActive` back
+ *  to true via the standard update endpoint. The BE re-registers
+ *  the type into the in-memory registry on save. */
+export function useUnarchiveCustomType() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<CustomNotificationTypePublic>(`/api/notifications/custom-types/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isActive: true }),
       }),
     onSuccess: () => invalidateAll(qc),
   });
