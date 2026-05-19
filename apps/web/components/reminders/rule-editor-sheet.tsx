@@ -177,6 +177,14 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
   const isArchived = existing.data?.status === 'archived';
   const busy = create.isPending || update.isPending || publish.isPending || archive.isPending;
 
+  // Once a rule is active or archived its content is frozen — only
+  // `isEnabled` is mutable (operational mute toggle). Track the
+  // original toggle value so we can decide when there's something
+  // worth POSTing.
+  const originalIsEnabled = existing.data?.isEnabled ?? true;
+  const hasOperationalChange = isActive && isEnabled !== originalIsEnabled;
+  const readonly = !isDraft;
+
   function buildTriggerSpec(): TriggerSpec {
     if (triggerType === 'event') {
       const offset = `${offsetDirection === 'before' ? '-' : ''}P${
@@ -222,16 +230,22 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
         toast.success(`Draft "${created.key}" created`);
         router.push(`/reminder-rules?sheet=edit&id=${encodeURIComponent(created.id)}`);
       } else if (ruleId) {
-        await update.mutateAsync({
-          name,
-          description,
-          triggerSpec: spec,
-          notificationType,
-          recipientResolver,
-          departmentId,
-          isEnabled,
-        });
-        toast.success('Draft saved');
+        // Active rules are content-locked — only the operational
+        // `isEnabled` toggle is mutable. Send a tight payload so the
+        // BE doesn't trip its "content edit on active rule" guard.
+        const payload = readonly
+          ? { isEnabled }
+          : {
+              name,
+              description,
+              triggerSpec: spec,
+              notificationType,
+              recipientResolver,
+              departmentId,
+              isEnabled,
+            };
+        await update.mutateAsync(payload);
+        toast.success(readonly ? 'Updated' : 'Draft saved');
       }
     } catch (e) {
       toast.error((e as Error).message);
@@ -272,7 +286,9 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
             {mode === 'create'
               ? 'Drafts can be edited freely. Publishing creates v1.0; future edits draft a new version.'
               : existing.data
-                ? `v${existing.data.version} · ${existing.data.status}`
+                ? `v${existing.data.version} · ${existing.data.status}${
+                    readonly ? ' · view only' : ''
+                  }`
                 : 'Loading…'}
           </p>
         </SheetHeader>
@@ -293,7 +309,7 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
                 <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  disabled={!isDraft && !isActive}
+                  disabled={readonly}
                   placeholder="Probation end"
                 />
               </Field>
@@ -301,7 +317,7 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
                 <Textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  disabled={!isDraft && !isActive}
+                  disabled={readonly}
                   rows={2}
                   placeholder="Notify HR and the direct manager 14 days before…"
                 />
@@ -311,7 +327,7 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
                   <Select
                     value={departmentId ?? 'all'}
                     onValueChange={(v) => setDepartmentId(v === 'all' ? null : v)}
-                    disabled={!isDraft && !isActive}
+                    disabled={readonly}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="All departments" />
@@ -487,7 +503,7 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
                 <Select
                   value={notificationType}
                   onValueChange={setNotificationType}
-                  disabled={!isDraft && !isActive}
+                  disabled={readonly}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -505,7 +521,7 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
                 <Select
                   value={recipientResolver}
                   onValueChange={setRecipientResolver}
-                  disabled={!isDraft && !isActive}
+                  disabled={readonly}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -521,6 +537,12 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
               </Field>
             </FormSection>
 
+            {isActive && (
+              <p className="rounded-fn-xs border-fn-info-soft-fg/35 bg-fn-info-soft/40 text-fn-info-soft-fg px-fn-3 py-fn-2 border text-[12.5px]">
+                Active rules are content-locked. Only the <strong>Enabled</strong> toggle can change
+                here — draft a new version from the rule list to edit anything else.
+              </p>
+            )}
             {isArchived && (
               <p className="rounded-fn-xs border-fn-warning-soft-fg/35 bg-fn-warning-soft/40 text-fn-warning-soft-fg px-fn-3 py-fn-2 border text-[12.5px]">
                 This is an archived version. Draft a new version from the rule list to make changes.
@@ -550,11 +572,11 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
                 </Button>
               )}
             </>
-          ) : (
+          ) : isActive && hasOperationalChange ? (
             <Button onClick={handleSaveDraft} disabled={busy} className="ml-auto">
               Save changes
             </Button>
-          )}
+          ) : null}
         </SheetFooter>
       </SheetContent>
     </Sheet>
