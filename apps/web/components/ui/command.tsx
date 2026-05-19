@@ -57,7 +57,22 @@ const CommandList = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <CommandPrimitive.List
     ref={ref}
-    className={cn('p-fn-1 max-h-[280px] overflow-y-auto overflow-x-hidden', className)}
+    className={cn(
+      // cmdk sets --cmdk-list-height to the natural content height. We
+      // clamp to 320px so the dropdown gains a vertical scrollbar once
+      // the list exceeds that, while still shrinking neatly for short
+      // lists. The Webkit scrollbar overrides below ensure the bar is
+      // visible (not auto-hidden) on macOS.
+      'p-fn-1 overflow-y-auto overflow-x-hidden',
+      '[&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-[8px]',
+      '[&::-webkit-scrollbar-thumb]:rounded-fn-full [&::-webkit-scrollbar-thumb]:bg-fn-border-strong [&::-webkit-scrollbar-thumb:hover]:bg-fn-fg-faint',
+      className,
+    )}
+    style={{
+      height: 'min(320px, var(--cmdk-list-height))',
+      transitionProperty: 'height',
+      transitionDuration: '120ms',
+    }}
     {...props}
   />
 ));
@@ -82,7 +97,11 @@ const CommandGroup = React.forwardRef<
   <CommandPrimitive.Group
     ref={ref}
     className={cn(
-      'text-fn-fg overflow-hidden',
+      // Don't clip the group — that interferes with cmdk's internal
+      // height measurement and prevents the outer CommandList scroll
+      // from triggering on grouped lists (field picker, event picker,
+      // notification-type picker).
+      'text-fn-fg',
       // cmdk adds `[cmdk-group-heading]` styling for the group label
       '[&_[cmdk-group-heading]]:text-fn-fg-faint [&_[cmdk-group-heading]]:px-fn-2 [&_[cmdk-group-heading]]:py-fn-1_5 [&_[cmdk-group-heading]]:text-fn-sm [&_[cmdk-group-heading]]:font-fn-semibold [&_[cmdk-group-heading]]:tracking-fn-uppercase-tight [&_[cmdk-group-heading]]:uppercase',
       className,
