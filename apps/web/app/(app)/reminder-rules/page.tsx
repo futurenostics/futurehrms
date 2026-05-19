@@ -198,17 +198,7 @@ export default function ReminderRulesPage() {
         header: 'Lead time',
         width: 110,
         cell: (rule) => {
-          const lead = leadTimeLabel(
-            rule.triggerType === 'event'
-              ? {
-                  kind: 'event',
-                  offset:
-                    rule.triggerSpec.kind === 'event'
-                      ? (rule.triggerSpec.offset ?? undefined)
-                      : undefined,
-                }
-              : { kind: 'cron' },
-          );
+          const lead = leadTimeLabel({ kind: rule.triggerType });
           return (
             <span
               className={cn(

@@ -36,7 +36,6 @@ import {
   useUpdateRule,
   type ConditionGroup,
   type ConditionNode,
-  type EventTriggerSpec,
   type TriggerSpec,
 } from '@/lib/queries/reminders';
 import { ConditionBuilder, countLeaves } from '@/components/reminders/condition-builder';
@@ -68,13 +67,6 @@ export interface RuleEditorSheetProps {
   ruleId: string | null;
 }
 
-const RELATIVE_FIELDS = [
-  { key: 'joinDate', label: 'joinDate' },
-  { key: 'probationEndDate', label: 'probationEndDate' },
-  { key: 'internshipEndDate', label: 'internshipEndDate' },
-  { key: 'dateOfBirth', label: 'dateOfBirth' },
-];
-
 export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditorSheetProps) {
   const router = useRouter();
   const refs = useReferences();
@@ -105,23 +97,12 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
 
   // event-trigger fields
   const [eventType, setEventType] = React.useState('employee.created');
-  const [relativeTo, setRelativeTo] = React.useState(RELATIVE_FIELDS[0]!.key);
-  const [offsetValue, setOffsetValue] = React.useState(14);
-  const [offsetUnit, setOffsetUnit] = React.useState<'D' | 'W' | 'H'>('D');
-  const [offsetDirection, setOffsetDirection] = React.useState<'before' | 'after'>('before');
 
   // cron-trigger fields
   const [cron, setCron] = React.useState('0 9 * * *');
 
   // condition-tree (shared across both trigger types)
   const [conditions, setConditions] = React.useState<ConditionGroup | null>(null);
-
-  // Schedule offset is OPTIONAL on event-based rules. For new event
-  // rules we expand the disclosure so users discover the affordance;
-  // they can collapse it to fall back to "fire immediately". In edit
-  // mode the hydration effect below sets this from the loaded spec
-  // (open when relativeTo + offset are present, closed otherwise).
-  const [useScheduleOffset, setUseScheduleOffset] = React.useState(mode === 'create');
 
   // Hydrate from existing rule when editing
   React.useEffect(() => {
@@ -144,25 +125,6 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
     setIsEnabled(r.isEnabled);
     if (r.triggerSpec.kind === 'event') {
       setEventType(r.triggerSpec.eventType);
-      setUseScheduleOffset(!!(r.triggerSpec.relativeTo && r.triggerSpec.offset));
-      if (r.triggerSpec.relativeTo) setRelativeTo(r.triggerSpec.relativeTo);
-      const m =
-        r.triggerSpec.offset != null
-          ? /^(-?)P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?)?$/.exec(r.triggerSpec.offset)
-          : null;
-      if (m) {
-        setOffsetDirection(m[1] === '-' ? 'before' : 'after');
-        if (m[2]) {
-          setOffsetValue(Number(m[2]));
-          setOffsetUnit('W');
-        } else if (m[3]) {
-          setOffsetValue(Number(m[3]));
-          setOffsetUnit('D');
-        } else if (m[4]) {
-          setOffsetValue(Number(m[4]));
-          setOffsetUnit('H');
-        }
-      }
     } else if (r.triggerSpec.kind === 'cron') {
       setCron(r.triggerSpec.cron);
       // Legacy fields (sourceEntity from round 2, query.kind from
@@ -225,25 +187,10 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
 
   function buildTriggerSpec(): TriggerSpec {
     if (triggerType === 'event') {
-      // Schedule offset is optional. Only attach relativeTo + offset
-      // when the disclosure is expanded — otherwise the BE schedules
-      // for the event time (fire immediately).
-      const spec: EventTriggerSpec = {
-        kind: 'event',
-        eventType,
-        conditions,
-      };
-      if (useScheduleOffset) {
-        spec.relativeTo = relativeTo;
-        spec.offset = `${offsetDirection === 'before' ? '-' : ''}P${
-          offsetUnit === 'W'
-            ? `${offsetValue}W`
-            : offsetUnit === 'D'
-              ? `${offsetValue}D`
-              : `T${offsetValue}H`
-        }`;
-      }
-      return spec;
+      // Event rules fire at the event moment. "N days before X" lives
+      // on cron rules via the in_exactly_days / anniversary_in_exactly_days
+      // condition operators on date fields.
+      return { kind: 'event', eventType, conditions };
     }
     // Conditions-driven cron: the scheduler walks the tree and picks
     // its scan targets from the entity prefixes the conditions
@@ -439,97 +386,12 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
               </Field>
 
               {triggerType === 'event' ? (
-                <>
-                  <Field
-                    label="Event type"
-                    hint="Pick an emitted event the system already publishes, or type a custom string."
-                  >
-                    <EventPicker value={eventType} onChange={setEventType} disabled={!isDraft} />
-                  </Field>
-
-                  {/* Schedule offset — optional. Default = fire immediately. */}
-                  <div className="rounded-fn-xs border-fn-border bg-fn-bg-subtle/40 gap-fn-2_5 px-fn-3 py-fn-2_5 flex flex-col border">
-                    <div className="gap-fn-2 flex items-center justify-between">
-                      <div className="gap-fn-0_5 flex flex-col">
-                        <span className="text-fn-fg font-fn-semibold text-[12.5px]">
-                          Schedule offset
-                        </span>
-                        <span className="text-fn-fg-faint text-[11.5px]">
-                          {useScheduleOffset
-                            ? 'Fire ahead of (or after) a date on the entity.'
-                            : 'Off — reminder fires when the event happens. Use conditions to filter who qualifies.'}
-                        </span>
-                      </div>
-                      <Switch
-                        checked={useScheduleOffset}
-                        disabled={!isDraft}
-                        onCheckedChange={setUseScheduleOffset}
-                        aria-label="Toggle schedule offset"
-                      />
-                    </div>
-
-                    {useScheduleOffset && (
-                      <>
-                        <Field label="Anchor field" hint="Date field on the event payload">
-                          <Select
-                            value={relativeTo}
-                            onValueChange={setRelativeTo}
-                            disabled={!isDraft}
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {RELATIVE_FIELDS.map((f) => (
-                                <SelectItem key={f.key} value={f.key}>
-                                  {f.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </Field>
-                        <Field label="Offset" hint="Fire this far before/after the anchor date">
-                          <div className="gap-fn-2 grid grid-cols-3">
-                            <Input
-                              type="number"
-                              value={offsetValue}
-                              onChange={(e) => setOffsetValue(Number(e.target.value))}
-                              min={0}
-                              disabled={!isDraft}
-                            />
-                            <Select
-                              value={offsetUnit}
-                              onValueChange={(v) => setOffsetUnit(v as typeof offsetUnit)}
-                              disabled={!isDraft}
-                            >
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="D">Days</SelectItem>
-                                <SelectItem value="W">Weeks</SelectItem>
-                                <SelectItem value="H">Hours</SelectItem>
-                              </SelectContent>
-                            </Select>
-                            <Select
-                              value={offsetDirection}
-                              onValueChange={(v) => setOffsetDirection(v as typeof offsetDirection)}
-                              disabled={!isDraft}
-                            >
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="before">before</SelectItem>
-                                <SelectItem value="after">after</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </Field>
-                      </>
-                    )}
-                  </div>
-                </>
+                <Field
+                  label="Event type"
+                  hint="Pick an emitted event the system publishes. Event rules fire when the event happens — for 'N days before X' semantics, switch to Time-based (cron) and use date operators in Conditions."
+                >
+                  <EventPicker value={eventType} onChange={setEventType} disabled={!isDraft} />
+                </Field>
               ) : (
                 <>
                   <Field label="Cron schedule">
@@ -544,31 +406,40 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
               )}
             </FormSection>
 
-            {/* Optional condition tree */}
-            <FormSection
-              title={
-                conditions ? `Conditions · ${countLeaves(conditions)}` : 'Conditions (optional)'
-              }
-            >
-              <p className="text-fn-fg-muted text-[12px]">
-                Layer extra filters on top of the trigger — only entities matching these conditions
-                will schedule a reminder. Combine fields across Employee, Department, Project,
-                Commission rule, and more, with AND / OR groups for any-of / all-of logic.
-              </p>
-              <ConditionBuilder value={conditions} onChange={setConditions} disabled={readonly} />
-              <PreviewChip
-                tone="info"
-                loading={conditionPreview.isFetching}
-                empty={!previewSourceKind}
-                emptyLabel="Pick an event type or add a condition to preview matches"
-                label={
-                  conditionPreview.data
-                    ? `${conditionPreview.data.matched.toLocaleString()} of ${conditionPreview.data.total.toLocaleString()} ${friendlyKind(previewSourceKind)} match${conditionPreview.data.matched === 1 ? 'es' : ''}`
-                    : null
+            {/* Optional condition tree — hidden when the event has no
+                source entity (e.g. commission.rule.published); for those
+                rules conditions can't reference anything meaningful. */}
+            {!(triggerType === 'event' && previewSourceKind === null) && (
+              <FormSection
+                title={
+                  conditions ? `Conditions · ${countLeaves(conditions)}` : 'Conditions (optional)'
                 }
-                sample={conditionPreview.data?.sample.map((s) => s.label) ?? []}
-              />
-            </FormSection>
+              >
+                <p className="text-fn-fg-muted text-[12px]">
+                  {triggerType === 'event'
+                    ? `Filter the source entity — only matching ${friendlyKind(previewSourceKind)} schedule a reminder.`
+                    : 'Layer filters on the cron scan — only entities matching these conditions schedule a reminder. Combine fields across Employee, Department, Project, Commission rule, and more, with AND / OR groups for any-of / all-of logic.'}
+                </p>
+                <ConditionBuilder
+                  value={conditions}
+                  onChange={setConditions}
+                  disabled={readonly}
+                  eventSourceKind={triggerType === 'event' ? previewSourceKind : null}
+                />
+                <PreviewChip
+                  tone="info"
+                  loading={conditionPreview.isFetching}
+                  empty={!previewSourceKind}
+                  emptyLabel="Pick an event type or add a condition to preview matches"
+                  label={
+                    conditionPreview.data
+                      ? `${conditionPreview.data.matched.toLocaleString()} of ${conditionPreview.data.total.toLocaleString()} ${friendlyKind(previewSourceKind)} match${conditionPreview.data.matched === 1 ? 'es' : ''}`
+                      : null
+                  }
+                  sample={conditionPreview.data?.sample.map((s) => s.label) ?? []}
+                />
+              </FormSection>
+            )}
 
             {/* Notification + recipients */}
             <FormSection title="Notification">

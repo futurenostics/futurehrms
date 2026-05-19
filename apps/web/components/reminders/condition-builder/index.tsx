@@ -28,11 +28,28 @@ export interface ConditionBuilderProps {
   value: ConditionGroup | null | undefined;
   onChange: (next: ConditionGroup | null) => void;
   disabled?: boolean;
+  /**
+   * When set, the field picker only exposes fields on this entity —
+   * matches the runtime evaluator's context shape for event-based
+   * rules (the evaluator only hydrates the event's source entity, so
+   * conditions on other entities would always evaluate to false).
+   * Pass `null` for cron rules to keep every entity available.
+   */
+  eventSourceKind?: string | null;
 }
 
-export function ConditionBuilder({ value, onChange, disabled }: ConditionBuilderProps) {
+export function ConditionBuilder({
+  value,
+  onChange,
+  disabled,
+  eventSourceKind,
+}: ConditionBuilderProps) {
   const catalog = useFieldCatalog();
-  const entities = catalog.data?.entities ?? [];
+  const allEntities = catalog.data?.entities ?? [];
+  const entities = React.useMemo(
+    () => (eventSourceKind ? allEntities.filter((e) => e.key === eventSourceKind) : allEntities),
+    [allEntities, eventSourceKind],
+  );
   const operators = catalog.data?.operators ?? {
     string: [],
     number: [],

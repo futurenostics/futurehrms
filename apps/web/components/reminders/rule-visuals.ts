@@ -35,31 +35,15 @@ export interface LeadTimeInfo {
 
 /**
  * Convert a trigger spec to the design's lead-time vocabulary.
- *   `-P14D` → "14d before"
- *   `P0D`   → "on day"
- *   `P3D`   → "3d after"
- *   cron    → "on day" (cron rules fire at the moment they evaluate)
+ * After dropping the offset, event rules fire on the event moment
+ * and cron rules fire on each match — so the column just reflects
+ * that distinction. The actual "N days before X" semantics live on
+ * cron rules with the in_exactly_days / anniversary_in_exactly_days
+ * condition operators, which the column doesn't try to summarise.
  */
-export function leadTimeLabel(spec: {
-  kind: 'event' | 'cron';
-  offset?: string;
-}): LeadTimeInfo {
-  if (spec.kind === 'cron') return { text: 'on day', direction: 'same' };
-  const offset = spec.offset ?? '';
-  const m = /^(-?)P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?)?$/.exec(
-    offset,
-  );
-  if (!m) return { text: offset || 'on day', direction: 'same' };
-  const sign = m[1] === '-' ? 'before' : 'after';
-  const parts: string[] = [];
-  if (m[2]) parts.push(`${m[2]}y`);
-  if (m[3]) parts.push(`${m[3]}mo`);
-  if (m[4]) parts.push(`${m[4]}w`);
-  if (m[5]) parts.push(`${m[5]}d`);
-  if (m[6]) parts.push(`${m[6]}h`);
-  if (m[7]) parts.push(`${m[7]}m`);
-  if (parts.length === 0) return { text: 'on day', direction: 'same' };
-  return { text: `${parts.join(' ')} ${sign}`, direction: sign };
+export function leadTimeLabel(spec: { kind: 'event' | 'cron' }): LeadTimeInfo {
+  if (spec.kind === 'cron') return { text: 'on schedule', direction: 'same' };
+  return { text: 'on event', direction: 'same' };
 }
 
 /**
