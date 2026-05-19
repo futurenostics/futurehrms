@@ -113,7 +113,7 @@ const SheetContent = React.forwardRef<
     >
       {children}
       {showClose && (
-        <DialogPrimitive.Close className="rounded-fn-xs text-fn-fg-muted hover:bg-fn-bg-inset hover:text-fn-fg focus-visible:ring-fn-accent right-fn-3_5 top-fn-3_5 p-fn-1 absolute z-10 transition-colors focus-visible:outline-none focus-visible:ring-2">
+        <DialogPrimitive.Close className="rounded-fn-xs text-fn-fg-muted hover:bg-fn-bg-inset hover:text-fn-fg focus-visible:ring-fn-accent right-fn-3_5 top-fn-3_5 p-fn-1 absolute z-10 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2">
           <X className="h-fn-4 w-fn-4" />
           <span className="sr-only">Close</span>
         </DialogPrimitive.Close>
