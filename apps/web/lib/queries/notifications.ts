@@ -42,6 +42,8 @@ export interface NotificationTypePublic {
   severity: Severity;
   module: string;
   defaultChannels: Channel[];
+  titleTemplate: string;
+  bodyTemplate: string;
 }
 
 export interface CustomNotificationTypePublic {

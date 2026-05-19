@@ -298,6 +298,65 @@ export function useScheduledReminders(status?: ReminderPublic['status'] | 'all')
   });
 }
 
+/* ---------- Live preview ---------- */
+
+export interface ConditionPreviewResult {
+  matched: number;
+  total: number;
+  sample: Array<{ id: string; label: string }>;
+}
+
+export interface RecipientPreviewResult {
+  count: number;
+  sample: Array<{ id: string; name: string; email: string | null }>;
+}
+
+export function usePreviewConditions(input: {
+  sourceKind: string | null;
+  conditions?: ConditionNode;
+  departmentId?: string | null;
+}) {
+  const enabled = !!input.sourceKind;
+  return useQuery<ConditionPreviewResult>({
+    queryKey: ['reminder-rules', 'preview-conditions', input],
+    enabled,
+    staleTime: 30_000,
+    queryFn: () =>
+      apiFetch(`/api/reminder-rules/preview-conditions`, {
+        method: 'POST',
+        body: JSON.stringify({
+          sourceKind: input.sourceKind,
+          conditions: input.conditions,
+          departmentId: input.departmentId ?? null,
+        }),
+      }),
+  });
+}
+
+export function usePreviewRecipients(input: {
+  recipientResolvers: RecipientEntry[];
+  sourceKind?: string | null;
+  sourceId?: string | null;
+  departmentId?: string | null;
+}) {
+  const enabled = input.recipientResolvers.length > 0;
+  return useQuery<RecipientPreviewResult>({
+    queryKey: ['reminder-rules', 'preview-recipients', input],
+    enabled,
+    staleTime: 30_000,
+    queryFn: () =>
+      apiFetch(`/api/reminder-rules/preview-recipients`, {
+        method: 'POST',
+        body: JSON.stringify({
+          recipientResolvers: input.recipientResolvers,
+          sourceKind: input.sourceKind ?? null,
+          sourceId: input.sourceId ?? null,
+          departmentId: input.departmentId ?? null,
+        }),
+      }),
+  });
+}
+
 /* ---------- Mutations ---------- */
 
 export interface CreateRuleInput {

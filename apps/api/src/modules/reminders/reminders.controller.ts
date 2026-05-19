@@ -17,7 +17,9 @@ import { ReminderRulesService } from './reminder-rules.service';
 import { RemindersReadService } from './reminders-read.service';
 import { ReminderSchedulerService } from './reminder-scheduler.service';
 import { RecipientResolverRegistry } from './recipient-resolver';
+import { ConditionPreviewService } from './condition-preview.service';
 import { triggerSpecSchema } from './reminder-trigger.types';
+import { conditionNodeSchema } from './reminder-conditions.types';
 import { buildFieldCatalogResponse } from './reminder-field-catalog';
 import { buildEventCatalogResponse } from './event-type-catalog';
 
@@ -72,6 +74,19 @@ const cancelScheduledSchema = z.object({
   reason: z.string().trim().min(1).max(500),
 });
 
+const previewConditionsSchema = z.object({
+  sourceKind: z.string().trim().min(1).max(80),
+  conditions: conditionNodeSchema.optional(),
+  departmentId: z.string().nullable().optional(),
+});
+
+const previewRecipientsSchema = z.object({
+  recipientResolvers: z.array(recipientEntrySchema).min(1).max(20),
+  sourceKind: z.string().trim().min(1).max(80).nullable().optional(),
+  sourceId: z.string().trim().min(1).max(80).nullable().optional(),
+  departmentId: z.string().nullable().optional(),
+});
+
 /**
  * Single controller with no prefix — routes are grouped under
  * /reminder-rules (rule CRUD + publish + archive + test) and
@@ -84,6 +99,7 @@ export class RemindersController {
     private readonly read: RemindersReadService,
     private readonly scheduler: ReminderSchedulerService,
     private readonly resolvers: RecipientResolverRegistry,
+    private readonly preview: ConditionPreviewService,
   ) {}
 
   /* ---------- Rule lifecycle ---------- */
@@ -138,6 +154,24 @@ export class RemindersController {
   @RequirePermission('reminders:view_rules')
   async listRoles() {
     return this.rules.listRoles();
+  }
+
+  /* ---------- Live preview (rule editor) ---------- */
+
+  @Post('reminder-rules/preview-conditions')
+  @RequirePermission('reminders:view_rules')
+  @HttpCode(HttpStatus.OK)
+  async previewConditions(@Body() body: unknown) {
+    const input = previewConditionsSchema.parse(body);
+    return this.preview.previewConditions(input);
+  }
+
+  @Post('reminder-rules/preview-recipients')
+  @RequirePermission('reminders:view_rules')
+  @HttpCode(HttpStatus.OK)
+  async previewRecipients(@Body() body: unknown) {
+    const input = previewRecipientsSchema.parse(body);
+    return this.preview.previewRecipients(input);
   }
 
   @Get('reminder-rules/:id')

@@ -28,10 +28,14 @@ import { useReferences } from '@/lib/queries/employees';
 import {
   useArchiveRule,
   useCreateRule,
+  useEventCatalog,
+  usePreviewConditions,
+  usePreviewRecipients,
   usePublishRule,
   useReminderRule,
   useUpdateRule,
   type ConditionGroup,
+  type ConditionNode,
   type EventTriggerSpec,
   type TriggerSpec,
 } from '@/lib/queries/reminders';
@@ -167,6 +171,32 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
     setConditions(r.triggerSpec.conditions ?? null);
   }, [mode, existing.data]);
 
+  /* ---------- Live preview ---------- */
+  const eventCatalog = useEventCatalog();
+  // Derive the source kind we want to preview against:
+  //   - event triggers: pull from the event catalog's sourceKind
+  //   - cron triggers: take the entity of the first condition leaf
+  //     since the scheduler scans those entities anyway
+  const previewSourceKind = React.useMemo<string | null>(() => {
+    if (triggerType === 'event') {
+      const def = eventCatalog.data?.events.find((e) => e.type === eventType);
+      return def?.sourceKind ?? null;
+    }
+    return firstEntityFromConditions(conditions);
+  }, [triggerType, eventType, conditions, eventCatalog.data]);
+
+  const conditionPreview = usePreviewConditions({
+    sourceKind: previewSourceKind,
+    conditions: conditions ?? undefined,
+    departmentId,
+  });
+
+  const recipientPreview = usePreviewRecipients({
+    recipientResolvers,
+    sourceKind: previewSourceKind,
+    departmentId,
+  });
+
   const isDraft = existing.data?.status === 'draft' || mode === 'create';
   const isActive = existing.data?.status === 'active';
   const isArchived = existing.data?.status === 'archived';
@@ -185,7 +215,12 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
       ? 'lowercase letters, digits, dashes — used in seeds + URLs'
       : null;
   const nameError = isDraft && name.trim().length === 0 ? 'Name is required' : null;
-  const canSave = !busy && !keyError && !nameError;
+  // Rules with zero recipients silently no-op at fire time, which is
+  // confusing. Block save until the editor has at least one entry
+  // that actually has its required config filled in.
+  const recipientsError =
+    isDraft && recipientResolvers.length === 0 ? 'Add at least one recipient source' : null;
+  const canSave = !busy && !keyError && !nameError && !recipientsError;
 
   function buildTriggerSpec(): TriggerSpec {
     if (triggerType === 'event') {
@@ -520,6 +555,18 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
                 Commission rule, and more, with AND / OR groups for any-of / all-of logic.
               </p>
               <ConditionBuilder value={conditions} onChange={setConditions} disabled={readonly} />
+              <PreviewChip
+                tone="info"
+                loading={conditionPreview.isFetching}
+                empty={!previewSourceKind}
+                emptyLabel="Pick an event type or add a condition to preview matches"
+                label={
+                  conditionPreview.data
+                    ? `${conditionPreview.data.matched.toLocaleString()} of ${conditionPreview.data.total.toLocaleString()} ${friendlyKind(previewSourceKind)} match${conditionPreview.data.matched === 1 ? 'es' : ''}`
+                    : null
+                }
+                sample={conditionPreview.data?.sample.map((s) => s.label) ?? []}
+              />
             </FormSection>
 
             {/* Notification + recipients */}
@@ -537,11 +584,24 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
               <Field
                 label="Recipients"
                 hint="Add one or more sources — Specific employees, Role members, a Relation to the source (manager / reports / etc.), or the static groups like HR. The final list is the dedup'd union."
+                error={recipientResolvers.length > 0 ? null : recipientsError}
               >
                 <RecipientList
                   value={recipientResolvers}
                   onChange={setRecipientResolvers}
                   disabled={readonly}
+                />
+                <PreviewChip
+                  tone="success"
+                  loading={recipientPreview.isFetching}
+                  empty={recipientResolvers.length === 0}
+                  emptyLabel="Add a recipient source to see who would be notified"
+                  label={
+                    recipientPreview.data
+                      ? `${recipientPreview.data.count.toLocaleString()} recipient${recipientPreview.data.count === 1 ? '' : 's'}`
+                      : null
+                  }
+                  sample={recipientPreview.data?.sample.map((s) => s.name) ?? []}
                 />
               </Field>
             </FormSection>
@@ -575,7 +635,7 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
                 variant="secondary"
                 onClick={handleSaveDraft}
                 disabled={!canSave}
-                title={keyError ?? nameError ?? undefined}
+                title={keyError ?? nameError ?? recipientsError ?? undefined}
               >
                 {busy ? <Loader2 className="h-fn-3_5 w-fn-3_5 animate-spin" /> : null}
                 Save draft
@@ -626,6 +686,82 @@ function Field({
       ) : null}
     </div>
   );
+}
+
+function PreviewChip({
+  tone,
+  loading,
+  empty,
+  emptyLabel,
+  label,
+  sample,
+}: {
+  tone: 'info' | 'success';
+  loading: boolean;
+  empty: boolean;
+  emptyLabel: string;
+  label: string | null;
+  sample: string[];
+}) {
+  if (empty) {
+    return <p className="text-fn-fg-faint text-[11.5px]">{emptyLabel}</p>;
+  }
+  if (loading && !label) {
+    return (
+      <span className="text-fn-fg-faint gap-fn-1_5 inline-flex items-center text-[11.5px]">
+        <Loader2 className="h-fn-3 w-fn-3 animate-spin" /> Counting…
+      </span>
+    );
+  }
+  if (!label) return null;
+  const toneCls =
+    tone === 'success'
+      ? 'border-fn-success-soft-fg/35 bg-fn-success-soft/50 text-fn-success-soft-fg'
+      : 'border-fn-info-soft-fg/35 bg-fn-info-soft/50 text-fn-info-soft-fg';
+  return (
+    <div className="gap-fn-2 flex flex-wrap items-center">
+      <span
+        className={`rounded-fn-xs px-fn-2 py-fn-0_5 font-fn-semibold inline-flex items-center border text-[11px] tabular-nums ${toneCls}`}
+      >
+        {label}
+      </span>
+      {sample.length > 0 && (
+        <span className="text-fn-fg-faint text-[11px]">
+          {sample.slice(0, 3).join(' · ')}
+          {sample.length > 3 ? ' · …' : ''}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function friendlyKind(kind: string | null): string {
+  if (!kind) return 'entities';
+  const map: Record<string, string> = {
+    employee: 'employees',
+    employeeDocument: 'documents',
+    department: 'departments',
+    designation: 'designations',
+    project: 'projects',
+    projectCategory: 'project categories',
+    projectAssignment: 'assignments',
+    commissionRule: 'commission rules',
+    commissionRun: 'commission runs',
+  };
+  return map[kind] ?? `${kind} rows`;
+}
+
+function firstEntityFromConditions(node: ConditionNode | null | undefined): string | null {
+  if (!node) return null;
+  if (node.kind === 'leaf') {
+    const dot = node.field.indexOf('.');
+    return dot > 0 ? node.field.slice(0, dot) : node.field;
+  }
+  for (const child of node.conditions) {
+    const found = firstEntityFromConditions(child);
+    if (found) return found;
+  }
+  return null;
 }
 
 function TypeChip({

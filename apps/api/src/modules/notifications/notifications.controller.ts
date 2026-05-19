@@ -97,6 +97,8 @@ export class NotificationsController {
         severity: t.severity,
         module: t.module,
         defaultChannels: t.defaultChannels,
+        titleTemplate: t.titleTemplate,
+        bodyTemplate: t.bodyTemplate,
       })),
     };
   }

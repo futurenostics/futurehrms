@@ -49,6 +49,10 @@ import type { CronTriggerSpec } from './reminder-trigger.types';
 import { deriveScanTargets, evaluateConditions } from './reminder-conditions.evaluator';
 import { buildConditionContexts } from './reminder-condition-context';
 import { cronMatches } from './cron-matcher';
+import {
+  fetchSourcesForKind as scanForKind,
+  isScannableKind as isKnownScanKind,
+} from './reminder-entity-scans';
 
 const QUEUE_NAME = 'reminders';
 const JOB_NAME = 'hourly-tick';
@@ -364,77 +368,11 @@ export class ReminderSchedulerService implements OnApplicationBootstrap, OnModul
     kind: string,
     departmentId: string | null,
   ): Promise<ResolverSource[]> {
-    switch (kind) {
-      case 'employee': {
-        const rows = await prisma.employee.findMany({
-          where: { deletedAt: null, ...(departmentId ? { departmentId } : {}) },
-          select: { id: true },
-        });
-        return rows.map((r) => ({ kind: 'employee' as const, id: r.id }));
-      }
-      case 'employeeDocument': {
-        const rows = await prisma.employeeDocument.findMany({
-          where: departmentId ? { employee: { departmentId } } : {},
-          select: { id: true },
-        });
-        return rows.map((r) => ({ kind: 'employeeDocument' as const, id: r.id }));
-      }
-      case 'department': {
-        const rows = await prisma.department.findMany({
-          where: { isActive: true, ...(departmentId ? { id: departmentId } : {}) },
-          select: { id: true },
-        });
-        return rows.map((r) => ({ kind: 'department' as const, id: r.id }));
-      }
-      case 'designation': {
-        const rows = await prisma.designation.findMany({
-          where: { isActive: true, ...(departmentId ? { departmentId } : {}) },
-          select: { id: true },
-        });
-        return rows.map((r) => ({ kind: 'designation' as const, id: r.id }));
-      }
-      case 'project': {
-        const rows = await prisma.project.findMany({
-          where: { deletedAt: null, ...(departmentId ? { departmentId } : {}) },
-          select: { id: true },
-        });
-        return rows.map((r) => ({ kind: 'project' as const, id: r.id }));
-      }
-      case 'projectCategory': {
-        const rows = await prisma.projectCategory.findMany({
-          where: { deletedAt: null, archived: false },
-          select: { id: true },
-        });
-        return rows.map((r) => ({ kind: 'projectCategory' as const, id: r.id }));
-      }
-      case 'projectAssignment': {
-        const rows = await prisma.projectAssignment.findMany({
-          where: {
-            removedAt: null,
-            ...(departmentId ? { project: { departmentId } } : {}),
-          },
-          select: { id: true },
-        });
-        return rows.map((r) => ({ kind: 'projectAssignment' as const, id: r.id }));
-      }
-      case 'commissionRule': {
-        const rows = await prisma.commissionRule.findMany({
-          where: { status: 'active' },
-          select: { id: true },
-        });
-        return rows.map((r) => ({ kind: 'commissionRule' as const, id: r.id }));
-      }
-      case 'commissionRun': {
-        const rows = await prisma.commissionRun.findMany({
-          where: { status: { not: 'locked' } },
-          select: { id: true },
-        });
-        return rows.map((r) => ({ kind: 'commissionRun' as const, id: r.id }));
-      }
-      default:
-        this.logger.warn(`fetchSourcesForKind: unknown entity kind '${kind}'`);
-        return [];
+    const rows = await scanForKind(kind, departmentId);
+    if (rows.length === 0 && !isKnownScanKind(kind)) {
+      this.logger.warn(`fetchSourcesForKind: unknown entity kind '${kind}'`);
     }
+    return rows;
   }
 
   private async matchingEmployees(args: {

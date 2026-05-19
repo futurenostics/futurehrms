@@ -8,6 +8,7 @@ import { ReminderSchedulerService } from './reminder-scheduler.service';
 import { RemindersController } from './reminders.controller';
 import { RemindersReadService } from './reminders-read.service';
 import { TriggerEvaluatorService } from './trigger-evaluator.service';
+import { ConditionPreviewService } from './condition-preview.service';
 import { remindersManifest } from './reminders.manifest';
 import { REMINDERS_NOTIFICATION_TYPES } from './reminders.notification-types';
 
@@ -31,6 +32,7 @@ import { REMINDERS_NOTIFICATION_TYPES } from './reminders.notification-types';
     RecipientResolverRegistry,
     TriggerEvaluatorService,
     ReminderSchedulerService,
+    ConditionPreviewService,
   ],
   exports: [ReminderRulesService, ReminderSchedulerService],
 })
