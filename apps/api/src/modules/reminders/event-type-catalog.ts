@@ -13,9 +13,9 @@
  *
  * Adding a new event later: append an entry here. No DB migration.
  *
- * Out of scope: persisted user-defined event types. The picker also
- * supports a freeform "Other…" input that bypasses the catalog, and
- * the trigger evaluator accepts any string at runtime.
+ * The catalog is authoritative — `reminder-rules.service` rejects
+ * any `eventType` that isn't in `KNOWN_EVENT_TYPES` at create/update
+ * time, so rules can only bind to events the system actually emits.
  */
 
 export type EventSourceKind =
@@ -247,3 +247,6 @@ export function buildEventCatalogResponse(): EventCatalogResponse {
   }
   return { events: EVENT_TYPES, groups };
 }
+
+/** O(1) lookup table — used by the rules service to validate eventType. */
+export const KNOWN_EVENT_TYPES: ReadonlySet<string> = new Set(EVENT_TYPES.map((e) => e.type));

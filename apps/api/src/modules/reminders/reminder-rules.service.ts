@@ -28,6 +28,7 @@ import type { AuthenticatedUser } from '../../core/auth/types';
 import { EventBusService } from '../../core/events/event-bus.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { triggerSpecSchema, type TriggerSpec } from './reminder-trigger.types';
+import { KNOWN_EVENT_TYPES } from './event-type-catalog';
 
 export interface ReminderRulePublic {
   id: string;
@@ -87,6 +88,19 @@ export class ReminderRulesService {
   private require(perm: string, viewer: AuthenticatedUser): void {
     if (!viewer.permissions.includes(perm)) {
       throw new ForbiddenException(`${perm} required`);
+    }
+  }
+
+  /**
+   * Validate that the trigger spec only binds to events we actually
+   * emit. Throws BadRequestException otherwise. No-op for cron rules.
+   */
+  private validateEventTypeAgainstCatalog(spec: TriggerSpec): void {
+    if (spec.kind !== 'event') return;
+    if (!KNOWN_EVENT_TYPES.has(spec.eventType)) {
+      throw new BadRequestException(
+        `Unknown eventType '${spec.eventType}'. Pick one from /api/reminder-rules/event-catalog.`,
+      );
     }
   }
 
@@ -156,6 +170,7 @@ export class ReminderRulesService {
         `triggerType '${input.triggerType}' doesn't match triggerSpec.kind '${triggerSpec.kind}'`,
       );
     }
+    this.validateEventTypeAgainstCatalog(triggerSpec);
 
     // New rules start at v1.0 unless there's an existing version chain
     // for the same key — in which case the next draft is minor-bumped.
@@ -292,6 +307,7 @@ export class ReminderRulesService {
           `Cannot change triggerType after creation — current is '${existing.triggerType}'`,
         );
       }
+      this.validateEventTypeAgainstCatalog(triggerSpec);
       data.triggerSpec = triggerSpec as never;
     }
     const updated = await prisma.reminderRule.update({ where: { id }, data });

@@ -7,11 +7,11 @@ import { conditionGroupSchema } from './reminder-conditions.types';
  * Two flavors, discriminated by the owning rule's `triggerType`:
  *
  * ### Event-based ({@link EventTriggerSpec})
- * "When event X fires, schedule a reminder for N days/hours before
- * (or after) a field on the event payload."
- *
- * Example: probation ending — `eventType=employee.created`,
- * `relativeTo=probationEndDate`, `offset=-P30D` (30 days before).
+ * "When event X fires, fire the reminder for the source entity it
+ * carries — optionally filtered by a condition tree against that
+ * entity." Event rules fire immediately, never on a schedule offset.
+ * "N days before X" use cases live on cron rules with date
+ * operators (`in_exactly_days`, `anniversary_in_exactly_days`).
  *
  * ### Cron-based ({@link CronTriggerSpec})
  * "On this cron, evaluate this query and fire reminders for matches."
@@ -22,42 +22,19 @@ import { conditionGroupSchema } from './reminder-conditions.types';
  * additional fields per kind without a migration.
  */
 
-export const eventTriggerSpecSchema = z.object({
-  kind: z.literal('event'),
-  /** Fully-qualified event type to listen for. */
-  eventType: z.string().min(1),
-  /**
-   * Field name on the event's payload that carries the anchor date —
-   * the `offset` is applied relative to this. Both `relativeTo` and
-   * `offset` are OPTIONAL: when either is missing the reminder fires
-   * at the event time. Use the pair only when you want to schedule
-   * ahead of (or after) a date on the entity — e.g. fire 14 days
-   * before probationEndDate.
-   */
-  relativeTo: z.string().min(1).optional().nullable(),
-  /**
-   * ISO 8601 duration string with optional leading minus sign. Negative
-   * = before the anchor, positive = after. Examples:
-   *   `-P30D`   30 days before
-   *   `-PT2H`   2 hours before
-   *   `P14D`    14 days after
-   *
-   * Optional — see `relativeTo` above.
-   */
-  offset: z
-    .string()
-    .regex(/^-?P(?:\d+Y)?(?:\d+M)?(?:\d+W)?(?:\d+D)?(?:T(?:\d+H)?(?:\d+M)?(?:\d+S)?)?$/, {
-      message: 'offset must be an ISO 8601 duration, optionally prefixed with -',
-    })
-    .optional()
-    .nullable(),
-  /**
-   * Optional filter tree applied after the event fires — only entities
-   * matching all conditions schedule a reminder. Absent / null → fire
-   * for every matched entity (Phase-3 backwards-compatible behaviour).
-   */
-  conditions: conditionGroupSchema.optional().nullable(),
-});
+export const eventTriggerSpecSchema = z
+  .object({
+    kind: z.literal('event'),
+    /** Fully-qualified event type to listen for. Must be in the catalog. */
+    eventType: z.string().min(1),
+    /**
+     * Optional filter tree applied after the event fires — only
+     * entities matching all conditions schedule a reminder. Absent
+     * / null → fire for every matched entity.
+     */
+    conditions: conditionGroupSchema.optional().nullable(),
+  })
+  .strict();
 export type EventTriggerSpec = z.infer<typeof eventTriggerSpecSchema>;
 
 export const cronTriggerSpecSchema = z.object({
@@ -112,32 +89,3 @@ export const triggerSpecSchema = z.discriminatedUnion('kind', [
   cronTriggerSpecSchema,
 ]);
 export type TriggerSpec = z.infer<typeof triggerSpecSchema>;
-
-/**
- * Apply an ISO 8601 duration offset (with optional leading `-`) to a
- * Date. Returns a new Date. Throws on malformed input — callers should
- * have validated via the schema.
- */
-export function applyOffset(base: Date, offset: string): Date {
-  const m =
-    /^(-?)P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(
-      offset,
-    );
-  if (!m) throw new Error(`Invalid offset: ${offset}`);
-  const sign = m[1] === '-' ? -1 : 1;
-  const years = Number(m[2] ?? 0);
-  const months = Number(m[3] ?? 0);
-  const weeks = Number(m[4] ?? 0);
-  const days = Number(m[5] ?? 0);
-  const hours = Number(m[6] ?? 0);
-  const mins = Number(m[7] ?? 0);
-  const secs = Number(m[8] ?? 0);
-
-  const d = new Date(base);
-  if (years) d.setUTCFullYear(d.getUTCFullYear() + sign * years);
-  if (months) d.setUTCMonth(d.getUTCMonth() + sign * months);
-  const dayMs = 24 * 60 * 60 * 1000;
-  d.setTime(d.getTime() + sign * (weeks * 7 * dayMs + days * dayMs));
-  d.setTime(d.getTime() + sign * (hours * 3600_000 + mins * 60_000 + secs * 1_000));
-  return d;
-}

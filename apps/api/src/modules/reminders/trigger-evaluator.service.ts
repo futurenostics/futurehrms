@@ -5,15 +5,15 @@
  * walks the set of active+enabled event-based reminder rules whose
  * `triggerSpec.eventType` matches. For each match:
  *
- *   1. Read `triggerSpec.relativeTo` off the event payload — this is
- *      the anchor date (e.g. `probationEndDate`).
- *   2. Apply `triggerSpec.offset` (ISO 8601, optionally negative).
- *      The result is the scheduledFor timestamp.
- *   3. Resolve recipients via the rule's recipientResolver.
- *   4. Insert one Reminder row per recipient.
+ *   1. Optionally evaluate `triggerSpec.conditions` against the event's
+ *      source entity (hydrated from the payload).
+ *   2. Resolve recipients via the rule's recipientResolver.
+ *   3. Insert one Reminder row per recipient with `scheduledFor=now`
+ *      so the next scheduler tick fires it.
  *
- * The hourly scheduler tick reads the resulting rows and fires them
- * when scheduledFor is in the past.
+ * Event rules don't schedule ahead. "N days before X" lives on cron
+ * rules with the in_exactly_days / anniversary_in_exactly_days
+ * operators.
  */
 import { Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common';
 import { prisma } from '@futurenostics/db';
@@ -24,7 +24,7 @@ import {
   readRecipientEntries,
   type ResolverSource,
 } from './recipient-resolver';
-import { applyOffset, type EventTriggerSpec, type TriggerSpec } from './reminder-trigger.types';
+import type { EventTriggerSpec, TriggerSpec } from './reminder-trigger.types';
 import { evaluateConditions } from './reminder-conditions.evaluator';
 import { buildConditionContext } from './reminder-condition-context';
 
@@ -103,45 +103,10 @@ export class TriggerEvaluatorService implements OnApplicationBootstrap {
     payload: Record<string, unknown>,
     actorId: string | undefined,
   ): Promise<void> {
-    // Schedule offset is optional. When both `relativeTo` + `offset`
-    // are set, anchor the future scheduledFor relative to a date on
-    // the payload. Otherwise fire immediately (use the event time).
-    let scheduledFor: Date;
-    if (spec.relativeTo && spec.offset) {
-      const anchor = payload[spec.relativeTo];
-      if (!anchor) {
-        this.logger.debug(
-          `rule ${rule.key}: event payload missing field '${spec.relativeTo}' — skipping`,
-        );
-        return;
-      }
-      const anchorDate =
-        anchor instanceof Date
-          ? anchor
-          : typeof anchor === 'string' || typeof anchor === 'number'
-            ? new Date(anchor)
-            : null;
-      if (!anchorDate || Number.isNaN(anchorDate.getTime())) {
-        this.logger.debug(
-          `rule ${rule.key}: anchor field '${spec.relativeTo}' is not a date — skipping`,
-        );
-        return;
-      }
-      scheduledFor = applyOffset(anchorDate, spec.offset);
-      // Don't bother inserting reminders that should have fired more
-      // than 24 hours ago — the source event probably happened
-      // post-hoc (manual employee.created backfill etc).
-      if (scheduledFor.getTime() < Date.now() - 24 * 60 * 60 * 1000) {
-        this.logger.debug(
-          `rule ${rule.key}: computed scheduledFor ${scheduledFor.toISOString()} is too far in the past — skipping`,
-        );
-        return;
-      }
-    } else {
-      // No schedule offset — fire as soon as the scheduler tick picks
-      // it up. Use "now" so the timeline strip groups it on today.
-      scheduledFor = new Date();
-    }
+    // Event rules always fire at the event moment. "N days before"
+    // semantics moved to cron rules with the in_exactly_days /
+    // anniversary_in_exactly_days operators on date fields.
+    const scheduledFor = new Date();
 
     // Resolve the source — every event-based rule we ship today
     // wraps an Employee. If the payload has an explicit employeeId,
