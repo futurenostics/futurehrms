@@ -36,11 +36,10 @@ export function SchedulerStatusCard() {
   return (
     <div
       className={cn(
-        'rounded-fn-sm gap-fn-4 px-fn-4 py-fn-3_5 relative flex flex-wrap items-center justify-between overflow-hidden border',
+        'rounded-fn-xs gap-fn-4 px-fn-4 py-fn-3_5 relative flex flex-wrap items-center justify-between overflow-hidden border',
       )}
       style={{
-        background:
-          'linear-gradient(180deg, oklch(0.18 0.04 280) 0%, oklch(0.13 0.02 280) 100%)',
+        background: 'linear-gradient(180deg, oklch(0.18 0.04 280) 0%, oklch(0.13 0.02 280) 100%)',
         borderColor: 'oklch(0.30 0.06 280)',
         color: 'oklch(0.96 0 0)',
       }}
@@ -63,18 +62,14 @@ export function SchedulerStatusCard() {
           >
             Reminder scheduler
           </span>
-          <span className="text-[14px] font-fn-semibold tabular-nums truncate">
+          <span className="font-fn-semibold truncate text-[14px] tabular-nums">
             Next run: <span>{nextLabel}</span>
           </span>
         </div>
       </div>
 
       <div className="gap-fn-6 flex shrink-0 items-center">
-        <Stat
-          label="Last evaluated"
-          primary={lastLabel}
-          secondary={lastTimeLabel}
-        />
+        <Stat label="Last evaluated" primary={lastLabel} secondary={lastTimeLabel} />
         <Stat
           label="Emails sent 30d"
           primary={data ? data.emailsSent30d.toLocaleString() : '—'}
@@ -132,7 +127,7 @@ function Stat({
       </span>
       <span className="gap-fn-1_5 flex items-baseline">
         {icon}
-        <span className="text-[16px] font-fn-semibold tabular-nums">{primary}</span>
+        <span className="font-fn-semibold text-[16px] tabular-nums">{primary}</span>
         {secondary && (
           <span
             className="font-mono text-[11px] tabular-nums"

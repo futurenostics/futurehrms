@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { AppShell } from '@/components/shell/app-shell';
@@ -39,9 +39,27 @@ const FILTERS: Array<{ value: StatusFilter; label: string }> = [
 
 export default function ScheduledRemindersPage() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [status, setStatus] = React.useState<StatusFilter>('scheduled');
   const list = useScheduledReminders(status);
   const cancel = useCancelScheduled();
+
+  // ?date=YYYY-MM-DD filters client-side to rows whose scheduledFor
+  // falls on that day (Asia/Karachi). Set when the timeline strip
+  // deep-links here; cleared via the chip's × button.
+  const dateFilter = searchParams.get('date');
+  const filteredRows = React.useMemo(() => {
+    const all = list.data?.items ?? [];
+    if (!dateFilter) return all;
+    return all.filter((r) => toKarachiIso(r.scheduledFor) === dateFilter);
+  }, [list.data, dateFilter]);
+  const clearDate = React.useCallback(() => {
+    const params = new URLSearchParams(searchParams);
+    params.delete('date');
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [router, pathname, searchParams]);
 
   const columns = React.useMemo<DataTableColumn<ReminderPublic>[]>(
     () => [
@@ -176,8 +194,22 @@ export default function ScheduledRemindersPage() {
                 {f.label}
               </button>
             ))}
+            {dateFilter && (
+              <span className="gap-fn-1 ml-fn-2 rounded-fn-xs border-fn-accent/30 bg-fn-accent-soft text-fn-accent-soft-fg px-fn-2 py-fn-0_5 font-fn-medium inline-flex items-center border text-[11.5px]">
+                {formatDateChip(dateFilter)}
+                <button
+                  type="button"
+                  onClick={clearDate}
+                  className="hover:bg-fn-accent/15 -mr-fn-0_5 rounded-fn-px p-fn-0_5 cursor-pointer"
+                  aria-label="Clear date filter"
+                >
+                  <X className="h-fn-3 w-fn-3" />
+                </button>
+              </span>
+            )}
             <span className="text-fn-fg-faint ml-auto text-[12px]">
-              {list.data?.total ?? 0} {(list.data?.total ?? 0) === 1 ? 'row' : 'rows'}
+              {filteredRows.length} {filteredRows.length === 1 ? 'row' : 'rows'}
+              {dateFilter ? ` (filtered)` : ''}
             </span>
           </div>
 
@@ -185,12 +217,12 @@ export default function ScheduledRemindersPage() {
             <DataTable<ReminderPublic>
               chrome="plain"
               columns={columns}
-              rows={list.data?.items ?? []}
+              rows={filteredRows}
               getRowKey={(r) => r.id}
               isLoading={list.isPending}
               isError={list.isError}
               onRetry={() => list.refetch()}
-              totalCount={list.data?.total ?? 0}
+              totalCount={filteredRows.length}
               rowActions={rowActions}
               emptyState={
                 <div className="gap-fn-2 py-fn-12 flex flex-col items-center text-center">
@@ -232,4 +264,24 @@ function formatDateTime(iso: string): string {
     minute: '2-digit',
     hour12: false,
   });
+}
+
+/** YYYY-MM-DD in Asia/Karachi for matching the timeline's date keys. */
+function toKarachiIso(iso: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Karachi',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(iso));
+}
+
+function formatDateChip(isoDate: string): string {
+  // isoDate is YYYY-MM-DD — anchor at noon UTC to avoid TZ drift.
+  const d = new Date(`${isoDate}T12:00:00Z`);
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  }).format(d);
 }
