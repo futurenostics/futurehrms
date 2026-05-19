@@ -780,6 +780,12 @@ model Reminder {
   cancelledAt     DateTime?
   cancelReason    String?
   createdAt       DateTime @default(now())
+  /// Idempotency key. Computed at schedule time as
+  ///   `${ruleId}|${recipientUserId}|${sourceType ?? '_'}|${sourceId ?? '_'}|${scheduledFor.toISOString().slice(0,13)}`
+  /// — hour-bucketed so retried event fires + repeated cron ticks
+  /// within the same hour can't create duplicate scheduled rows.
+  /// `createMany({ skipDuplicates: true })` no-ops on duplicates.
+  dedupeKey       String?  @unique
 
   @@index([status, scheduledFor])
   @@index([ruleId, status])

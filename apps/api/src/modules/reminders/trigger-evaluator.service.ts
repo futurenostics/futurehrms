@@ -20,6 +20,7 @@ import { prisma } from '@futurenostics/db';
 import { EventBusService, type DomainEvent } from '../../core/events/event-bus.service';
 import {
   RecipientResolverRegistry,
+  computeReminderDedupeKey,
   readRecipientEntries,
   type ResolverSource,
 } from './recipient-resolver';
@@ -173,15 +174,29 @@ export class TriggerEvaluatorService implements OnApplicationBootstrap {
     }
 
     await prisma.reminder.createMany({
-      data: recipients.map((recipientUserId) => ({
-        ruleId: rule.id,
-        recipientUserId,
-        sourceType: source?.kind ?? null,
-        sourceId: source?.id ?? null,
-        scheduledFor,
-        status: 'scheduled' as const,
-        payload: payload as never,
-      })),
+      data: recipients.map((recipientUserId) => {
+        const sourceType = source?.kind ?? null;
+        const sourceId = source?.id ?? null;
+        return {
+          ruleId: rule.id,
+          recipientUserId,
+          sourceType,
+          sourceId,
+          scheduledFor,
+          status: 'scheduled' as const,
+          payload: payload as never,
+          dedupeKey: computeReminderDedupeKey({
+            ruleId: rule.id,
+            recipientUserId,
+            sourceType,
+            sourceId,
+            scheduledFor,
+          }),
+        };
+      }),
+      // Idempotent — duplicate event fires hit the unique
+      // `dedupeKey` and silently no-op.
+      skipDuplicates: true,
     });
 
     // Emit one summary event per rule, not per recipient — keeps

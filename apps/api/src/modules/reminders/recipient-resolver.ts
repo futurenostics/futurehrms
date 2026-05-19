@@ -28,6 +28,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { prisma } from '@futurenostics/db';
 import type { ReminderRule } from '@prisma/client';
+import { z } from 'zod';
 
 /**
  * The entity kinds the trigger evaluator + cron scanner can hydrate
@@ -129,6 +130,22 @@ export class RecipientResolverRegistry {
       throw new Error(
         `Unknown recipient resolver '${key}'. Did the owning module forget to register it?`,
       );
+    }
+    // Validate caller-supplied config against the resolver's
+    // declared schema. A malformed blob (wrong shape, missing
+    // required field) used to silently resolve to zero recipients
+    // because the per-kind logic read what it could and skipped the
+    // rest. Now we throw loudly so resolveMany logs the entry and
+    // the operator can spot the misconfig.
+    if (def.configSchema && def.configSchema.length > 0) {
+      const validation = buildConfigSchema(def.configSchema).safeParse(config ?? {});
+      if (!validation.success) {
+        throw new Error(
+          `config invalid for resolver '${key}': ${validation.error.issues
+            .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
+            .join('; ')}`,
+        );
+      }
     }
     const ids = await def.resolve(rule, source, config);
     // Drop duplicates + falsy entries — defensive against composites.
@@ -326,6 +343,32 @@ export class RecipientResolverRegistry {
  * returns at least one entry so trigger paths can iterate without
  * a defensive empty check.
  */
+/**
+ * Compute the idempotency key for a scheduled Reminder. Hour-bucketed
+ * so retried event-fires and repeated cron ticks within the same hour
+ * cannot create duplicate scheduled rows. Paired with
+ * `createMany({ skipDuplicates: true })` + the `@@unique([dedupeKey])`
+ * constraint on Reminder.
+ */
+export function computeReminderDedupeKey(args: {
+  ruleId: string;
+  recipientUserId: string;
+  sourceType: string | null;
+  sourceId: string | null;
+  scheduledFor: Date;
+}): string {
+  return [
+    args.ruleId,
+    args.recipientUserId,
+    args.sourceType ?? '_',
+    args.sourceId ?? '_',
+    // `YYYY-MM-DDTHH` — hour-bucketed in UTC. Two ticks an hour apart
+    // get different buckets; double-fires within the same hour
+    // dedupe.
+    args.scheduledFor.toISOString().slice(0, 13),
+  ].join('|');
+}
+
 export function readRecipientEntries(rule: ReminderRule): RecipientEntry[] {
   const raw = rule.recipientResolvers;
   if (Array.isArray(raw) && raw.length > 0) {
@@ -347,6 +390,38 @@ export function readRecipientEntries(rule: ReminderRule): RecipientEntry[] {
 }
 
 /* ---------- config readers ---------- */
+
+/**
+ * Compile a `ResolverConfigField[]` into a zod schema. Each field's
+ * `type` maps to a runtime check matching what the resolver actually
+ * reads via `readString` / `readStringArray`. Required fields can't
+ * be undefined or empty.
+ */
+function buildConfigSchema(fields: ResolverConfigField[]): z.ZodTypeAny {
+  const shape: Record<string, z.ZodTypeAny> = {};
+  for (const f of fields) {
+    let schema: z.ZodTypeAny;
+    if (f.type === 'user-multi') {
+      // Allow empty arrays — the resolver treats an empty list as
+      // "zero recipients" which is a legitimate runtime state.
+      // `required` here means the field must be PRESENT, not that
+      // the array must be non-empty.
+      schema = z.array(z.string().min(1));
+    } else if (f.type === 'role') {
+      schema = f.required ? z.string().min(1) : z.string();
+    } else if (f.type === 'enum') {
+      const values = f.options.map((o) => o.value) as [string, ...string[]];
+      // ZodEnum is intrinsically "must be one of these values" — no
+      // separate min() check is needed when required.
+      schema = values.length > 0 ? z.enum(values) : z.string();
+    } else {
+      schema = z.unknown();
+    }
+    if (!f.required) schema = schema.optional();
+    shape[f.key] = schema;
+  }
+  return z.object(shape).passthrough();
+}
 
 function readString(config: ResolverConfig, key: string): string | null {
   if (!config) return null;

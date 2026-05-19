@@ -41,6 +41,7 @@ import { EventBusService } from '../../core/events/event-bus.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
   RecipientResolverRegistry,
+  computeReminderDedupeKey,
   readRecipientEntries,
   type ResolverSource,
 } from './recipient-resolver';
@@ -159,6 +160,26 @@ export class ReminderSchedulerService implements OnApplicationBootstrap, OnModul
           status: 'cancelled',
           cancelledAt: new Date(),
           cancelReason: 'rule disabled or archived before fire',
+        },
+      });
+      return;
+    }
+
+    // Same window for the recipient — a user soft-deleted or
+    // deactivated between scheduling and firing must NOT receive
+    // the reminder. We re-validate live; the User row is cheap to
+    // hit and the wasted notification would be worse.
+    const user = await prisma.user.findUnique({
+      where: { id: reminder.recipientUserId },
+      select: { id: true, isActive: true, deletedAt: true },
+    });
+    if (!user || !user.isActive || user.deletedAt) {
+      await prisma.reminder.update({
+        where: { id: reminder.id },
+        data: {
+          status: 'cancelled',
+          cancelledAt: new Date(),
+          cancelReason: 'recipient deactivated or deleted',
         },
       });
       return;
@@ -301,15 +322,27 @@ export class ReminderSchedulerService implements OnApplicationBootstrap, OnModul
       const recipients = await this.resolvers.resolveMany(readRecipientEntries(rule), rule, source);
       if (recipients.length === 0) continue;
       await prisma.reminder.createMany({
-        data: recipients.map((recipientUserId) => ({
-          ruleId: rule.id,
-          recipientUserId,
-          sourceType: source?.kind ?? null,
-          sourceId: source?.id ?? null,
-          scheduledFor: now,
-          status: 'scheduled' as const,
-          payload: payloadTag as never,
-        })),
+        data: recipients.map((recipientUserId) => {
+          const sourceType = source?.kind ?? null;
+          const sourceId = source?.id ?? null;
+          return {
+            ruleId: rule.id,
+            recipientUserId,
+            sourceType,
+            sourceId,
+            scheduledFor: now,
+            status: 'scheduled' as const,
+            payload: payloadTag as never,
+            dedupeKey: computeReminderDedupeKey({
+              ruleId: rule.id,
+              recipientUserId,
+              sourceType,
+              sourceId,
+              scheduledFor: now,
+            }),
+          };
+        }),
+        skipDuplicates: true,
       });
       scheduled += recipients.length;
     }
