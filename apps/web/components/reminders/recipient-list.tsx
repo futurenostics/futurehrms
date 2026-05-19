@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Plus, Users, X } from 'lucide-react';
+import { LayoutGrid, UserSearch, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Combobox, MultiCombobox, type ComboboxOption } from '@/components/ui/combobox';
 import {
@@ -66,23 +66,30 @@ export function RecipientList({ value, onChange, disabled }: RecipientListProps)
   function remove(index: number) {
     onChange(value.filter((_, i) => i !== index));
   }
-  function addEntry() {
-    const first = items[0]?.key ?? 'self';
+  function addPerson() {
+    // The "Find a person" path: insert a specific-employees entry
+    // primed with an empty employeeIds list. The card's config
+    // editor renders the MultiCombobox right away, so the search
+    // input is one click closer to the user than going via the
+    // kind dropdown.
+    onChange([...value, { kind: 'specific-employees', config: { employeeIds: [] } }]);
+  }
+  function addGroup() {
+    // The "Add a group" path: pick whichever non-specific-employees
+    // kind comes first so the user sees a different starting point
+    // than "Specific employee(s)".
+    const first = items.find((r) => r.key !== 'specific-employees')?.key ?? items[0]?.key ?? 'self';
     onChange([...value, { kind: first }]);
   }
 
   return (
     <div className="gap-fn-2 flex flex-col">
       {value.length === 0 ? (
-        <div className="rounded-fn-xs border-fn-border bg-fn-bg-subtle/40 px-fn-3 py-fn-4 gap-fn-1 flex flex-col items-start border border-dashed">
+        <div className="rounded-fn-xs border-fn-border bg-fn-bg-subtle/40 px-fn-3 py-fn-4 gap-fn-2 flex flex-col items-start border border-dashed">
           <span className="text-fn-fg-muted text-[12.5px]">
             No recipients yet — add at least one.
           </span>
-          {!disabled && (
-            <Button type="button" variant="secondary" size="sm" onClick={addEntry}>
-              <Users className="h-fn-3_5 w-fn-3_5" /> Add recipient
-            </Button>
-          )}
+          {!disabled && <AddRecipientCtas onPerson={addPerson} onGroup={addGroup} />}
         </div>
       ) : (
         value.map((entry, i) => {
@@ -102,10 +109,26 @@ export function RecipientList({ value, onChange, disabled }: RecipientListProps)
       )}
 
       {value.length > 0 && !disabled && (
-        <Button type="button" variant="ghost" size="sm" onClick={addEntry} className="self-start">
-          <Plus className="h-fn-3_5 w-fn-3_5" /> Add recipient
-        </Button>
+        <AddRecipientCtas onPerson={addPerson} onGroup={addGroup} />
       )}
+    </div>
+  );
+}
+
+/**
+ * The two-CTA split surfaced both at empty state and after the
+ * last existing entry. "Find a person" is the high-frequency path;
+ * "Add a group" covers the static + parameterised kinds.
+ */
+function AddRecipientCtas({ onPerson, onGroup }: { onPerson: () => void; onGroup: () => void }) {
+  return (
+    <div className="gap-fn-2 flex flex-wrap">
+      <Button type="button" variant="secondary" size="sm" onClick={onPerson}>
+        <UserSearch className="h-fn-3_5 w-fn-3_5" /> Find a person
+      </Button>
+      <Button type="button" variant="ghost" size="sm" onClick={onGroup}>
+        <LayoutGrid className="h-fn-3_5 w-fn-3_5" /> Add a group
+      </Button>
     </div>
   );
 }

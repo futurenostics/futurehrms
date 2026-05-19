@@ -1424,11 +1424,19 @@ function buildEmployeeFilterWhere(
   }
 
   if (query.search) {
+    // Search hits both the obvious identity fields (name, email,
+    // EID) and contact fields users actually have at hand — phone +
+    // personal phone + personal email. Numbers with dashes/spaces
+    // still match because postgres ILIKE on a contains substring is
+    // forgiving as long as the typed fragment appears unbroken.
     filters.push({
       OR: [
         { fullName: { contains: query.search, mode: 'insensitive' } },
         { email: { contains: query.search, mode: 'insensitive' } },
         { eid: { contains: query.search, mode: 'insensitive' } },
+        { phone: { contains: query.search, mode: 'insensitive' } },
+        { personalPhone: { contains: query.search, mode: 'insensitive' } },
+        { personalEmail: { contains: query.search, mode: 'insensitive' } },
       ],
     });
   }

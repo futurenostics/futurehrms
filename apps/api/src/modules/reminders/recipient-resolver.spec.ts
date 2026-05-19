@@ -62,6 +62,7 @@ async function fakeRule(): Promise<ReminderRule> {
     publishedById: null,
     createdAt: new Date(),
     createdById: tag('actor'),
+    updatedAt: new Date(),
     deletedAt: null,
   };
 }
