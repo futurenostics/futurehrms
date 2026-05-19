@@ -26,6 +26,31 @@ export function evaluateConditions(tree: ConditionNode | undefined, context: Eva
   return evalNode(tree, context);
 }
 
+/**
+ * Walk the tree, collect each leaf's entity prefix (the first segment
+ * of its dotted field path — e.g. `employee` from
+ * `employee.department.slug`). Returns the deduped Set.
+ *
+ * The cron scheduler uses this to figure out which Prisma tables to
+ * scan each tick — no more user-supplied `sourceEntity`. Pure +
+ * synchronous so it's cheap to call on every tick.
+ */
+export function deriveScanTargets(tree: ConditionNode | undefined): Set<string> {
+  const out = new Set<string>();
+  if (!tree) return out;
+  walk(tree, out);
+  return out;
+}
+
+function walk(node: ConditionNode, out: Set<string>): void {
+  if (node.kind === 'leaf') {
+    const prefix = node.field.split('.')[0];
+    if (prefix) out.add(prefix);
+    return;
+  }
+  for (const child of node.conditions) walk(child, out);
+}
+
 function evalNode(node: ConditionNode, ctx: EvalContext): boolean {
   if (node.kind === 'leaf') return evalLeaf(node, ctx);
 

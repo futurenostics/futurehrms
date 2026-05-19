@@ -29,9 +29,25 @@ import { Injectable, Logger } from '@nestjs/common';
 import { prisma } from '@futurenostics/db';
 import type { ReminderRule } from '@prisma/client';
 
+/**
+ * The entity kinds the trigger evaluator + cron scanner can hydrate
+ * and pass to resolvers. Recipient resolvers today only know how to
+ * traverse from `employee` / `employeeDocument` sources to user IDs;
+ * the rest exist so the condition tree can filter rows of those
+ * entities at cron tick. For non-employee sources, recipient lists
+ * must rely on non-source resolvers (specific-employees, role-members,
+ * hr-admins, etc.).
+ */
 export type ResolverSource =
   | { kind: 'employee'; id: string }
   | { kind: 'employeeDocument'; id: string }
+  | { kind: 'department'; id: string }
+  | { kind: 'designation'; id: string }
+  | { kind: 'project'; id: string }
+  | { kind: 'projectCategory'; id: string }
+  | { kind: 'projectAssignment'; id: string }
+  | { kind: 'commissionRule'; id: string }
+  | { kind: 'commissionRun'; id: string }
   | null;
 
 /** Per-entry configuration carried inside the rule's recipientResolvers array. */

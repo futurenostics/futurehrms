@@ -121,7 +121,6 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
 
   // cron-trigger fields
   const [cron, setCron] = React.useState(CRON_PRESETS[0]!.value);
-  const [sourceEntity, setSourceEntity] = React.useState<'employee' | 'project'>('employee');
 
   // condition-tree (shared across both trigger types)
   const [conditions, setConditions] = React.useState<ConditionGroup | null>(null);
@@ -174,9 +173,9 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
       }
     } else if (r.triggerSpec.kind === 'cron') {
       setCron(r.triggerSpec.cron);
-      // New rules carry sourceEntity. Legacy rules carry a query.kind —
-      // every shipped legacy kind targets Employee, so default to that.
-      setSourceEntity(r.triggerSpec.sourceEntity ?? 'employee');
+      // Legacy fields (sourceEntity from round 2, query.kind from
+      // round 1) stay on the BE row for back-compat but are no
+      // longer surfaced here — conditions determine the scan.
     }
     setConditions(r.triggerSpec.conditions ?? null);
   }, [mode, existing.data]);
@@ -223,10 +222,10 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
       }
       return spec;
     }
-    // New shape: sourceEntity + conditions handle what the legacy
-    // query kinds did. The BE still reads old rows with `query.kind`
-    // via its legacy code path, but new writes don't emit query.
-    return { kind: 'cron', cron, sourceEntity, conditions };
+    // Conditions-driven cron: the scheduler walks the tree and picks
+    // its scan targets from the entity prefixes the conditions
+    // reference. We don't emit sourceEntity or query on new writes.
+    return { kind: 'cron', cron, conditions };
   }
 
   async function handleSaveDraft() {
@@ -524,24 +523,11 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
                       </SelectContent>
                     </Select>
                   </Field>
-                  <Field
-                    label="Source entity"
-                    hint="Each tick scans every row in this table and applies the Conditions below. Add a date condition with matches_today_month_day / within_days to recreate birthday / anniversary / probation-ending behaviour."
-                  >
-                    <Select
-                      value={sourceEntity}
-                      onValueChange={(v) => setSourceEntity(v as 'employee' | 'project')}
-                      disabled={!isDraft}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="employee">Employee</SelectItem>
-                        <SelectItem value="project">Project</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </Field>
+                  <p className="text-fn-fg-faint -mt-fn-1 text-[11.5px]">
+                    The scheduler scans whichever entities your conditions reference at each tick.
+                    Add a condition on Employee, Project, Commission rule, etc. — the scheduler
+                    figures out the rest.
+                  </p>
                 </>
               )}
             </FormSection>

@@ -45,7 +45,7 @@ import {
   type ResolverSource,
 } from './recipient-resolver';
 import type { CronTriggerSpec } from './reminder-trigger.types';
-import { evaluateConditions } from './reminder-conditions.evaluator';
+import { deriveScanTargets, evaluateConditions } from './reminder-conditions.evaluator';
 import { buildConditionContext } from './reminder-condition-context';
 
 const QUEUE_NAME = 'reminders';
@@ -222,33 +222,24 @@ export class ReminderSchedulerService implements OnApplicationBootstrap, OnModul
     let sources: ResolverSource[] = [];
     let payloadTag: Record<string, unknown> = {};
 
-    // NEW preferred path: cron + sourceEntity + conditions. We scan
-    // every active row in the target table (dept-scoped if the rule
-    // has one) and let the condition tree do the filtering.
-    if (spec.sourceEntity) {
+    // NEW preferred path: cron + conditions, no explicit source.
+    // Derive which entities to scan from the condition tree itself.
+    // A condition like `project.status equals 'in_billing'` adds
+    // `project` to the scan targets; multi-entity conditions scan
+    // each table independently and union the sources.
+    if (spec.conditions && !spec.sourceEntity) {
+      const targets = deriveScanTargets(spec.conditions);
+      payloadTag = { _cronTargets: Array.from(targets) };
+      for (const kind of targets) {
+        sources = sources.concat(await this.fetchSourcesForKind(kind, rule.departmentId));
+      }
+    } else if (spec.sourceEntity) {
+      // LEGACY (round-2): explicit sourceEntity dropdown.
       payloadTag = { _cronSource: spec.sourceEntity };
       if (spec.sourceEntity === 'employee') {
-        const employees = await prisma.employee.findMany({
-          where: {
-            deletedAt: null,
-            ...(rule.departmentId ? { departmentId: rule.departmentId } : {}),
-          },
-          select: { id: true },
-        });
-        sources = employees.map((e) => ({ kind: 'employee' as const, id: e.id }));
+        sources = await this.fetchSourcesForKind('employee', rule.departmentId);
       } else if (spec.sourceEntity === 'project') {
-        // Project sources currently work for the condition path but
-        // recipient resolvers don't traverse Project → User yet, so
-        // a rule on project must explicitly use specific-employees /
-        // role-members / hr-admins entries.
-        const projects = await prisma.project.findMany({
-          where: {
-            deletedAt: null,
-            ...(rule.departmentId ? { departmentId: rule.departmentId } : {}),
-          },
-          select: { id: true },
-        });
-        sources = projects.map(() => null);
+        sources = await this.fetchSourcesForKind('project', rule.departmentId);
       }
     } else if (spec.query) {
       // LEGACY path — fixed query kinds.
@@ -316,6 +307,94 @@ export class ReminderSchedulerService implements OnApplicationBootstrap, OnModul
       scheduled += recipients.length;
     }
     return scheduled;
+  }
+
+  /**
+   * Maps a condition-derived entity kind to its Prisma scan. The
+   * scheduler doesn't ask which fields the condition references —
+   * the evaluator pulls fields off the hydrated context, so we just
+   * fetch the row ids for the right table and let
+   * buildConditionContext do the relation-loading inside the loop.
+   *
+   * Dept scoping is applied when the table has a department relation
+   * and the rule carries departmentId. Soft-deleted rows are
+   * excluded where the schema supports `deletedAt`.
+   */
+  private async fetchSourcesForKind(
+    kind: string,
+    departmentId: string | null,
+  ): Promise<ResolverSource[]> {
+    switch (kind) {
+      case 'employee': {
+        const rows = await prisma.employee.findMany({
+          where: { deletedAt: null, ...(departmentId ? { departmentId } : {}) },
+          select: { id: true },
+        });
+        return rows.map((r) => ({ kind: 'employee' as const, id: r.id }));
+      }
+      case 'employeeDocument': {
+        const rows = await prisma.employeeDocument.findMany({
+          where: departmentId ? { employee: { departmentId } } : {},
+          select: { id: true },
+        });
+        return rows.map((r) => ({ kind: 'employeeDocument' as const, id: r.id }));
+      }
+      case 'department': {
+        const rows = await prisma.department.findMany({
+          where: { isActive: true, ...(departmentId ? { id: departmentId } : {}) },
+          select: { id: true },
+        });
+        return rows.map((r) => ({ kind: 'department' as const, id: r.id }));
+      }
+      case 'designation': {
+        const rows = await prisma.designation.findMany({
+          where: { isActive: true, ...(departmentId ? { departmentId } : {}) },
+          select: { id: true },
+        });
+        return rows.map((r) => ({ kind: 'designation' as const, id: r.id }));
+      }
+      case 'project': {
+        const rows = await prisma.project.findMany({
+          where: { deletedAt: null, ...(departmentId ? { departmentId } : {}) },
+          select: { id: true },
+        });
+        return rows.map((r) => ({ kind: 'project' as const, id: r.id }));
+      }
+      case 'projectCategory': {
+        const rows = await prisma.projectCategory.findMany({
+          where: { deletedAt: null, archived: false },
+          select: { id: true },
+        });
+        return rows.map((r) => ({ kind: 'projectCategory' as const, id: r.id }));
+      }
+      case 'projectAssignment': {
+        const rows = await prisma.projectAssignment.findMany({
+          where: {
+            removedAt: null,
+            ...(departmentId ? { project: { departmentId } } : {}),
+          },
+          select: { id: true },
+        });
+        return rows.map((r) => ({ kind: 'projectAssignment' as const, id: r.id }));
+      }
+      case 'commissionRule': {
+        const rows = await prisma.commissionRule.findMany({
+          where: { status: 'active' },
+          select: { id: true },
+        });
+        return rows.map((r) => ({ kind: 'commissionRule' as const, id: r.id }));
+      }
+      case 'commissionRun': {
+        const rows = await prisma.commissionRun.findMany({
+          where: { status: { not: 'locked' } },
+          select: { id: true },
+        });
+        return rows.map((r) => ({ kind: 'commissionRun' as const, id: r.id }));
+      }
+      default:
+        this.logger.warn(`fetchSourcesForKind: unknown entity kind '${kind}'`);
+        return [];
+    }
   }
 
   private async matchingEmployees(args: {
