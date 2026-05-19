@@ -47,6 +47,7 @@ import {
 import type { CronTriggerSpec } from './reminder-trigger.types';
 import { deriveScanTargets, evaluateConditions } from './reminder-conditions.evaluator';
 import { buildConditionContext } from './reminder-condition-context';
+import { cronMatches } from './cron-matcher';
 
 const QUEUE_NAME = 'reminders';
 const JOB_NAME = 'hourly-tick';
@@ -208,7 +209,7 @@ export class ReminderSchedulerService implements OnApplicationBootstrap, OnModul
         // hour matches one of the cron's hour fields. Cron `0 9 * * *`
         // fires on the 09:00 tick (in PKT). Anything more complex is
         // a Phase 3.5 polish.
-        if (!hourMatches(spec.cron, this.lastEvaluatedAt ?? new Date())) continue;
+        if (!cronMatches(spec.cron, this.lastEvaluatedAt ?? new Date())) continue;
         scheduled += await this.runCronQuery(rule, spec);
       } catch (err) {
         this.logger.warn(`cron eval failed for ${rule.key}: ${(err as Error).message}`);
@@ -477,31 +478,6 @@ function monthDayString(d: Date): string {
     day: '2-digit',
   }).format(d);
   return fmt; // en-CA gives MM-DD with dash separator
-}
-
-function hourMatches(cron: string, when: Date): boolean {
-  const [, hourField] = cron.split(/\s+/);
-  if (!hourField || hourField === '*') return true;
-  const tickHour = parseInt(
-    new Intl.DateTimeFormat('en-GB', {
-      timeZone: TZ,
-      hour: '2-digit',
-      hour12: false,
-    }).format(when),
-    10,
-  );
-  // Comma-separated list and `*/N` patterns
-  const tokens = hourField.split(',');
-  for (const tok of tokens) {
-    if (tok === '*') return true;
-    if (tok.startsWith('*/')) {
-      const step = Number(tok.slice(2));
-      if (step && tickHour % step === 0) return true;
-      continue;
-    }
-    if (Number(tok) === tickHour) return true;
-  }
-  return false;
 }
 
 function nextHourBoundary(from: Date): Date {
