@@ -32,10 +32,12 @@ import {
   useRecipientResolvers,
   useReminderRule,
   useUpdateRule,
+  type ConditionGroup,
   type CronTriggerSpec,
   type EventTriggerSpec,
   type TriggerSpec,
 } from '@/lib/queries/reminders';
+import { ConditionBuilder, countLeaves } from '@/components/reminders/condition-builder';
 
 /**
  * Rule editor sheet — used in two modes:
@@ -131,6 +133,9 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
   const [queryKind, setQueryKind] = React.useState<CronTriggerSpec['query']['kind']>('birthday');
   const [withinDays, setWithinDays] = React.useState(14);
 
+  // condition-tree (shared across both trigger types)
+  const [conditions, setConditions] = React.useState<ConditionGroup | null>(null);
+
   // Hydrate from existing rule when editing
   React.useEffect(() => {
     if (mode !== 'edit' || !existing.data) return;
@@ -170,6 +175,7 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
         setWithinDays(r.triggerSpec.query.withinDays);
       }
     }
+    setConditions(r.triggerSpec.conditions ?? null);
   }, [mode, existing.data]);
 
   const isDraft = existing.data?.status === 'draft' || mode === 'create';
@@ -206,6 +212,7 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
         eventType,
         relativeTo,
         offset,
+        conditions,
       };
       return spec;
     }
@@ -217,7 +224,7 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
           : queryKind === 'work-anniversary'
             ? { kind: 'work-anniversary' }
             : { kind: 'birthday' };
-    return { kind: 'cron', cron, query };
+    return { kind: 'cron', cron, query, conditions };
   }
 
   async function handleSaveDraft() {
@@ -507,6 +514,20 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
                   )}
                 </>
               )}
+            </FormSection>
+
+            {/* Optional condition tree */}
+            <FormSection
+              title={
+                conditions ? `Conditions · ${countLeaves(conditions)}` : 'Conditions (optional)'
+              }
+            >
+              <p className="text-fn-fg-muted text-[12px]">
+                Layer extra filters on top of the trigger — only entities matching these conditions
+                will schedule a reminder. Combine fields across Employee, Department, Project,
+                Commission rule, and more, with AND / OR groups for any-of / all-of logic.
+              </p>
+              <ConditionBuilder value={conditions} onChange={setConditions} disabled={readonly} />
             </FormSection>
 
             {/* Notification + recipients */}

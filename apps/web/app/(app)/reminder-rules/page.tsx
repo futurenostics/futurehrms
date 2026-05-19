@@ -16,6 +16,7 @@ import { SchedulerStatusCard } from '@/components/reminders/scheduler-status-car
 import { ScheduledTimeline } from '@/components/reminders/scheduled-timeline';
 import { leadTimeLabel, ruleHue, templateLabel } from '@/components/reminders/rule-visuals';
 import { RuleEditorSheet } from '@/components/reminders/rule-editor-sheet';
+import { countLeaves } from '@/components/reminders/condition-builder';
 import {
   useRecipientResolvers,
   useReminderRules,
@@ -116,21 +117,36 @@ export default function ReminderRulesPage() {
       {
         id: 'event',
         header: 'Event',
-        cell: (rule) => (
-          <div className="gap-fn-2 flex min-w-0 items-center">
-            <span
-              aria-hidden
-              className="h-fn-2 w-fn-2 rounded-fn-full inline-block shrink-0"
-              style={{ background: `oklch(0.60 0.16 ${ruleHue(rule.key)})` }}
-            />
-            <div className="gap-fn-0_5 flex min-w-0 flex-col">
-              <span className="text-fn-fg font-fn-semibold truncate text-[13px]">{rule.name}</span>
-              <span className="text-fn-fg-faint truncate text-[11px]">
-                {rule.description ?? `v${rule.version}`}
-              </span>
+        cell: (rule) => {
+          const conditionCount = countLeaves(rule.triggerSpec.conditions ?? null);
+          return (
+            <div className="gap-fn-2 flex min-w-0 items-center">
+              <span
+                aria-hidden
+                className="h-fn-2 w-fn-2 rounded-fn-full inline-block shrink-0"
+                style={{ background: `oklch(0.60 0.16 ${ruleHue(rule.key)})` }}
+              />
+              <div className="gap-fn-0_5 flex min-w-0 flex-col">
+                <span className="gap-fn-1_5 flex min-w-0 items-center">
+                  <span className="text-fn-fg font-fn-semibold truncate text-[13px]">
+                    {rule.name}
+                  </span>
+                  {conditionCount > 0 && (
+                    <span
+                      className="rounded-fn-xs border-fn-accent/30 bg-fn-accent-soft text-fn-accent-soft-fg px-fn-1_5 py-fn-0_5 font-fn-medium inline-flex shrink-0 items-center border text-[10px] uppercase tabular-nums tracking-[0.04em]"
+                      title={`${conditionCount} condition${conditionCount === 1 ? '' : 's'}`}
+                    >
+                      +{conditionCount} cond.
+                    </span>
+                  )}
+                </span>
+                <span className="text-fn-fg-faint truncate text-[11px]">
+                  {rule.description ?? `v${rule.version}`}
+                </span>
+              </div>
             </div>
-          </div>
-        ),
+          );
+        },
       },
       {
         id: 'department',

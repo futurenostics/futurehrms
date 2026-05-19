@@ -20,6 +20,8 @@ import { prisma } from '@futurenostics/db';
 import { EventBusService, type DomainEvent } from '../../core/events/event-bus.service';
 import { RecipientResolverRegistry, type ResolverSource } from './recipient-resolver';
 import { applyOffset, type EventTriggerSpec, type TriggerSpec } from './reminder-trigger.types';
+import { evaluateConditions } from './reminder-conditions.evaluator';
+import { buildConditionContext } from './reminder-condition-context';
 
 @Injectable()
 export class TriggerEvaluatorService implements OnApplicationBootstrap {
@@ -126,6 +128,20 @@ export class TriggerEvaluatorService implements OnApplicationBootstrap {
     // use it; otherwise fall back to source-shaped fields the
     // events normally carry.
     const source: ResolverSource = resolveSource(payload);
+
+    // Condition tree: hydrate the source entity once (cheap; one
+    // Prisma findUnique) and run the evaluator. Absent tree =
+    // match-all, so existing rules without conditions are unaffected.
+    if (spec.conditions && source) {
+      const context = await buildConditionContext(source);
+      if (context && !evaluateConditions(spec.conditions, context)) {
+        this.logger.debug(
+          `rule ${rule.key}: source ${source.kind}/${source.id} failed conditions — skipping`,
+        );
+        return;
+      }
+    }
+
     const recipients = await this.resolvers.resolve(rule.recipientResolver, rule as never, source);
 
     if (recipients.length === 0) {

@@ -41,6 +41,8 @@ import { EventBusService } from '../../core/events/event-bus.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RecipientResolverRegistry, type ResolverSource } from './recipient-resolver';
 import type { CronTriggerSpec } from './reminder-trigger.types';
+import { evaluateConditions } from './reminder-conditions.evaluator';
+import { buildConditionContext } from './reminder-condition-context';
 
 const QUEUE_NAME = 'reminders';
 const JOB_NAME = 'hourly-tick';
@@ -259,6 +261,14 @@ export class ReminderSchedulerService implements OnApplicationBootstrap, OnModul
 
     let scheduled = 0;
     for (const source of sources) {
+      // Per-rule condition tree: hydrate the candidate entity once
+      // and run the evaluator. Absent tree = match-all.
+      if (spec.conditions && source) {
+        const context = await buildConditionContext(source);
+        if (context && !evaluateConditions(spec.conditions, context)) {
+          continue;
+        }
+      }
       const recipients = await this.resolvers.resolve(rule.recipientResolver, rule, source);
       if (recipients.length === 0) continue;
       await prisma.reminder.createMany({
