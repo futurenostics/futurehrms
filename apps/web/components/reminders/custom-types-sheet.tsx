@@ -253,10 +253,22 @@ export function CustomTypesSheet({ open, onOpenChange }: CustomTypesSheetProps) 
 
   const items = list.data?.items ?? [];
 
+  // The full key always starts with "custom." — that prefix is
+  // surfaced as a static chip next to the input so the author can
+  // only type the suffix (and can never typo the separator). The
+  // suffix is what gets validated.
+  const KEY_PREFIX = 'custom.';
+  const keySuffix = isNew
+    ? form.key.startsWith(KEY_PREFIX)
+      ? form.key.slice(KEY_PREFIX.length)
+      : form.key
+    : form.key;
   const keyError = isNew
-    ? !/^custom\.[a-z0-9][a-z0-9-]*$/.test(form.key.trim())
-      ? "Key must start with 'custom.' and use lowercase letters / digits / dashes"
-      : null
+    ? keySuffix.length === 0
+      ? 'Pick a slug, e.g. "birthday" → custom.birthday'
+      : !/^[a-z0-9][a-z0-9-]*$/.test(keySuffix)
+        ? 'Lowercase letters, digits, and dashes only'
+        : null
     : null;
   const canSave =
     !busy &&
@@ -370,24 +382,33 @@ export function CustomTypesSheet({ open, onOpenChange }: CustomTypesSheetProps) 
 
                 <FormField
                   label="Key"
-                  hint="Must start with 'custom.' — lowercase letters, digits, dashes only."
-                  error={form.key.length > 'custom.'.length ? keyError : null}
+                  hint="The 'custom.' prefix is fixed. Type a slug — lowercase letters, digits, dashes only."
+                  error={keySuffix.length > 0 ? keyError : null}
                 >
-                  <Input
-                    value={form.key}
-                    onChange={(e) =>
-                      setForm((p) => ({
-                        ...p,
-                        key: e.target.value
-                          .toLowerCase()
-                          .replace(/\s+/g, '-')
-                          .replace(/[^a-z0-9.-]/g, ''),
-                      }))
-                    }
-                    disabled={!isNew || busy}
-                    placeholder="custom.weekly-pulse"
-                    aria-invalid={!!keyError}
-                  />
+                  {isNew ? (
+                    <div className="border-fn-border bg-fn-bg-panel rounded-fn-xs focus-within:border-fn-accent focus-within:ring-fn-accent/30 flex items-center border focus-within:ring-2">
+                      <span className="text-fn-fg-muted bg-fn-bg-subtle/60 border-r-fn-border px-fn-2_5 py-fn-1_5 select-none border-r font-mono text-[12.5px]">
+                        custom.
+                      </span>
+                      <input
+                        value={keySuffix}
+                        onChange={(e) => {
+                          const normalized = e.target.value
+                            .toLowerCase()
+                            .replace(/\s+/g, '-')
+                            .replace(/\./g, '-')
+                            .replace(/[^a-z0-9-]/g, '');
+                          setForm((p) => ({ ...p, key: KEY_PREFIX + normalized }));
+                        }}
+                        disabled={busy}
+                        placeholder="weekly-pulse"
+                        aria-invalid={!!keyError}
+                        className="text-fn-fg placeholder:text-fn-fg-faint px-fn-2_5 py-fn-1_5 flex-1 bg-transparent font-mono text-[12.5px] outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                      />
+                    </div>
+                  ) : (
+                    <Input value={form.key} disabled placeholder="custom.weekly-pulse" />
+                  )}
                 </FormField>
 
                 <FormField label="Name" hint="Display name shown in pickers and the bell.">
