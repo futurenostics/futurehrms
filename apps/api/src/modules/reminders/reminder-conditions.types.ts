@@ -90,18 +90,45 @@ const leafSchema = z.object({
 export type ConditionLeaf = z.infer<typeof leafSchema>;
 
 // Recursive group schema — zod needs the lazy/late binding via interface trick.
+//
+// Backwards-compat note: older rules carry a group-level `operator`
+// (single 'and' | 'or' that applied to every sibling). New rules
+// carry `connectors[]` — one entry per (i, i+1) sibling pair, so the
+// user can mix AND / OR within a single level. SQL-standard precedence
+// applies in the evaluator: AND binds tighter than OR.
+//
+// When reading: if `connectors` is set, it wins. Otherwise we derive
+// it from `operator` (all entries equal). On write the FE emits
+// `connectors` only and omits `operator`; the BE accepts either.
 export interface ConditionGroup {
   kind: 'group';
-  operator: 'and' | 'or';
+  /** Legacy uniform operator. Optional. Use `connectors` for mixed AND/OR. */
+  operator?: 'and' | 'or';
+  /**
+   * Per-pair connectors. `connectors[i]` joins `conditions[i]` to
+   * `conditions[i+1]`. Length = max(0, conditions.length - 1).
+   */
+  connectors?: Array<'and' | 'or'>;
   conditions: Array<ConditionLeaf | ConditionGroup>;
 }
 
 export const conditionGroupSchema: z.ZodType<ConditionGroup> = z.lazy(() =>
-  z.object({
-    kind: z.literal('group'),
-    operator: z.enum(['and', 'or']),
-    conditions: z.array(z.union([leafSchema, conditionGroupSchema])).max(50),
-  }),
+  z
+    .object({
+      kind: z.literal('group'),
+      operator: z.enum(['and', 'or']).optional(),
+      connectors: z
+        .array(z.enum(['and', 'or']))
+        .max(50)
+        .optional(),
+      conditions: z.array(z.union([leafSchema, conditionGroupSchema])).max(50),
+    })
+    .refine(
+      (g) => g.operator !== undefined || g.connectors !== undefined || g.conditions.length <= 1,
+      {
+        message: 'group must declare either operator or connectors when it has more than one child',
+      },
+    ),
 );
 
 export const conditionLeafSchema = leafSchema;

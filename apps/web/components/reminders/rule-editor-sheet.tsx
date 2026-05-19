@@ -326,7 +326,21 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
               >
                 <Input
                   value={key}
-                  onChange={(e) => setKey(e.target.value)}
+                  // Normalize as the user types:
+                  //   - uppercase → lowercase
+                  //   - any whitespace → '-'
+                  //   - collapse runs of '-' so "Probation  END" → "probation-end"
+                  //   - strip any other illegal characters (the BE regex
+                  //     allows only [a-z0-9-]).
+                  onChange={(e) =>
+                    setKey(
+                      e.target.value
+                        .toLowerCase()
+                        .replace(/\s+/g, '-')
+                        .replace(/[^a-z0-9-]/g, '')
+                        .replace(/-{2,}/g, '-'),
+                    )
+                  }
                   disabled={mode === 'edit'}
                   placeholder="probation-end-eng"
                   aria-invalid={!!(key.length > 0 && keyError)}

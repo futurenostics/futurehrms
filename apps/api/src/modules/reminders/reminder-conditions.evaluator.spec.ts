@@ -248,6 +248,72 @@ describe('group composition', () => {
   });
 });
 
+describe('mixed per-pair connectors (SQL precedence)', () => {
+  it('connectors override the group-level operator', () => {
+    // (engineering) OR (operations) — connector[0]='or'
+    const tree: ConditionGroup = {
+      kind: 'group',
+      operator: 'and', // legacy field; should be ignored
+      connectors: ['or'],
+      conditions: [
+        {
+          kind: 'leaf',
+          field: 'employee.department.slug',
+          operator: 'equals',
+          value: 'engineering',
+        },
+        {
+          kind: 'leaf',
+          field: 'employee.department.slug',
+          operator: 'equals',
+          value: 'operations',
+        },
+      ],
+    };
+    expect(evaluateConditions(tree, employee)).toBe(true);
+  });
+  it('AND binds tighter than OR (A OR B AND C → A OR (B AND C))', () => {
+    // employee in finance OR (engineering AND permanent contract) → true
+    const tree: ConditionGroup = {
+      kind: 'group',
+      connectors: ['or', 'and'],
+      conditions: [
+        { kind: 'leaf', field: 'employee.department.slug', operator: 'equals', value: 'finance' },
+        {
+          kind: 'leaf',
+          field: 'employee.department.slug',
+          operator: 'equals',
+          value: 'engineering',
+        },
+        { kind: 'leaf', field: 'employee.contractType', operator: 'equals', value: 'permanent' },
+      ],
+    };
+    expect(evaluateConditions(tree, employee)).toBe(true);
+
+    // employee in finance OR (engineering AND intern contract) → false
+    const altered = { ...employee, employee: { ...employee.employee, contractType: 'intern' } };
+    expect(evaluateConditions(tree, altered)).toBe(false);
+  });
+  it('three-way mix: A AND B OR C', () => {
+    // (engineering AND permanent) OR (anything in finance dept name) → true via first AND chain
+    const tree: ConditionGroup = {
+      kind: 'group',
+      connectors: ['and', 'or'],
+      conditions: [
+        {
+          kind: 'leaf',
+          field: 'employee.department.slug',
+          operator: 'equals',
+          value: 'engineering',
+        },
+        { kind: 'leaf', field: 'employee.contractType', operator: 'equals', value: 'permanent' },
+        { kind: 'leaf', field: 'employee.department.slug', operator: 'equals', value: 'finance' },
+      ],
+    };
+    expect(evaluateConditions(tree, employee)).toBe(true);
+  });
+});
+
 describe('missing or malformed paths', () => {
   it('a missing relation evaluates to is_empty=true', () => {
     const tree: ConditionGroup = {

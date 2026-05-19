@@ -19,7 +19,14 @@ export interface ConditionLeaf {
 
 export interface ConditionGroup {
   kind: 'group';
-  operator: 'and' | 'or';
+  /** Legacy uniform operator. Optional. Kept for back-compat reads. */
+  operator?: 'and' | 'or';
+  /**
+   * Per-pair connectors. `connectors[i]` joins `conditions[i]` to
+   * `conditions[i+1]`. Length = max(0, conditions.length - 1).
+   * SQL-standard precedence: AND binds tighter than OR.
+   */
+  connectors?: Array<'and' | 'or'>;
   conditions: Array<ConditionLeaf | ConditionGroup>;
 }
 

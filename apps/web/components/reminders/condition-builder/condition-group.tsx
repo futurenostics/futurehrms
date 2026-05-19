@@ -1,11 +1,12 @@
 'use client';
 
 import * as React from 'react';
-import { ChevronsDown, FolderPlus, Plus, X } from 'lucide-react';
+import { FolderPlus, Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { ConditionLeafRow } from './condition-leaf';
 import {
+  deriveConnectors,
   newGroup,
   newLeaf,
   type ConditionGroup,
@@ -15,22 +16,23 @@ import {
 import type { EntityDef, FieldType } from '@/lib/queries/reminders';
 
 /**
- * A group node — owns an AND/OR operator and a list of child
- * conditions (leaves or nested groups). Renders as a left-bordered
- * panel; the border colour swaps with the operator so AND-vs-OR is
- * visually obvious without reading the chip.
+ * Recursive group node.
  *
- *     ┃ [AND][OR]
- *     ┃   leaf 1
- *     ┃   leaf 2
- *     ┃   ┃ [AND][OR]
- *     ┃   ┃   leaf 3
- *     ┃   ┃   leaf 4
+ * Each pair of siblings has its own AND/OR connector — click the pill
+ * between two rows to flip it. The group itself no longer carries a
+ * single operator; the evaluator handles mixed connectors with
+ * SQL-standard precedence (AND tighter than OR).
+ *
+ *     ┃ leaf 1
+ *     ┃   [AND/OR]                ← clickable connector
+ *     ┃ leaf 2
+ *     ┃   [AND/OR]
+ *     ┃ ┃ leaf 3                  ← nested group for explicit grouping
+ *     ┃ ┃ leaf 4
  *     ┃ + Add condition · + Add group · ×
  *
- * Root group never shows the × remove button (the whole rule still
- * needs a group). Nested groups can be removed which deletes the
- * subtree.
+ * Root group never shows the × remove button. Nested groups can be
+ * removed which deletes the subtree.
  */
 export function ConditionGroupBlock({
   group,
@@ -51,26 +53,52 @@ export function ConditionGroupBlock({
   depth?: number;
   disabled?: boolean;
 }) {
-  function update(index: number, next: ConditionNode) {
-    const conditions = [...group.conditions];
-    conditions[index] = next;
-    onChange({ ...group, conditions });
-  }
-  function remove(index: number) {
-    const conditions = group.conditions.filter((_, i) => i !== index);
-    onChange({ ...group, conditions });
-  }
-  function addLeaf() {
-    onChange({ ...group, conditions: [...group.conditions, newLeaf(entities)] });
-  }
-  function addGroup() {
-    onChange({ ...group, conditions: [...group.conditions, newGroup(entities)] });
-  }
-  function setOperator(op: 'and' | 'or') {
-    onChange({ ...group, operator: op });
+  const connectors = deriveConnectors(group);
+
+  function persist(nextConditions: ConditionNode[], nextConnectors: Array<'and' | 'or'>) {
+    // Always emit canonical form: connectors[] only, no operator. The
+    // BE accepts either; keeping legacy `operator` out avoids drift.
+    const { operator: _legacy, ...rest } = group;
+    void _legacy;
+    onChange({ ...rest, conditions: nextConditions, connectors: nextConnectors });
   }
 
-  const accent = group.operator === 'and' ? 'border-l-fn-accent/55' : 'border-l-fn-warning/55';
+  function updateChild(index: number, next: ConditionNode) {
+    const nextConditions = [...group.conditions];
+    nextConditions[index] = next;
+    persist(nextConditions, connectors);
+  }
+  function removeChild(index: number) {
+    const nextConditions = group.conditions.filter((_, i) => i !== index);
+    // Drop the connector to or from the removed child. Specifically:
+    // if it had a predecessor, the connector at index-1 dies; if it
+    // didn't, the connector at index dies (the first connector to
+    // its successor).
+    const nextConnectors = connectors.filter((_, i) => (index === 0 ? i !== 0 : i !== index - 1));
+    persist(nextConditions, nextConnectors);
+  }
+  function addChild(node: ConditionNode) {
+    const nextConditions = [...group.conditions, node];
+    const nextConnectors =
+      group.conditions.length === 0 ? connectors : [...connectors, 'and' as const];
+    persist(nextConditions, nextConnectors);
+  }
+  function flipConnector(index: number) {
+    const nextConnectors = [...connectors];
+    nextConnectors[index] = nextConnectors[index] === 'and' ? 'or' : 'and';
+    persist(group.conditions, nextConnectors);
+  }
+
+  // Border accent reflects the *first* connector — so the user can tell
+  // at a glance whether a group leads with AND or OR. Mixed groups stay
+  // with a neutral accent (border-fn-divider).
+  const allAnd = connectors.length > 0 && connectors.every((c) => c === 'and');
+  const allOr = connectors.length > 0 && connectors.every((c) => c === 'or');
+  const accent = allAnd
+    ? 'border-l-fn-accent/55'
+    : allOr
+      ? 'border-l-fn-warning/55'
+      : 'border-l-fn-fg-faint/40';
 
   return (
     <div
@@ -80,52 +108,21 @@ export function ConditionGroupBlock({
         isRoot ? 'border-fn-border' : 'border-fn-divider ml-fn-2',
       )}
     >
-      <div className="gap-fn-2 flex items-center">
-        <div className="rounded-fn-xs border-fn-border bg-fn-bg-inset gap-fn-px inline-flex overflow-hidden border p-[2px]">
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => setOperator('and')}
-            className={cn(
-              'rounded-fn-xs-low px-fn-2_5 py-fn-0_5 font-fn-semibold cursor-pointer text-[11px] uppercase tracking-[0.06em] transition-colors',
-              group.operator === 'and'
-                ? 'bg-fn-accent text-fn-accent-fg'
-                : 'text-fn-fg-muted hover:text-fn-fg',
-            )}
-          >
-            And
-          </button>
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => setOperator('or')}
-            className={cn(
-              'rounded-fn-xs-low px-fn-2_5 py-fn-0_5 font-fn-semibold cursor-pointer text-[11px] uppercase tracking-[0.06em] transition-colors',
-              group.operator === 'or'
-                ? 'bg-fn-warning text-fn-warning-fg'
-                : 'text-fn-fg-muted hover:text-fn-fg',
-            )}
-          >
-            Or
-          </button>
-        </div>
-        <span className="text-fn-fg-faint text-[11.5px]">
-          {group.operator === 'and' ? 'All conditions must match' : 'Any condition is enough'}
-        </span>
-        {!isRoot && !disabled && onRemove && (
+      {!isRoot && !disabled && onRemove && (
+        <div className="flex items-center justify-end">
           <Button
             variant="ghost"
             size="icon"
             onClick={onRemove}
             aria-label="Remove group"
-            className="text-fn-fg-faint hover:text-fn-danger ml-auto"
+            className="text-fn-fg-faint hover:text-fn-danger"
           >
             <X className="h-fn-4 w-fn-4" />
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
-      <div className="gap-fn-2_5 flex flex-col">
+      <div className="gap-fn-2 flex flex-col">
         {group.conditions.length === 0 ? (
           <p className="text-fn-fg-faint text-[12px] italic">
             No conditions yet — this group matches everything.
@@ -139,8 +136,8 @@ export function ConditionGroupBlock({
                   entities={entities}
                   operatorsByType={operatorsByType}
                   disabled={disabled}
-                  onChange={(next) => update(i, next)}
-                  onRemove={() => remove(i)}
+                  onChange={(next) => updateChild(i, next)}
+                  onRemove={() => removeChild(i)}
                 />
               ) : (
                 <ConditionGroupBlock
@@ -149,15 +146,16 @@ export function ConditionGroupBlock({
                   operatorsByType={operatorsByType}
                   disabled={disabled}
                   depth={depth + 1}
-                  onChange={(next) => update(i, next)}
-                  onRemove={() => remove(i)}
+                  onChange={(next) => updateChild(i, next)}
+                  onRemove={() => removeChild(i)}
                 />
               )}
               {i < group.conditions.length - 1 && (
-                <div className="gap-fn-2 text-fn-fg-faint ml-fn-1 flex items-center text-[10.5px] uppercase tracking-[0.08em]">
-                  <ChevronsDown className="h-fn-3 w-fn-3" />
-                  {group.operator}
-                </div>
+                <ConnectorToggle
+                  value={connectors[i] ?? 'and'}
+                  disabled={disabled}
+                  onClick={() => flipConnector(i)}
+                />
               )}
             </React.Fragment>
           ))
@@ -166,14 +164,68 @@ export function ConditionGroupBlock({
 
       {!disabled && (
         <div className="gap-fn-2 flex flex-wrap items-center">
-          <Button type="button" variant="ghost" size="sm" onClick={addLeaf}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => addChild(newLeaf(entities))}
+          >
             <Plus className="h-fn-3_5 w-fn-3_5" /> Condition
           </Button>
-          <Button type="button" variant="ghost" size="sm" onClick={addGroup}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => addChild(newGroup(entities))}
+          >
             <FolderPlus className="h-fn-3_5 w-fn-3_5" /> Group
           </Button>
+          {connectors.length >= 2 && hasMixed(connectors) && (
+            <span
+              className="text-fn-fg-faint ml-auto text-[11px]"
+              title="AND binds tighter than OR — A OR B AND C means A OR (B AND C)"
+            >
+              Mixed connectors · AND binds tighter
+            </span>
+          )}
         </div>
       )}
     </div>
   );
+}
+
+function ConnectorToggle({
+  value,
+  disabled,
+  onClick,
+}: {
+  value: 'and' | 'or';
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <div className="ml-fn-3 gap-fn-2 flex items-center">
+      <span className="bg-fn-divider h-px flex-1" aria-hidden />
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={onClick}
+        aria-label={`Connector currently ${value.toUpperCase()} — click to switch`}
+        className={cn(
+          'rounded-fn-xs px-fn-2 py-fn-0_5 font-fn-semibold border text-[10.5px] uppercase tracking-[0.08em] transition-colors',
+          disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
+          value === 'and'
+            ? 'bg-fn-accent-soft text-fn-accent-soft-fg border-fn-accent/30 hover:bg-fn-accent-soft/80'
+            : 'bg-fn-warning-soft text-fn-warning-soft-fg border-fn-warning/30 hover:bg-fn-warning-soft/80',
+        )}
+      >
+        {value}
+      </button>
+      <span className="bg-fn-divider h-px flex-1" aria-hidden />
+    </div>
+  );
+}
+
+function hasMixed(connectors: Array<'and' | 'or'>): boolean {
+  return connectors.some((c) => c !== connectors[0]);
 }

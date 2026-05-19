@@ -34,10 +34,37 @@ function evalNode(node: ConditionNode, ctx: EvalContext): boolean {
     // accidental empty AND doesn't kill every reminder.
     return true;
   }
-  if (node.operator === 'and') {
-    return node.conditions.every((c) => evalNode(c, ctx));
+  if (node.conditions.length === 1) return evalNode(node.conditions[0]!, ctx);
+
+  // Derive the per-pair connectors. New payloads carry `connectors`
+  // directly; older payloads only carry a group-level `operator` we
+  // expand here so the rest of the evaluator only has one shape to
+  // think about.
+  const connectors =
+    node.connectors && node.connectors.length === node.conditions.length - 1
+      ? node.connectors
+      : Array<'and' | 'or'>(node.conditions.length - 1).fill(node.operator ?? 'and');
+
+  // SQL-standard precedence: AND binds tighter than OR. So
+  //   A OR B AND C OR D
+  // groups as
+  //   A OR (B AND C) OR D
+  // Walk left-to-right, collect contiguous AND-chains, OR them.
+  let andChain = evalNode(node.conditions[0]!, ctx);
+  let orAccumulator = false;
+  for (let i = 0; i < connectors.length; i++) {
+    const next = node.conditions[i + 1]!;
+    if (connectors[i] === 'and') {
+      andChain = andChain && evalNode(next, ctx);
+    } else {
+      // End the current AND chain, fold it into the OR accumulator,
+      // and start a fresh chain from `next`.
+      orAccumulator = orAccumulator || andChain;
+      if (orAccumulator) return true; // short-circuit
+      andChain = evalNode(next, ctx);
+    }
   }
-  return node.conditions.some((c) => evalNode(c, ctx));
+  return orAccumulator || andChain;
 }
 
 function evalLeaf(leaf: ConditionLeaf, ctx: EvalContext): boolean {

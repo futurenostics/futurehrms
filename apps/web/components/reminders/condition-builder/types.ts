@@ -71,7 +71,19 @@ export function newLeaf(entities: EntityDef[]): ConditionLeaf {
 }
 
 export function newGroup(entities: EntityDef[]): ConditionGroup {
-  return { kind: 'group', operator: 'and', conditions: [newLeaf(entities)] };
+  return { kind: 'group', conditions: [newLeaf(entities)], connectors: [] };
+}
+
+/**
+ * Returns the per-pair connector array — derives a uniform array from
+ * `operator` when an old payload doesn't have `connectors` set, and
+ * pads with 'and' if the lengths don't match.
+ */
+export function deriveConnectors(group: ConditionGroup): Array<'and' | 'or'> {
+  const need = Math.max(0, group.conditions.length - 1);
+  if (group.connectors && group.connectors.length === need) return group.connectors;
+  const fallback = group.operator ?? 'and';
+  return Array<'and' | 'or'>(need).fill(fallback);
 }
 
 /** Build the lookup that the recursive components use a hundred times a render. */
