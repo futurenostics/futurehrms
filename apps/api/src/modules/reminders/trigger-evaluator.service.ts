@@ -53,15 +53,21 @@ export class TriggerEvaluatorService implements OnApplicationBootstrap {
     if (event.type.startsWith('reminder.')) return;
     if (event.type.startsWith('notification.')) return;
 
-    // Pull only the rules that could possibly match — narrow on the
-    // exact eventType via a Prisma JSON path filter, then re-check
-    // in code (safer than trusting the JSON filter completely).
+    // Narrow at the DB level on the exact eventType via a JSON path
+    // filter — saves a full-table scan + in-memory filter on every
+    // event. Re-validate in JS as a defence-in-depth check (the
+    // JSON filter operates on string equality; if the stored shape
+    // ever drifts, we still want the right behaviour).
     const rules = await prisma.reminderRule.findMany({
       where: {
         status: 'active',
         isEnabled: true,
         triggerType: 'event',
         deletedAt: null,
+        triggerSpec: {
+          path: ['eventType'],
+          equals: event.type,
+        },
       },
     });
 

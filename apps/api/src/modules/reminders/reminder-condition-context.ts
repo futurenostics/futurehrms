@@ -25,6 +25,155 @@ import { prisma } from '@futurenostics/db';
 import type { ResolverSource } from './recipient-resolver';
 import type { EvalContext } from './reminder-conditions.evaluator';
 
+/**
+ * Batch version of `buildConditionContext`. Groups the input sources
+ * by kind and runs ONE Prisma `findMany` per kind instead of one
+ * `findUnique` per source. The scheduler's cron loop uses this on
+ * every tick — at 100 sources it's the difference between 100 round
+ * trips and ~3.
+ *
+ * The returned map is keyed `${kind}:${id}` so callers can do quick
+ * `map.get(`${source.kind}:${source.id}`)` lookups without re-keying
+ * by entity each time.
+ */
+export async function buildConditionContexts(
+  sources: Array<NonNullable<ResolverSource>>,
+): Promise<Map<string, EvalContext>> {
+  const byKind = new Map<string, string[]>();
+  for (const s of sources) {
+    const ids = byKind.get(s.kind);
+    if (ids) ids.push(s.id);
+    else byKind.set(s.kind, [s.id]);
+  }
+
+  const out = new Map<string, EvalContext>();
+  // Hydrate every kind's id list in parallel — they touch different
+  // tables so there's no contention.
+  await Promise.all(
+    Array.from(byKind.entries()).map(async ([kind, ids]) => {
+      const rows = await loadManyForKind(kind, ids);
+      for (const [id, ctx] of rows) out.set(`${kind}:${id}`, ctx);
+    }),
+  );
+  return out;
+}
+
+async function loadManyForKind(kind: string, ids: string[]): Promise<Array<[string, EvalContext]>> {
+  if (ids.length === 0) return [];
+  switch (kind) {
+    case 'employee': {
+      const rows = await prisma.employee.findMany({
+        where: { id: { in: ids } },
+        include: {
+          department: true,
+          designation: true,
+          status: true,
+          manager: { select: { id: true, eid: true, fullName: true, email: true } },
+        },
+      });
+      return rows.map((r) => [
+        r.id,
+        {
+          employee: {
+            ...r,
+            salaryPkr: r.salaryPkr != null ? Number(r.salaryPkr) : null,
+          },
+        },
+      ]);
+    }
+    case 'employeeDocument': {
+      const rows = await prisma.employeeDocument.findMany({
+        where: { id: { in: ids } },
+        include: {
+          employee: {
+            include: { department: true, designation: true, status: true },
+          },
+        },
+      });
+      return rows.map((r) => [r.id, { employeeDocument: r }]);
+    }
+    case 'department': {
+      const rows = await prisma.department.findMany({ where: { id: { in: ids } } });
+      return rows.map((r) => [r.id, { department: r }]);
+    }
+    case 'designation': {
+      const rows = await prisma.designation.findMany({
+        where: { id: { in: ids } },
+        include: { department: true },
+      });
+      return rows.map((r) => [r.id, { designation: r }]);
+    }
+    case 'project': {
+      const rows = await prisma.project.findMany({
+        where: { id: { in: ids } },
+        include: { category: true, department: true },
+      });
+      return rows.map((r) => [
+        r.id,
+        {
+          project: {
+            ...r,
+            revenueUsd: r.revenueUsd != null ? Number(r.revenueUsd) : null,
+          },
+        },
+      ]);
+    }
+    case 'projectCategory': {
+      const rows = await prisma.projectCategory.findMany({ where: { id: { in: ids } } });
+      return rows.map((r) => [r.id, { projectCategory: r }]);
+    }
+    case 'projectAssignment': {
+      const rows = await prisma.projectAssignment.findMany({
+        where: { id: { in: ids } },
+        include: {
+          project: { select: { id: true, name: true, status: true } },
+          employee: { select: { id: true, eid: true, fullName: true, email: true } },
+        },
+      });
+      return rows.map((r) => [
+        r.id,
+        {
+          projectAssignment: {
+            ...r,
+            percentage: r.percentage != null ? Number(r.percentage) : null,
+          },
+        },
+      ]);
+    }
+    case 'commissionRule': {
+      const rows = await prisma.commissionRule.findMany({
+        where: { id: { in: ids } },
+        include: { category: true },
+      });
+      return rows.map((r) => [
+        r.id,
+        {
+          commissionRule: {
+            ...r,
+            poolValue: r.poolValue != null ? Number(r.poolValue) : null,
+            minProjectRevenueUsd:
+              r.minProjectRevenueUsd != null ? Number(r.minProjectRevenueUsd) : null,
+          },
+        },
+      ]);
+    }
+    case 'commissionRun': {
+      const rows = await prisma.commissionRun.findMany({ where: { id: { in: ids } } });
+      return rows.map((r) => [
+        r.id,
+        {
+          commissionRun: {
+            ...r,
+            fxRateUsdToPkr: r.fxRateUsdToPkr != null ? Number(r.fxRateUsdToPkr) : null,
+          },
+        },
+      ]);
+    }
+    default:
+      return [];
+  }
+}
+
 export async function buildConditionContext(source: ResolverSource): Promise<EvalContext | null> {
   if (!source) return null;
   switch (source.kind) {

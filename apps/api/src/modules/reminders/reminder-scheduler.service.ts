@@ -46,7 +46,7 @@ import {
 } from './recipient-resolver';
 import type { CronTriggerSpec } from './reminder-trigger.types';
 import { deriveScanTargets, evaluateConditions } from './reminder-conditions.evaluator';
-import { buildConditionContext } from './reminder-condition-context';
+import { buildConditionContexts } from './reminder-condition-context';
 import { cronMatches } from './cron-matcher';
 
 const QUEUE_NAME = 'reminders';
@@ -147,9 +147,11 @@ export class ReminderSchedulerService implements OnApplicationBootstrap, OnModul
   }
 
   private async fireOne(reminder: Reminder & { rule: ReminderRule }): Promise<void> {
-    // Re-check the rule is still enabled — a rule disabled between
-    // scheduling and firing should NOT fire its already-scheduled
-    // reminders.
+    // The rule was joined in fireDueReminders so this is the freshest
+    // snapshot. The check matters because the rule could have been
+    // disabled / archived in the gap between the Reminder row being
+    // scheduled (potentially days earlier) and this tick — already-
+    // scheduled reminders for a disabled rule must NOT fire.
     if (reminder.rule.status !== 'active' || !reminder.rule.isEnabled) {
       await prisma.reminder.update({
         where: { id: reminder.id },
@@ -282,15 +284,19 @@ export class ReminderSchedulerService implements OnApplicationBootstrap, OnModul
 
     if (sources.length === 0) return 0;
 
+    // Batch-hydrate every non-null source once, before the loop.
+    // Conditions evaluation then reads from the in-memory map
+    // instead of doing one Prisma findUnique per source.
+    const realSources = sources.filter((s): s is NonNullable<ResolverSource> => s !== null);
+    const contexts = spec.conditions ? await buildConditionContexts(realSources) : null;
+
     let scheduled = 0;
     for (const source of sources) {
-      // Per-rule condition tree: hydrate the candidate entity once
-      // and run the evaluator. Absent tree = match-all.
+      // Per-rule condition tree: read the hydrated context from the
+      // batched map. Absent tree = match-all.
       if (spec.conditions && source) {
-        const context = await buildConditionContext(source);
-        if (context && !evaluateConditions(spec.conditions, context)) {
-          continue;
-        }
+        const ctx = contexts?.get(`${source.kind}:${source.id}`);
+        if (!ctx || !evaluateConditions(spec.conditions, ctx)) continue;
       }
       const recipients = await this.resolvers.resolveMany(readRecipientEntries(rule), rule, source);
       if (recipients.length === 0) continue;

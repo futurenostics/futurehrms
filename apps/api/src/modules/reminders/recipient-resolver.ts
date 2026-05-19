@@ -149,17 +149,24 @@ export class RecipientResolverRegistry {
     rule: ReminderRule,
     source: ResolverSource,
   ): Promise<string[]> {
+    // Each entry is independent — resolve them concurrently so a rule
+    // with multiple recipient sources doesn't pay N × roundtrip-time.
+    // Failures stay scoped to their entry: a misconfigured one drops
+    // its slice without aborting the rest.
+    const settled = await Promise.all(
+      entries.map(async (entry) => {
+        try {
+          return await this.resolve(entry.kind, rule, source, entry.config);
+        } catch (err) {
+          this.logger.debug(
+            `recipient entry '${entry.kind}' on rule '${rule.key}' threw: ${(err as Error).message}`,
+          );
+          return [] as string[];
+        }
+      }),
+    );
     const all = new Set<string>();
-    for (const entry of entries) {
-      try {
-        const ids = await this.resolve(entry.kind, rule, source, entry.config);
-        for (const id of ids) all.add(id);
-      } catch (err) {
-        this.logger.debug(
-          `recipient entry '${entry.kind}' on rule '${rule.key}' threw: ${(err as Error).message}`,
-        );
-      }
-    }
+    for (const ids of settled) for (const id of ids) all.add(id);
     return Array.from(all);
   }
 
