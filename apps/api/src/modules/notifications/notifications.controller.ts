@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -89,18 +90,25 @@ export class NotificationsController {
   @Get('types')
   @RequirePermission('notifications:view_own')
   async listTypes() {
+    // Archived custom types stay in the in-memory registry so
+    // already-pending reminders can still fire, but the picker
+    // shouldn't list them — exclude their keys here.
+    const archivedKeys = await this.customTypes.listArchivedKeys();
     return {
-      items: this.types.list().map((t) => ({
-        key: t.key,
-        name: t.name,
-        description: t.description ?? null,
-        severity: t.severity,
-        module: t.module,
-        defaultChannels: t.defaultChannels,
-        titleTemplate: t.titleTemplate,
-        bodyTemplate: t.bodyTemplate,
-        linkTemplate: t.linkTemplate ?? null,
-      })),
+      items: this.types
+        .list()
+        .filter((t) => !archivedKeys.has(t.key))
+        .map((t) => ({
+          key: t.key,
+          name: t.name,
+          description: t.description ?? null,
+          severity: t.severity,
+          module: t.module,
+          defaultChannels: t.defaultChannels,
+          titleTemplate: t.titleTemplate,
+          bodyTemplate: t.bodyTemplate,
+          linkTemplate: t.linkTemplate ?? null,
+        })),
     };
   }
 
@@ -194,6 +202,13 @@ export class NotificationsController {
   @HttpCode(HttpStatus.OK)
   async archiveCustomType(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.customTypes.archive(user, id);
+  }
+
+  @Delete('custom-types/:id')
+  @RequirePermission('notifications:manage_types')
+  @HttpCode(HttpStatus.OK)
+  async deleteCustomType(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.customTypes.delete(user, id);
   }
 
   /**

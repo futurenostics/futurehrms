@@ -50,6 +50,13 @@ export class NotificationTypesRegistry {
   private readonly logger = new Logger(NotificationTypesRegistry.name);
   private readonly defs = new Map<string, NotificationTypeDefinition>();
 
+  /** Remove a type from the in-memory registry. Used by the hard
+   *  delete path for custom types; do NOT call from archive — pending
+   *  reminders still need to resolve the type at send time. */
+  unregister(key: string): void {
+    this.defs.delete(key);
+  }
+
   register(def: NotificationTypeDefinition): void {
     if (this.defs.has(def.key)) {
       this.logger.warn(`Notification type '${def.key}' is being re-registered.`);

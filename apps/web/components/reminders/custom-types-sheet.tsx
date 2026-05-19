@@ -1,11 +1,10 @@
 'use client';
 
 import * as React from 'react';
-import { Archive, ArchiveRestore, Pencil, Plus, RotateCcw, X } from 'lucide-react';
+import { Archive, ArchiveRestore, Pencil, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -29,6 +28,7 @@ import {
   useArchiveCustomType,
   useCreateCustomType,
   useCustomNotificationTypes,
+  useDeleteCustomType,
   useUnarchiveCustomType,
   useUpdateCustomType,
   type Channel,
@@ -36,10 +36,7 @@ import {
   type Severity,
 } from '@/lib/queries/notifications';
 import {
-  defaultSamplePayload,
   insertAtCursor,
-  interpolate,
-  tokenizeTemplate,
   VARIABLE_CATALOG,
   type VariableGroup,
   type VariableSuggestion,
@@ -49,35 +46,37 @@ import { cn } from '@/lib/utils';
 /**
  * Admin sheet for managing custom notification types.
  *
- * Two-pane layout: left lists existing types, right is the editor.
- * The editor itself splits into the form (inputs) and a live
- * preview pane that renders the interpolated title/body/link
- * against an editable sample payload so authors can verify what
- * recipients actually see before saving.
+ * Two-pane layout: a narrow left rail lists existing types, and a
+ * wide right area is the editor. The editor groups fields into
+ * three visually separated sections — Basics (identity), Delivery
+ * (severity + channels), Templates (title / body / link) — so the
+ * form reads top-to-bottom in a natural authoring order.
  *
  * The variable chip rail under each template input is the source
  * of truth for "what `{{vars}}` are safe to use" — clicking a chip
- * inserts the token at the input's cursor. The chips come from
- * `lib/notification-template.ts` (kept FE-only since they're just
- * documentation for the author).
+ * inserts the token at the input's cursor.
  */
 export interface CustomTypesSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-const SEVERITIES: Array<{ value: Severity; label: string }> = [
-  { value: 'info', label: 'Info' },
-  { value: 'success', label: 'Success' },
-  { value: 'warning', label: 'Warning' },
-  { value: 'danger', label: 'Danger' },
+const SEVERITIES: Array<{
+  value: Severity;
+  label: string;
+  tone: 'info' | 'success' | 'warning' | 'danger';
+}> = [
+  { value: 'info', label: 'Info', tone: 'info' },
+  { value: 'success', label: 'Success', tone: 'success' },
+  { value: 'warning', label: 'Warning', tone: 'warning' },
+  { value: 'danger', label: 'Danger', tone: 'danger' },
 ];
 
-const CHANNELS: Array<{ value: Channel; label: string }> = [
-  { value: 'in_app', label: 'In-app' },
-  { value: 'email', label: 'Email' },
-  { value: 'push', label: 'Push (future)' },
-  { value: 'slack', label: 'Slack (future)' },
+const CHANNELS: Array<{ value: Channel; label: string; hint: string; disabled?: boolean }> = [
+  { value: 'in_app', label: 'In-app', hint: 'Bell + inbox' },
+  { value: 'email', label: 'Email', hint: 'SMTP / Resend' },
+  { value: 'push', label: 'Push', hint: 'Future', disabled: true },
+  { value: 'slack', label: 'Slack', hint: 'Future', disabled: true },
 ];
 
 type FormState = {
@@ -92,9 +91,11 @@ type FormState = {
   linkTemplate: string;
 };
 
+const KEY_PREFIX = 'custom.';
+
 const EMPTY_FORM: FormState = {
   id: null,
-  key: 'custom.',
+  key: KEY_PREFIX,
   name: '',
   description: '',
   severity: 'info',
@@ -112,31 +113,16 @@ export function CustomTypesSheet({ open, onOpenChange }: CustomTypesSheetProps) 
   const update = useUpdateCustomType();
   const archive = useArchiveCustomType();
   const unarchive = useUnarchiveCustomType();
+  const remove = useDeleteCustomType();
 
   const [form, setForm] = React.useState<FormState>(EMPTY_FORM);
   const isNew = form.id === null;
-  const busy = create.isPending || update.isPending || archive.isPending || unarchive.isPending;
-
-  // Sample payload powering the live preview. Defaults to every
-  // catalog variable populated with its sample value so the preview
-  // renders something useful from the first character typed.
-  const [samplePayloadText, setSamplePayloadText] = React.useState<string>(() =>
-    JSON.stringify(defaultSamplePayload(), null, 2),
-  );
-  const parsedSample = React.useMemo<{
-    payload: Record<string, unknown> | null;
-    error: string | null;
-  }>(() => {
-    try {
-      const parsed = JSON.parse(samplePayloadText) as unknown;
-      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        return { payload: null, error: 'Sample payload must be a JSON object' };
-      }
-      return { payload: parsed as Record<string, unknown>, error: null };
-    } catch (err) {
-      return { payload: null, error: (err as Error).message };
-    }
-  }, [samplePayloadText]);
+  const busy =
+    create.isPending ||
+    update.isPending ||
+    archive.isPending ||
+    unarchive.isPending ||
+    remove.isPending;
 
   // Refs for caret-aware chip insertion.
   const titleRef = React.useRef<HTMLInputElement>(null);
@@ -146,10 +132,7 @@ export function CustomTypesSheet({ open, onOpenChange }: CustomTypesSheetProps) 
   // Reset the form whenever the sheet closes — keeps "Manage types"
   // a clean entry point on the next open.
   React.useEffect(() => {
-    if (!open) {
-      setForm(EMPTY_FORM);
-      setSamplePayloadText(JSON.stringify(defaultSamplePayload(), null, 2));
-    }
+    if (!open) setForm(EMPTY_FORM);
   }, [open]);
 
   function loadForEdit(row: CustomNotificationTypePublic): void {
@@ -251,13 +234,27 @@ export function CustomTypesSheet({ open, onOpenChange }: CustomTypesSheetProps) 
     }
   }
 
+  async function handleDelete(row: CustomNotificationTypePublic): Promise<void> {
+    if (
+      !confirm(
+        `Permanently delete '${row.key}'? This can't be undone. Refused when any reminder rule still references this key.`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await remove.mutateAsync(row.id);
+      toast.success(`Deleted '${row.key}'`);
+      if (form.id === row.id) setForm(EMPTY_FORM);
+    } catch (err) {
+      toast.error((err as Error).message);
+    }
+  }
+
   const items = list.data?.items ?? [];
 
-  // The full key always starts with "custom." — that prefix is
-  // surfaced as a static chip next to the input so the author can
-  // only type the suffix (and can never typo the separator). The
-  // suffix is what gets validated.
-  const KEY_PREFIX = 'custom.';
+  // The full key always starts with "custom." — the prefix is a
+  // static chip in the input so the separator can never be typoed.
   const keySuffix = isNew
     ? form.key.startsWith(KEY_PREFIX)
       ? form.key.slice(KEY_PREFIX.length)
@@ -278,10 +275,6 @@ export function CustomTypesSheet({ open, onOpenChange }: CustomTypesSheetProps) 
     form.bodyTemplate.trim().length > 0 &&
     form.channels.length > 0;
 
-  // The variable chip rail is detached from any rule, so show every
-  // group — author can pick whichever payload shape they target.
-  const variableGroups = VARIABLE_CATALOG;
-
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" width="xl">
@@ -290,16 +283,18 @@ export function CustomTypesSheet({ open, onOpenChange }: CustomTypesSheetProps) 
           <p className="text-fn-fg-faint text-[12px]">
             Custom notification types are persisted and immediately available to every reminder
             rule. Templates use <code className="font-mono text-[11px]">{`{{var}}`}</code>{' '}
-            placeholders that map to the notification payload at send time. Click a variable chip to
-            insert it at the cursor.
+            placeholders; click a chip below each template to insert one at the cursor.
           </p>
         </SheetHeader>
 
         <SheetBody>
           <div className="gap-fn-5 grid grid-cols-[240px_1fr]">
-            {/* Left — existing types */}
+            {/* Left rail — existing types */}
             <div className="gap-fn-2 flex flex-col">
-              <h3 className="text-fn-fg font-fn-semibold text-[12.5px]">Existing</h3>
+              <div className="gap-fn-2 flex items-center justify-between">
+                <h3 className="text-fn-fg font-fn-semibold text-[12.5px]">Existing</h3>
+                <Badge tone="default">{items.length}</Badge>
+              </div>
               {list.isPending ? (
                 <Skeleton className="h-fn-16 w-full" />
               ) : items.length === 0 ? (
@@ -313,7 +308,7 @@ export function CustomTypesSheet({ open, onOpenChange }: CustomTypesSheetProps) 
                       key={row.id}
                       className={cn(
                         'rounded-fn-xs border-fn-border bg-fn-bg-panel gap-fn-1_5 px-fn-2_5 py-fn-2 flex flex-col border',
-                        form.id === row.id && 'border-fn-accent/45',
+                        form.id === row.id && 'border-fn-accent/45 bg-fn-accent-soft/15',
                       )}
                     >
                       <div className="gap-fn-2 flex items-start justify-between">
@@ -342,7 +337,7 @@ export function CustomTypesSheet({ open, onOpenChange }: CustomTypesSheetProps) 
                             size="sm"
                             onClick={() => void handleArchive(row)}
                             disabled={busy}
-                            className="text-fn-fg-muted hover:text-fn-danger"
+                            className="text-fn-fg-muted hover:text-fn-warning"
                           >
                             <Archive className="h-fn-3 w-fn-3" /> Archive
                           </Button>
@@ -357,80 +352,107 @@ export function CustomTypesSheet({ open, onOpenChange }: CustomTypesSheetProps) 
                             <ArchiveRestore className="h-fn-3 w-fn-3" /> Unarchive
                           </Button>
                         )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => void handleDelete(row)}
+                          disabled={busy}
+                          className="text-fn-fg-muted hover:text-fn-danger"
+                        >
+                          <Trash2 className="h-fn-3 w-fn-3" /> Delete
+                        </Button>
                       </div>
                     </li>
                   ))}
                 </ul>
               )}
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setForm(EMPTY_FORM)}
-                disabled={busy || isNew}
-                className="self-start"
-              >
-                <Plus className="h-fn-3_5 w-fn-3_5" /> New type
-              </Button>
             </div>
 
-            {/* Right — editor + live preview */}
-            <div className="gap-fn-4 grid grid-cols-1 xl:grid-cols-[1fr_320px]">
-              <div className="gap-fn-3 flex flex-col">
-                <h3 className="text-fn-fg font-fn-semibold text-[12.5px]">
+            {/* Editor — three sections stacked vertically using the full width */}
+            <div className="gap-fn-5 flex flex-col">
+              <div className="gap-fn-2 flex items-center">
+                <h3 className="text-fn-fg font-fn-semibold text-[14px]">
                   {isNew ? 'New custom type' : `Editing ${form.key}`}
                 </h3>
+                {!isNew && (
+                  <>
+                    <Badge tone="accent">Editing</Badge>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setForm(EMPTY_FORM)}
+                      disabled={busy}
+                      className="ml-auto"
+                    >
+                      Start new
+                    </Button>
+                  </>
+                )}
+              </div>
 
+              {/* Basics */}
+              <FormSection title="Basics" hint="Identity that picks this type out of the registry.">
+                <div className="gap-fn-3 grid grid-cols-2">
+                  <FormField
+                    label="Key"
+                    hint="'custom.' is fixed. Type a slug — letters, digits, dashes only."
+                    error={keySuffix.length > 0 ? keyError : null}
+                  >
+                    {isNew ? (
+                      <div className="border-fn-border bg-fn-bg-panel rounded-fn-xs focus-within:border-fn-accent focus-within:ring-fn-accent/30 flex items-center border focus-within:ring-2">
+                        <span className="text-fn-fg-muted bg-fn-bg-subtle/60 border-r-fn-border px-fn-2_5 py-fn-1_5 select-none border-r font-mono text-[12.5px]">
+                          custom.
+                        </span>
+                        <input
+                          value={keySuffix}
+                          onChange={(e) => {
+                            const normalized = e.target.value
+                              .toLowerCase()
+                              .replace(/\s+/g, '-')
+                              .replace(/\./g, '-')
+                              .replace(/[^a-z0-9-]/g, '');
+                            setForm((p) => ({ ...p, key: KEY_PREFIX + normalized }));
+                          }}
+                          disabled={busy}
+                          placeholder="weekly-pulse"
+                          aria-invalid={!!keyError}
+                          className="text-fn-fg placeholder:text-fn-fg-faint px-fn-2_5 py-fn-1_5 flex-1 bg-transparent font-mono text-[12.5px] outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                        />
+                      </div>
+                    ) : (
+                      <Input value={form.key} disabled placeholder="custom.weekly-pulse" />
+                    )}
+                  </FormField>
+                  <FormField label="Name" hint="Shown in pickers and the bell.">
+                    <Input
+                      value={form.name}
+                      onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+                      disabled={busy}
+                      placeholder="Weekly team pulse"
+                    />
+                  </FormField>
+                </div>
                 <FormField
-                  label="Key"
-                  hint="The 'custom.' prefix is fixed. Type a slug — lowercase letters, digits, dashes only."
-                  error={keySuffix.length > 0 ? keyError : null}
+                  label="Description"
+                  hint="Optional. Helps other admins know what this is for."
                 >
-                  {isNew ? (
-                    <div className="border-fn-border bg-fn-bg-panel rounded-fn-xs focus-within:border-fn-accent focus-within:ring-fn-accent/30 flex items-center border focus-within:ring-2">
-                      <span className="text-fn-fg-muted bg-fn-bg-subtle/60 border-r-fn-border px-fn-2_5 py-fn-1_5 select-none border-r font-mono text-[12.5px]">
-                        custom.
-                      </span>
-                      <input
-                        value={keySuffix}
-                        onChange={(e) => {
-                          const normalized = e.target.value
-                            .toLowerCase()
-                            .replace(/\s+/g, '-')
-                            .replace(/\./g, '-')
-                            .replace(/[^a-z0-9-]/g, '');
-                          setForm((p) => ({ ...p, key: KEY_PREFIX + normalized }));
-                        }}
-                        disabled={busy}
-                        placeholder="weekly-pulse"
-                        aria-invalid={!!keyError}
-                        className="text-fn-fg placeholder:text-fn-fg-faint px-fn-2_5 py-fn-1_5 flex-1 bg-transparent font-mono text-[12.5px] outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                      />
-                    </div>
-                  ) : (
-                    <Input value={form.key} disabled placeholder="custom.weekly-pulse" />
-                  )}
-                </FormField>
-
-                <FormField label="Name" hint="Display name shown in pickers and the bell.">
-                  <Input
-                    value={form.name}
-                    onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-                    disabled={busy}
-                    placeholder="Weekly team pulse"
-                  />
-                </FormField>
-
-                <FormField label="Description (optional)">
                   <Textarea
                     rows={2}
                     value={form.description}
                     onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
                     disabled={busy}
-                    placeholder="What is this reminder for?"
+                    placeholder="A quick weekly nudge for the team — drives the Friday pulse-check email."
                   />
                 </FormField>
+              </FormSection>
 
-                <div className="gap-fn-3 grid grid-cols-2">
+              {/* Delivery */}
+              <FormSection
+                title="Delivery"
+                hint="How the notification is presented and where it lands."
+              >
+                <div className="gap-fn-3 grid grid-cols-[200px_1fr]">
                   <FormField label="Severity">
                     <Select
                       value={form.severity}
@@ -443,7 +465,9 @@ export function CustomTypesSheet({ open, onOpenChange }: CustomTypesSheetProps) 
                       <SelectContent>
                         {SEVERITIES.map((s) => (
                           <SelectItem key={s.value} value={s.value}>
-                            {s.label}
+                            <span className="gap-fn-2 inline-flex items-center">
+                              <Badge tone={s.tone}>{s.label}</Badge>
+                            </span>
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -451,27 +475,48 @@ export function CustomTypesSheet({ open, onOpenChange }: CustomTypesSheetProps) 
                   </FormField>
                   <FormField label="Channels" hint="At least one required.">
                     <div className="gap-fn-2 flex flex-wrap">
-                      {CHANNELS.map((c) => (
-                        <label
-                          key={c.value}
-                          className="gap-fn-1_5 text-fn-fg-muted hover:text-fn-fg flex cursor-pointer items-center text-[12px]"
-                        >
-                          <Checkbox
-                            checked={form.channels.includes(c.value)}
-                            onCheckedChange={() => toggleChannel(c.value)}
-                            disabled={busy}
-                          />
-                          {c.label}
-                        </label>
-                      ))}
+                      {CHANNELS.map((c) => {
+                        const active = form.channels.includes(c.value);
+                        return (
+                          <button
+                            key={c.value}
+                            type="button"
+                            disabled={busy || c.disabled}
+                            onClick={() => toggleChannel(c.value)}
+                            title={c.hint}
+                            className={cn(
+                              'rounded-fn-xs px-fn-2_5 py-fn-1_5 font-fn-medium gap-fn-1_5 inline-flex items-center border text-[12.5px] transition-colors',
+                              busy || c.disabled
+                                ? 'cursor-not-allowed opacity-60'
+                                : 'cursor-pointer',
+                              active
+                                ? 'border-fn-accent/40 bg-fn-accent-soft text-fn-accent-soft-fg'
+                                : 'border-fn-border bg-fn-bg-panel text-fn-fg-muted hover:border-fn-fg-faint',
+                            )}
+                          >
+                            {c.label}
+                            <span
+                              className={cn(
+                                'text-[10.5px]',
+                                active ? 'text-fn-accent-soft-fg/70' : 'text-fn-fg-faint',
+                              )}
+                            >
+                              {c.hint}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </FormField>
                 </div>
+              </FormSection>
 
-                <FormField
-                  label="Title template"
-                  hint="Click a variable chip below to insert at the cursor."
-                >
+              {/* Templates */}
+              <FormSection
+                title="Templates"
+                hint="Authored copy with {{var}} placeholders. Click a chip to insert at the cursor."
+              >
+                <FormField label="Title">
                   <Input
                     ref={titleRef}
                     value={form.titleTemplate}
@@ -480,32 +525,29 @@ export function CustomTypesSheet({ open, onOpenChange }: CustomTypesSheetProps) 
                     placeholder="Pulse check-in for {{employeeName}}"
                   />
                   <VariableChips
-                    groups={variableGroups}
+                    groups={VARIABLE_CATALOG}
                     onInsert={(v) => insertVariable('titleTemplate', v)}
                     disabled={busy}
                   />
                 </FormField>
 
-                <FormField label="Body template">
+                <FormField label="Body">
                   <Textarea
                     ref={bodyRef}
-                    rows={3}
+                    rows={5}
                     value={form.bodyTemplate}
                     onChange={(e) => setField('bodyTemplate', e.target.value)}
                     disabled={busy}
                     placeholder="Hey {{employeeName}}, take a moment to log this week's wins."
                   />
                   <VariableChips
-                    groups={variableGroups}
+                    groups={VARIABLE_CATALOG}
                     onInsert={(v) => insertVariable('bodyTemplate', v)}
                     disabled={busy}
                   />
                 </FormField>
 
-                <FormField
-                  label="Link template (optional)"
-                  hint="In-app deep link for the bell row."
-                >
+                <FormField label="Link" hint="Optional — in-app deep link for the bell row.">
                   <Input
                     ref={linkRef}
                     value={form.linkTemplate}
@@ -514,66 +556,12 @@ export function CustomTypesSheet({ open, onOpenChange }: CustomTypesSheetProps) 
                     placeholder="/employees/{{employeeEid}}"
                   />
                   <VariableChips
-                    groups={variableGroups}
+                    groups={VARIABLE_CATALOG}
                     onInsert={(v) => insertVariable('linkTemplate', v)}
                     disabled={busy}
                   />
                 </FormField>
-              </div>
-
-              {/* Live preview pane */}
-              <aside className="border-fn-border bg-fn-bg-subtle/40 rounded-fn-xs gap-fn-3 px-fn-3 py-fn-3 flex flex-col self-start border">
-                <div className="gap-fn-1 flex items-center justify-between">
-                  <h3 className="text-fn-fg font-fn-semibold text-[12.5px]">Live preview</h3>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() =>
-                      setSamplePayloadText(JSON.stringify(defaultSamplePayload(), null, 2))
-                    }
-                    title="Reset sample payload to catalog defaults"
-                    className="text-fn-fg-faint hover:text-fn-fg"
-                  >
-                    <RotateCcw className="h-fn-3 w-fn-3" />
-                  </Button>
-                </div>
-
-                <PreviewRow
-                  label="Title"
-                  template={form.titleTemplate}
-                  payload={parsedSample.payload}
-                />
-                <PreviewRow
-                  label="Body"
-                  template={form.bodyTemplate}
-                  payload={parsedSample.payload}
-                  multiline
-                />
-                <PreviewRow
-                  label="Link"
-                  template={form.linkTemplate}
-                  payload={parsedSample.payload}
-                  monoOnly
-                />
-
-                <div className="gap-fn-1 flex flex-col">
-                  <Label className="text-fn-fg-muted text-[11.5px]">Sample payload</Label>
-                  <Textarea
-                    rows={6}
-                    value={samplePayloadText}
-                    onChange={(e) => setSamplePayloadText(e.target.value)}
-                    className="font-mono text-[11px]"
-                  />
-                  {parsedSample.error ? (
-                    <p className="text-fn-danger text-[11px]">{parsedSample.error}</p>
-                  ) : (
-                    <p className="text-fn-fg-faint text-[11px]">
-                      Edit to test interpolation. JSON object only.
-                    </p>
-                  )}
-                </div>
-              </aside>
+              </FormSection>
             </div>
           </div>
         </SheetBody>
@@ -601,9 +589,9 @@ function VariableChips({
   disabled?: boolean;
 }) {
   return (
-    <div className="gap-fn-2 flex flex-col">
+    <div className="gap-fn-1_5 flex flex-col">
       {groups.map((g) => (
-        <div key={g.label} className="gap-fn-1 flex flex-wrap items-center">
+        <div key={g.label} className="gap-fn-2 flex flex-wrap items-center">
           <span className="text-fn-fg-faint font-fn-semibold tracking-fn-uppercase-tight w-fn-20 shrink-0 text-[10px] uppercase">
             {g.label}
           </span>
@@ -648,62 +636,25 @@ function VariableChip({
   );
 }
 
-function PreviewRow({
-  label,
-  template,
-  payload,
-  multiline,
-  monoOnly,
+function FormSection({
+  title,
+  hint,
+  children,
 }: {
-  label: string;
-  template: string;
-  payload: Record<string, unknown> | null;
-  multiline?: boolean;
-  monoOnly?: boolean;
+  title: string;
+  hint?: string;
+  children: React.ReactNode;
 }) {
-  const rendered = template ? interpolate(template, payload) : '';
-  const tokens = template ? tokenizeTemplate(template, payload) : [];
   return (
-    <div className="gap-fn-1 flex flex-col">
-      <Label className="text-fn-fg-muted text-[11.5px]">{label}</Label>
-      {template ? (
-        <>
-          <div
-            className={cn(
-              'text-fn-fg leading-fn-snug',
-              multiline ? 'whitespace-pre-wrap text-[12px]' : 'text-[12.5px]',
-              monoOnly && 'font-mono text-[11.5px]',
-            )}
-          >
-            {rendered || <span className="text-fn-fg-faint italic">(empty)</span>}
-          </div>
-          <div className="gap-fn-0_5 flex flex-wrap font-mono text-[10.5px]">
-            {tokens.map((t, i) =>
-              t.kind === 'text' ? (
-                <span key={i} className="text-fn-fg-faint whitespace-pre-wrap">
-                  {t.value}
-                </span>
-              ) : (
-                <span
-                  key={i}
-                  className={cn(
-                    'rounded-fn-xs px-fn-1 border',
-                    t.unset
-                      ? 'border-fn-warning-soft-fg/40 bg-fn-warning-soft text-fn-warning-soft-fg'
-                      : 'border-fn-accent-soft-fg/30 bg-fn-accent-soft text-fn-accent-soft-fg',
-                  )}
-                  title={t.unset ? `${t.value}: not in sample payload` : t.value}
-                >
-                  {`{{${t.value}}}`}
-                </span>
-              ),
-            )}
-          </div>
-        </>
-      ) : (
-        <span className="text-fn-fg-faint text-[11.5px] italic">(template empty)</span>
-      )}
-    </div>
+    <section className="gap-fn-3 flex flex-col">
+      <div className="gap-fn-1 border-b-fn-divider pb-fn-2 flex flex-col border-b">
+        <h4 className="text-fn-fg font-fn-semibold tracking-fn-uppercase-tight text-[11px] uppercase">
+          {title}
+        </h4>
+        {hint && <p className="text-fn-fg-faint text-[11.5px]">{hint}</p>}
+      </div>
+      <div className="gap-fn-3 flex flex-col">{children}</div>
+    </section>
   );
 }
 

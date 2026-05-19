@@ -154,6 +154,20 @@ export function useUnarchiveCustomType() {
   });
 }
 
+/** Hard-delete a custom type. BE refuses if any active reminder
+ *  rule still references the key — that error surfaces as a toast
+ *  and the row stays. */
+export function useDeleteCustomType() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<{ id: string }>(`/api/notifications/custom-types/${id}`, {
+        method: 'DELETE',
+      }),
+    onSuccess: () => invalidateAll(qc),
+  });
+}
+
 function invalidateAll(qc: QueryClient): void {
   qc.invalidateQueries({ queryKey: ['notifications', 'types'] });
   qc.invalidateQueries({ queryKey: ['notifications', 'custom-types'] });

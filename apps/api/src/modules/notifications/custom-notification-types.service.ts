@@ -80,6 +80,21 @@ export class CustomNotificationTypesService {
     return rows.map(toPublic);
   }
 
+  /**
+   * Keys of every archived custom type. Used by the merged
+   * `/notifications/types` listing to hide archived rows from the
+   * rule editor's picker. The in-memory registry still has them
+   * so already-pending reminders can fire — this is just a view
+   * filter.
+   */
+  async listArchivedKeys(): Promise<Set<string>> {
+    const rows = await prisma.customNotificationType.findMany({
+      where: { isActive: false },
+      select: { key: true },
+    });
+    return new Set(rows.map((r) => r.key));
+  }
+
   async create(viewer: AuthenticatedUser, input: CreateCustomTypeInput): Promise<CustomTypePublic> {
     validate(input);
     if (!/^custom\.[a-z0-9][a-z0-9-]*$/.test(input.key)) {
@@ -174,8 +189,39 @@ export class CustomNotificationTypesService {
     });
     // Keep the in-registry definition so already-pending reminders
     // can still fire and emit a sensible notification — archiving is
-    // about preventing NEW rules from picking the type.
+    // about preventing NEW rules from picking the type. The picker
+    // hides archived rows via the keys returned by `listArchivedKeys`.
     return toPublic(updated);
+  }
+
+  /**
+   * Hard delete — drops the DB row + unregisters from the runtime
+   * registry. Refuses when any non-deleted ReminderRule still
+   * references the key, since the rule would start failing at fire
+   * time (the registry's `require()` throws on unknown keys).
+   */
+  async delete(viewer: AuthenticatedUser, id: string): Promise<{ id: string }> {
+    const existing = await prisma.customNotificationType.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Custom notification type not found');
+    const referencing = await prisma.reminderRule.count({
+      where: { notificationType: existing.key, deletedAt: null },
+    });
+    if (referencing > 0) {
+      throw new BadRequestException(
+        `Can't delete '${existing.key}' — ${referencing} reminder rule${referencing === 1 ? '' : 's'} still reference it. Update or archive those rules first.`,
+      );
+    }
+    await prisma.customNotificationType.delete({ where: { id } });
+    this.registry.unregister(existing.key);
+    await this.audit.record({
+      module: 'notifications',
+      entity: 'CustomNotificationType',
+      entityId: existing.id,
+      action: 'deleted',
+      before: { key: existing.key, name: existing.name },
+      actorId: viewer.id,
+    });
+    return { id: existing.id };
   }
 
   /**
