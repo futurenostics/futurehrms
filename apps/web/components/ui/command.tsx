@@ -54,7 +54,7 @@ CommandInput.displayName = CommandPrimitive.Input.displayName;
 const CommandList = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive.List>,
   React.ComponentPropsWithoutRef<typeof CommandPrimitive.List>
->(({ className, ...props }, ref) => (
+>(({ className, onWheel, ...props }, ref) => (
   <CommandPrimitive.List
     ref={ref}
     className={cn(
@@ -72,6 +72,20 @@ const CommandList = React.forwardRef<
       height: 'min(320px, var(--cmdk-list-height))',
       transitionProperty: 'height',
       transitionDuration: '120ms',
+    }}
+    // Manual wheel scroll. When the Combobox opens inside a Sheet /
+    // Dialog, Radix's react-remove-scroll captures wheel events at
+    // the document level and preventDefaults them — the cmdk list
+    // is portal'd outside the scroll-lock allow-list, so default
+    // wheel scrolling silently dies. We bypass the lock by writing
+    // scrollTop directly and stopping propagation so the document
+    // listener never sees the event. (Scrollbar drag uses pointer
+    // events, not wheel, which is why grabbing-and-dragging worked
+    // even before this fix.)
+    onWheel={(e) => {
+      e.currentTarget.scrollTop += e.deltaY;
+      e.stopPropagation();
+      onWheel?.(e);
     }}
     {...props}
   />
