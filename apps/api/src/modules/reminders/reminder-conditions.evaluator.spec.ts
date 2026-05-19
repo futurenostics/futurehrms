@@ -8,7 +8,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConditionGroup } from './reminder-conditions.types';
-import { evaluateConditions } from './reminder-conditions.evaluator';
+import { deriveScanTargets, evaluateConditions } from './reminder-conditions.evaluator';
 
 const employee = {
   employee: {
@@ -379,5 +379,96 @@ describe('missing or malformed paths', () => {
       ],
     };
     expect(evaluateConditions(tree, employee)).toBe(false);
+  });
+});
+
+describe('deriveScanTargets — cron scan target derivation', () => {
+  it('returns empty set when the tree is undefined', () => {
+    expect(Array.from(deriveScanTargets(undefined))).toEqual([]);
+  });
+
+  it('returns empty set when the root group has no children', () => {
+    const tree: ConditionGroup = { kind: 'group', operator: 'and', conditions: [] };
+    expect(Array.from(deriveScanTargets(tree))).toEqual([]);
+  });
+
+  it('collects the single entity prefix for a one-leaf tree', () => {
+    const tree: ConditionGroup = {
+      kind: 'group',
+      operator: 'and',
+      conditions: [
+        { kind: 'leaf', field: 'employee.department.slug', operator: 'equals', value: 'eng' },
+      ],
+    };
+    expect(Array.from(deriveScanTargets(tree)).sort()).toEqual(['employee']);
+  });
+
+  it('dedupes when multiple leaves share an entity prefix', () => {
+    const tree: ConditionGroup = {
+      kind: 'group',
+      operator: 'and',
+      conditions: [
+        { kind: 'leaf', field: 'employee.department.slug', operator: 'equals', value: 'eng' },
+        { kind: 'leaf', field: 'employee.contractType', operator: 'equals', value: 'permanent' },
+        { kind: 'leaf', field: 'employee.salaryPkr', operator: 'gte', value: 300_000 },
+      ],
+    };
+    expect(Array.from(deriveScanTargets(tree)).sort()).toEqual(['employee']);
+  });
+
+  it('collects each prefix in a multi-entity tree', () => {
+    const tree: ConditionGroup = {
+      kind: 'group',
+      operator: 'and',
+      conditions: [
+        { kind: 'leaf', field: 'employee.contractType', operator: 'equals', value: 'permanent' },
+        { kind: 'leaf', field: 'project.status', operator: 'equals', value: 'in_billing' },
+      ],
+    };
+    expect(Array.from(deriveScanTargets(tree)).sort()).toEqual(['employee', 'project']);
+  });
+
+  it('walks into nested groups and collects their leaves too', () => {
+    // (project.status='in_billing') AND ((commissionRun.status='approved') OR (employee.eligibleForCommissions=true))
+    const tree: ConditionGroup = {
+      kind: 'group',
+      operator: 'and',
+      conditions: [
+        { kind: 'leaf', field: 'project.status', operator: 'equals', value: 'in_billing' },
+        {
+          kind: 'group',
+          operator: 'or',
+          conditions: [
+            {
+              kind: 'leaf',
+              field: 'commissionRun.status',
+              operator: 'equals',
+              value: 'approved',
+            },
+            {
+              kind: 'leaf',
+              field: 'employee.eligibleForCommissions',
+              operator: 'is_true',
+            },
+          ],
+        },
+      ],
+    };
+    expect(Array.from(deriveScanTargets(tree)).sort()).toEqual([
+      'commissionRun',
+      'employee',
+      'project',
+    ]);
+  });
+
+  it('ignores leaves whose field has no dotted prefix gracefully', () => {
+    // Defensive — shouldn't happen in practice, but make sure the
+    // walker doesn't add empty strings to the set.
+    const tree: ConditionGroup = {
+      kind: 'group',
+      operator: 'and',
+      conditions: [{ kind: 'leaf', field: '', operator: 'is_empty' }],
+    };
+    expect(Array.from(deriveScanTargets(tree))).toEqual([]);
   });
 });
