@@ -9,6 +9,7 @@
  *   pnpm --filter @futurenostics/api exec tsx prisma/seed-phase3.ts
  */
 import { PrismaClient } from '@prisma/client';
+import { monthLabel } from '../src/modules/commissions/commission-calc';
 
 const prisma = new PrismaClient();
 
@@ -167,7 +168,7 @@ async function main(): Promise<void> {
   for (const r of RULES) {
     const existing = await prisma.reminderRule.findFirst({ where: { key: r.key } });
     if (existing) {
-      console.log(`✓ reminder rule "${r.key}" already exists (id=${existing.id}); skipping`);
+      console.info(`✓ reminder rule "${r.key}" already exists (id=${existing.id}); skipping`);
       continue;
     }
     const departmentId = r.departmentSlug ? (deptBySlug.get(r.departmentSlug) ?? null) : null;
@@ -195,9 +196,121 @@ async function main(): Promise<void> {
         createdById: admin.id,
       },
     });
-    console.log(`+ seeded "${r.key}" (id=${created.id}) status=${created.status}`);
+    console.info(`+ seeded "${r.key}" (id=${created.id}) status=${created.status}`);
   }
-  console.log(`done — ${RULES.length} rules processed.`);
+  console.info(`done — ${RULES.length} rules processed.`);
+
+  await backfillCommissionRunApprovals(admin.id);
+}
+
+/**
+ * Backfills generic `Approval` rows for any `pending_approval`
+ * commission runs left behind by the Phase 2 seed. Phase 3 introduced
+ * the unified inbox at `/approvals` — without this step the run still
+ * shows on the run-detail screen but the inbox renders empty on a
+ * fresh boot.
+ *
+ * Idempotent: skips any (type, sourceId) that already has a pending
+ * Approval. Mirrors `commission-run.approval-type.ts` `toMetadata`
+ * (kept in sync by convention — if the registered metadata shape
+ * changes, update both).
+ */
+async function backfillCommissionRunApprovals(seederUserId: string): Promise<void> {
+  const pendingRuns = await prisma.commissionRun.findMany({
+    where: { status: 'pending_approval' },
+    include: {
+      lineItems: { select: { employeeId: true, projectId: true, finalAmountUsd: true } },
+    },
+  });
+  if (pendingRuns.length === 0) {
+    console.info('· no pending_approval commission runs found; nothing to backfill');
+    return;
+  }
+
+  let created = 0;
+  let skipped = 0;
+  for (const run of pendingRuns) {
+    const existing = await prisma.approval.findFirst({
+      where: { type: 'commission-run', sourceId: run.id, status: 'pending' },
+    });
+    if (existing) {
+      skipped += 1;
+      continue;
+    }
+
+    const byEmployee = new Map<string, number>();
+    for (const li of run.lineItems) {
+      byEmployee.set(
+        li.employeeId,
+        (byEmployee.get(li.employeeId) ?? 0) + Number(li.finalAmountUsd),
+      );
+    }
+    const projectIds = new Set(run.lineItems.map((li) => li.projectId));
+    const total = Array.from(byEmployee.values()).reduce((s, v) => s + v, 0);
+    const totalLabel = `$${total.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+
+    const submitterUserId = run.submittedById ?? seederUserId;
+    const submitter = await prisma.user.findUnique({
+      where: { id: submitterUserId },
+      include: {
+        employee: {
+          select: { fullName: true, designation: { select: { name: true } } },
+        },
+      },
+    });
+    const fullName = submitter?.employee?.fullName ?? submitter?.email ?? 'Seed admin';
+    const role = submitter?.employee?.designation?.name ?? null;
+    const initials = fullName
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((p) => p[0]?.toUpperCase() ?? '')
+      .join('');
+    const requesterHue = hashHue(submitter?.email ?? submitterUserId);
+
+    const metadata = {
+      title: `${monthLabel(run.monthKey)} commission run`,
+      sub: `${byEmployee.size} recipient${byEmployee.size === 1 ? '' : 's'} · Total ${totalLabel}`,
+      meta: `${projectIds.size} project${projectIds.size === 1 ? '' : 's'} · FX ${Number(run.fxRateUsdToPkr).toString()} USD→PKR`,
+      hue: 280,
+      complex: true,
+      severity: 'info',
+      link: `/monthly-processing/${run.id}?action=approve`,
+      requester: {
+        userId: submitterUserId,
+        name: fullName,
+        role,
+        hue: requesterHue,
+        initials: initials || fullName[0]!.toUpperCase(),
+      },
+    };
+
+    await prisma.approval.create({
+      data: {
+        type: 'commission-run',
+        sourceType: 'commission-run',
+        sourceId: run.id,
+        status: 'pending',
+        submittedById: submitterUserId,
+        submittedAt: run.submittedAt ?? new Date(),
+        requiredPermission: 'commissions:approve_run',
+        decisionPolicy: 'single',
+        metadata: metadata as never,
+      },
+    });
+    created += 1;
+    console.info(`+ approval row created for run ${run.monthKey} (${run.id})`);
+  }
+  console.info(`done — backfilled ${created} approval row(s); ${skipped} already existed.`);
+}
+
+/** Stable OKLCH hue from an arbitrary string. Mirrors approval-type. */
+function hashHue(s: string): number {
+  let h = 0;
+  for (const c of s) h = (h * 31 + c.charCodeAt(0)) | 0;
+  return Math.abs(h) % 360;
 }
 
 main()

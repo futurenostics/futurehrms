@@ -18,6 +18,10 @@ export default defineConfig({
     include: ['src/**/*.{test,spec}.ts'],
     exclude: ['test/**/*.e2e-spec.ts', 'node_modules', 'dist'],
     pool: 'forks',
+    // Several specs hit the shared Postgres dev DB (registry,
+    // approvals). Run spec files sequentially so they can't race on
+    // the same Permission / Approval / User rows.
+    fileParallelism: false,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
