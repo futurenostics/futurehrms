@@ -177,12 +177,9 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
   const isArchived = existing.data?.status === 'archived';
   const busy = create.isPending || update.isPending || publish.isPending || archive.isPending;
 
-  // Once a rule is active or archived its content is frozen — only
-  // `isEnabled` is mutable (operational mute toggle). Track the
-  // original toggle value so we can decide when there's something
-  // worth POSTing.
-  const originalIsEnabled = existing.data?.isEnabled ?? true;
-  const hasOperationalChange = isActive && isEnabled !== originalIsEnabled;
+  // Active and archived rules are content-locked. The sheet renders
+  // in pure view mode for those — toggle Enabled from the rules-list
+  // Switch instead, where the per-row mutation lives.
   const readonly = !isDraft;
 
   function buildTriggerSpec(): TriggerSpec {
@@ -229,23 +226,17 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
         });
         toast.success(`Draft "${created.key}" created`);
         router.push(`/reminder-rules?sheet=edit&id=${encodeURIComponent(created.id)}`);
-      } else if (ruleId) {
-        // Active rules are content-locked — only the operational
-        // `isEnabled` toggle is mutable. Send a tight payload so the
-        // BE doesn't trip its "content edit on active rule" guard.
-        const payload = readonly
-          ? { isEnabled }
-          : {
-              name,
-              description,
-              triggerSpec: spec,
-              notificationType,
-              recipientResolver,
-              departmentId,
-              isEnabled,
-            };
-        await update.mutateAsync(payload);
-        toast.success(readonly ? 'Updated' : 'Draft saved');
+      } else if (ruleId && isDraft) {
+        await update.mutateAsync({
+          name,
+          description,
+          triggerSpec: spec,
+          notificationType,
+          recipientResolver,
+          departmentId,
+          isEnabled,
+        });
+        toast.success('Draft saved');
       }
     } catch (e) {
       toast.error((e as Error).message);
@@ -347,7 +338,12 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
                     <Switch
                       checked={isEnabled}
                       onCheckedChange={setIsEnabled}
-                      disabled={!isActive || busy}
+                      // Toggling Enabled on active rules lives on the
+                      // rules-list Switch — the sheet stays read-only
+                      // for active/archived so there's no editor
+                      // surface that can round-trip a "not allowed"
+                      // error.
+                      disabled={readonly || busy}
                     />
                     <span className="text-fn-fg-muted text-[12.5px]">
                       {isEnabled ? 'Firing on schedule' : 'Muted'}
@@ -539,8 +535,8 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
 
             {isActive && (
               <p className="rounded-fn-xs border-fn-info-soft-fg/35 bg-fn-info-soft/40 text-fn-info-soft-fg px-fn-3 py-fn-2 border text-[12.5px]">
-                Active rules are content-locked. Only the <strong>Enabled</strong> toggle can change
-                here — draft a new version from the rule list to edit anything else.
+                Active rules are read-only here. Toggle <strong>Enabled</strong> from the rules
+                list, or draft a new version to change content.
               </p>
             )}
             {isArchived && (
@@ -560,7 +556,7 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
             Cancel
           </Button>
-          {isDraft ? (
+          {isDraft && (
             <>
               <Button variant="secondary" onClick={handleSaveDraft} disabled={busy}>
                 {busy ? <Loader2 className="h-fn-3_5 w-fn-3_5 animate-spin" /> : null}
@@ -572,11 +568,7 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
                 </Button>
               )}
             </>
-          ) : isActive && hasOperationalChange ? (
-            <Button onClick={handleSaveDraft} disabled={busy} className="ml-auto">
-              Save changes
-            </Button>
-          ) : null}
+          )}
         </SheetFooter>
       </SheetContent>
     </Sheet>
