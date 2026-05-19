@@ -116,11 +116,12 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
   // condition-tree (shared across both trigger types)
   const [conditions, setConditions] = React.useState<ConditionGroup | null>(null);
 
-  // Schedule offset is OPTIONAL on event-based rules. Default is
-  // "fire immediately when the event fires" — conditions handle the
-  // filtering. Expand the disclosure only when you want to schedule
-  // ahead of (or after) a date on the entity (e.g. probationEndDate).
-  const [useScheduleOffset, setUseScheduleOffset] = React.useState(false);
+  // Schedule offset is OPTIONAL on event-based rules. For new event
+  // rules we expand the disclosure so users discover the affordance;
+  // they can collapse it to fall back to "fire immediately". In edit
+  // mode the hydration effect below sets this from the loaded spec
+  // (open when relativeTo + offset are present, closed otherwise).
+  const [useScheduleOffset, setUseScheduleOffset] = React.useState(mode === 'create');
 
   // Hydrate from existing rule when editing
   React.useEffect(() => {

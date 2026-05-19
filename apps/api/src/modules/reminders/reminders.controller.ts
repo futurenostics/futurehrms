@@ -205,6 +205,13 @@ export class RemindersController {
     return this.rules.publish(user, id);
   }
 
+  @Post('reminder-rules/:id/duplicate')
+  @RequirePermission('reminders:create_rule')
+  @HttpCode(HttpStatus.OK)
+  async duplicate(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.rules.duplicate(user, id);
+  }
+
   @Post('reminder-rules/:id/archive')
   @RequirePermission('reminders:archive_rule')
   @HttpCode(HttpStatus.OK)

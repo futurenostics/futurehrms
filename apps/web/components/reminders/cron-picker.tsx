@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { cn } from '@/lib/utils';
+import { validateCronExpression } from '@/lib/cron-validation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -231,18 +232,7 @@ export function CronPicker({ value, onChange, disabled }: CronPickerProps) {
       )}
 
       {freq === 'custom' && (
-        <FieldRow
-          label="Cron expression"
-          hint="Standard 5-field cron: 'm h dom mon dow'. Asia/Karachi. The scheduler ticks at the top of every hour, so the minute field acts like 0 in practice."
-        >
-          <Input
-            value={customExpr}
-            onChange={(e) => setCustomExpr(e.target.value)}
-            disabled={disabled}
-            placeholder="0 9 * * 1-5"
-            className="font-mono"
-          />
-        </FieldRow>
+        <CustomExpressionField value={customExpr} onChange={setCustomExpr} disabled={disabled} />
       )}
 
       <div className="rounded-fn-xs border-fn-border bg-fn-bg-subtle/40 px-fn-3 py-fn-2 gap-fn-0_5 flex flex-col border">
@@ -272,6 +262,39 @@ export function CronPicker({ value, onChange, disabled }: CronPickerProps) {
 }
 
 /* ---------------------------------------------------------------- */
+
+function CustomExpressionField({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  disabled?: boolean;
+}) {
+  const error = React.useMemo(() => validateCronExpression(value), [value]);
+  return (
+    <div className="gap-fn-1 flex flex-col">
+      <label className="text-fn-fg-muted text-[12px]">Cron expression</label>
+      <Input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        placeholder="0 9 * * 1-5"
+        className={cn('font-mono', error && 'border-fn-danger focus-visible:ring-fn-danger/40')}
+        aria-invalid={!!error}
+      />
+      {error ? (
+        <p className="text-fn-danger text-[11px]">{error}</p>
+      ) : (
+        <p className="text-fn-fg-faint text-[11px]">
+          Standard 5-field cron: &lsquo;m h dom mon dow&rsquo;. Asia/Karachi. The scheduler ticks at
+          the top of every hour, so the minute field acts like 0 in practice.
+        </p>
+      )}
+    </div>
+  );
+}
 
 function FieldRow({
   label,

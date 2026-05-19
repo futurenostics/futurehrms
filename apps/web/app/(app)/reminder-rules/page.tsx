@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Bell, Copy, Plus } from 'lucide-react';
+import { Bell, Plus } from 'lucide-react';
 import type { ReferencesResponse } from '@futurenostics/types';
 import { AppShell } from '@/components/shell/app-shell';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,7 @@ import { RuleEditorSheet } from '@/components/reminders/rule-editor-sheet';
 import { CustomTypesSheet } from '@/components/reminders/custom-types-sheet';
 import { countLeaves } from '@/components/reminders/condition-builder';
 import {
+  useDuplicateRule,
   useRecipientResolvers,
   useReminderRules,
   useToggleRule,
@@ -26,6 +27,8 @@ import {
   useTriggerTest,
   type ReminderRulePublic,
 } from '@/lib/queries/reminders';
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
+import { toast } from 'sonner';
 import { useReferences } from '@/lib/queries/employees';
 import { usePermissions } from '@/hooks/use-permissions';
 import { cn } from '@/lib/utils';
@@ -99,6 +102,31 @@ export default function ReminderRulesPage() {
   const countsQuery = useTriggerCounts();
   const toggleRule = useToggleRule();
   const triggerTest = useTriggerTest();
+  const duplicateRule = useDuplicateRule();
+
+  const duplicateOptions = React.useMemo<ComboboxOption[]>(
+    () =>
+      allRules.map((r) => ({
+        value: r.id,
+        label: r.name,
+        description: r.key,
+        keywords: [r.key, r.name, r.notificationType],
+      })),
+    [allRules],
+  );
+
+  const handleDuplicate = React.useCallback(
+    async (sourceId: string) => {
+      try {
+        const created = await duplicateRule.mutateAsync(sourceId);
+        toast.success(`Duplicated to "${created.key}"`);
+        openEdit(created.id);
+      } catch (e) {
+        toast.error((e as Error).message);
+      }
+    },
+    [duplicateRule, openEdit],
+  );
 
   const departmentsById = React.useMemo(() => {
     const map = new Map<string, ReferencesResponse['departments'][number]>();
@@ -308,9 +336,19 @@ export default function ReminderRulesPage() {
                 <Bell className="h-fn-4 w-fn-4" /> Manage notification types
               </Button>
             )}
-            <Button variant="secondary" size="md" disabled>
-              <Copy className="h-fn-4 w-fn-4" /> Duplicate from…
-            </Button>
+            {canCreate && (
+              <div className="w-fn-56">
+                <Combobox
+                  options={duplicateOptions}
+                  value=""
+                  placeholder="Duplicate from…"
+                  searchPlaceholder="Search rules"
+                  emptyLabel="rules"
+                  disabled={duplicateRule.isPending || duplicateOptions.length === 0}
+                  onValueChange={(v) => v && handleDuplicate(v)}
+                />
+              </div>
+            )}
             {canCreate && (
               <Button size="md" onClick={openCreate}>
                 <Plus className="h-fn-4 w-fn-4" /> New rule

@@ -415,6 +415,17 @@ export function usePublishRule(id: string) {
   });
 }
 
+export function useDuplicateRule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<ReminderRulePublic>(`/api/reminder-rules/${id}/duplicate`, {
+        method: 'POST',
+      }),
+    onSuccess: () => invalidateAll(qc),
+  });
+}
+
 export function useArchiveRule(id: string) {
   const qc = useQueryClient();
   return useMutation({

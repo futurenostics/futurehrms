@@ -66,22 +66,15 @@ export function EventPicker({
   if (isFreeform) {
     return (
       <div className="gap-fn-2 flex flex-col">
-        <Input
-          value={value}
-          disabled={disabled}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="myco.custom.event"
-          aria-label="Custom event type"
-        />
-        <div className="gap-fn-2 text-fn-fg-faint flex items-center text-[11px]">
-          <Pencil className="h-fn-3 w-fn-3" />
-          <span>Custom event — must match the type string emitted by the publisher.</span>
+        <div className="gap-fn-2 flex items-center justify-between">
+          <span className="rounded-fn-xs border-fn-warning-soft-fg/35 bg-fn-warning-soft/50 text-fn-warning-soft-fg px-fn-2 py-fn-0_5 font-fn-semibold tracking-fn-uppercase-tight inline-flex items-center border text-[10.5px] uppercase tabular-nums">
+            <Pencil className="mr-fn-1 h-fn-3 w-fn-3" /> Custom
+          </span>
           {!disabled && (
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              className="ml-auto"
               onClick={() => {
                 setForceFreeform(false);
                 onChange('');
@@ -91,6 +84,16 @@ export function EventPicker({
             </Button>
           )}
         </div>
+        <Input
+          value={value}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="myco.custom.event"
+          aria-label="Custom event type"
+        />
+        <p className="text-fn-fg-faint text-[11px]">
+          Must match the type string emitted by the publisher.
+        </p>
       </div>
     );
   }

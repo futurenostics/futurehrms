@@ -185,6 +185,60 @@ export class ReminderRulesService {
     return toPublic(created);
   }
 
+  /**
+   * Make a fresh draft from an existing rule (any status). Copies
+   * every authored field except the version chain — the new draft
+   * gets its own key (suffixed `-copy`, `-copy-2`, … to dodge
+   * collisions) and starts at v1.0. Use this for "start from a
+   * working rule" rather than to draft a new version of an existing
+   * chain (`createDraftFrom` semantics would belong on a separate
+   * endpoint).
+   */
+  async duplicate(viewer: AuthenticatedUser, id: string): Promise<ReminderRulePublic> {
+    this.require('reminders:create_rule', viewer);
+    const source = await prisma.reminderRule.findUnique({ where: { id } });
+    if (!source || source.deletedAt) throw new NotFoundException('Reminder rule not found');
+
+    // Append `-copy` and bump with `-copy-N` if needed — collisions
+    // can happen when a previously duplicated rule already exists.
+    const baseKey = source.key.replace(/-copy(-\d+)?$/, '');
+    const candidate = `${baseKey}-copy`;
+    const existing = await prisma.reminderRule.findMany({
+      where: { key: { startsWith: candidate }, deletedAt: null },
+      select: { key: true },
+    });
+    const taken = new Set(existing.map((r) => r.key));
+    let newKey = candidate;
+    let n = 2;
+    while (taken.has(newKey)) {
+      newKey = `${candidate}-${n++}`;
+    }
+
+    const created = await prisma.reminderRule.create({
+      data: {
+        key: newKey,
+        name: `${source.name} (copy)`,
+        description: source.description,
+        status: 'draft',
+        triggerType: source.triggerType,
+        triggerSpec: source.triggerSpec as never,
+        notificationType: source.notificationType,
+        recipientResolver: source.recipientResolver,
+        recipientResolvers: source.recipientResolvers as never,
+        departmentId: source.departmentId,
+        version: '1.0',
+        createdById: viewer.id,
+      },
+    });
+
+    this.events.emit(
+      'reminder.rule.duplicated',
+      { ruleId: created.id, sourceRuleId: source.id, key: created.key },
+      { actorId: viewer.id },
+    );
+    return toPublic(created);
+  }
+
   async update(
     viewer: AuthenticatedUser,
     id: string,
