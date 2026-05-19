@@ -27,6 +27,7 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AppConfigService } from './config/app.config';
+import { ZodExceptionFilter } from './core/zod/zod-exception.filter';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, {
@@ -44,6 +45,9 @@ async function bootstrap(): Promise<void> {
   });
   // Body validation is handled per-controller with zod schemas from
   // @futurenostics/types — no class-validator dependency required.
+  // The global ZodExceptionFilter maps thrown ZodErrors to 400 with a
+  // structured body so validation failures don't surface as 500.
+  app.useGlobalFilters(new ZodExceptionFilter());
   app.setGlobalPrefix('api', { exclude: ['health'] });
 
   await app.listen(config.env.PORT);

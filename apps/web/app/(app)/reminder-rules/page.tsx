@@ -213,12 +213,17 @@ export default function ReminderRulesPage() {
         header: 'State',
         width: 100,
         cell: (rule) => (
-          <Switch
-            checked={rule.isEnabled && rule.status === 'active'}
-            disabled={rule.status !== 'active' || !canManage || toggleRule.isPending}
-            onCheckedChange={(next) => toggleRule.mutate({ id: rule.id, isEnabled: next })}
-            aria-label={`${rule.isEnabled ? 'Disable' : 'Enable'} ${rule.name}`}
-          />
+          // Stop the Switch's click from bubbling to the <tr>
+          // onRowClick — otherwise toggling state also opens the
+          // editor sheet.
+          <div onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+            <Switch
+              checked={rule.isEnabled && rule.status === 'active'}
+              disabled={rule.status !== 'active' || !canManage || toggleRule.isPending}
+              onCheckedChange={(next) => toggleRule.mutate({ id: rule.id, isEnabled: next })}
+              aria-label={`${rule.isEnabled ? 'Disable' : 'Enable'} ${rule.name}`}
+            />
+          </div>
         ),
       },
     ],

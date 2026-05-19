@@ -56,6 +56,8 @@ export interface CreateRuleInput {
   triggerSpec: TriggerSpec;
   notificationType: string;
   recipientResolver: string;
+  /** Optional department scope — null/undefined = org-wide. */
+  departmentId?: string | null;
 }
 
 export interface UpdateRuleInput {
@@ -64,6 +66,8 @@ export interface UpdateRuleInput {
   triggerSpec?: TriggerSpec;
   notificationType?: string;
   recipientResolver?: string;
+  departmentId?: string | null;
+  isEnabled?: boolean;
 }
 
 @Injectable()
@@ -145,6 +149,7 @@ export class ReminderRulesService {
         triggerSpec: triggerSpec as never,
         notificationType: input.notificationType,
         recipientResolver: input.recipientResolver,
+        departmentId: input.departmentId ?? null,
         version,
         createdById: viewer.id,
       },
@@ -160,16 +165,39 @@ export class ReminderRulesService {
     this.require('reminders:update_rule', viewer);
     const existing = await prisma.reminderRule.findUnique({ where: { id } });
     if (!existing || existing.deletedAt) throw new NotFoundException('Reminder rule not found');
-    if (existing.status !== 'draft') {
+
+    // `isEnabled` is an operational toggle and is allowed on active
+    // rules (the design supports "active + muted" per the schema).
+    // Every other field is content — draft-only, drafting a new
+    // version is how you change an active rule.
+    const contentFields = [
+      'name',
+      'description',
+      'triggerSpec',
+      'notificationType',
+      'recipientResolver',
+      'departmentId',
+    ] as const;
+    const hasContentChange = contentFields.some(
+      (k) => (input as Record<string, unknown>)[k] !== undefined,
+    );
+    if (hasContentChange && existing.status !== 'draft') {
       throw new BadRequestException(
         'Only draft rules can be edited. Draft a new version to change an active rule.',
       );
     }
+
     const data: Prisma.ReminderRuleUpdateInput = {};
     if (input.name !== undefined) data.name = input.name;
     if (input.description !== undefined) data.description = input.description;
     if (input.notificationType !== undefined) data.notificationType = input.notificationType;
     if (input.recipientResolver !== undefined) data.recipientResolver = input.recipientResolver;
+    if (input.departmentId !== undefined) {
+      data.department = input.departmentId
+        ? { connect: { id: input.departmentId } }
+        : { disconnect: true };
+    }
+    if (input.isEnabled !== undefined) data.isEnabled = input.isEnabled;
     if (input.triggerSpec !== undefined) {
       const triggerSpec = triggerSpecSchema.parse(input.triggerSpec);
       if (triggerSpec.kind !== existing.triggerType) {
