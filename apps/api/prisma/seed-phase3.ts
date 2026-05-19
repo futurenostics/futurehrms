@@ -163,7 +163,16 @@ const RULES: RuleSeed[] = [
     triggerSpec: {
       kind: 'cron',
       cron: '0 9 * * *',
-      query: { kind: 'birthday' },
+      conditions: {
+        kind: 'group',
+        conditions: [
+          {
+            kind: 'leaf',
+            field: 'employee.dateOfBirth',
+            operator: 'matches_today_month_day',
+          },
+        ],
+      },
     },
     notificationType: 'reminders.birthday',
     recipientResolver: 'dept-employees',
@@ -178,7 +187,16 @@ const RULES: RuleSeed[] = [
     triggerSpec: {
       kind: 'cron',
       cron: '0 9 * * *',
-      query: { kind: 'work-anniversary' },
+      conditions: {
+        kind: 'group',
+        conditions: [
+          {
+            kind: 'leaf',
+            field: 'employee.joinDate',
+            operator: 'matches_today_month_day',
+          },
+        ],
+      },
     },
     notificationType: 'reminders.work-anniversary',
     recipientResolver: 'direct-manager',
@@ -186,14 +204,24 @@ const RULES: RuleSeed[] = [
   {
     key: 'visa-renewal',
     name: 'Custom — visa renewal',
-    description: '90 days before a tracked visa expires (Engineering).',
+    description: 'Fire 90 days before a tracked visa expires (Engineering).',
     departmentSlug: 'engineering',
     isEnabled: false, // matches design's OFF toggle
     triggerType: 'cron',
     triggerSpec: {
       kind: 'cron',
       cron: '0 6 * * *',
-      query: { kind: 'document-expiring', withinDays: 90 },
+      conditions: {
+        kind: 'group',
+        conditions: [
+          {
+            kind: 'leaf',
+            field: 'employeeDocument.expiresAt',
+            operator: 'in_exactly_days',
+            value: 90,
+          },
+        ],
+      },
     },
     notificationType: 'reminders.visa-renewal',
     recipientResolver: 'dept-employees',

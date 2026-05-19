@@ -37,7 +37,9 @@ export function ValueInput({
     operator === 'is_empty' ||
     operator === 'is_not_empty' ||
     operator === 'is_true' ||
-    operator === 'is_false'
+    operator === 'is_false' ||
+    operator === 'matches_today' ||
+    operator === 'matches_today_month_day'
   ) {
     return null;
   }
@@ -109,8 +111,14 @@ export function ValueInput({
     );
   }
 
-  // Day-window operators take an integer regardless of field type.
-  if (operator === 'within_days' || operator === 'older_than_days') {
+  // Day-window / day-count operators all take an integer N regardless
+  // of the field type. Same control, different evaluator semantics.
+  if (
+    operator === 'within_days' ||
+    operator === 'older_than_days' ||
+    operator === 'in_exactly_days' ||
+    operator === 'anniversary_in_exactly_days'
+  ) {
     return (
       <Input
         type="number"

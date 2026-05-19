@@ -43,10 +43,22 @@ interface LegacyEventSpec {
   conditions?: unknown;
 }
 
+interface LegacyCronSpec {
+  kind: 'cron';
+  cron: string;
+  query?: {
+    kind: 'birthday' | 'work-anniversary' | 'document-expiring' | 'probation-ending' | 'custom';
+    withinDays?: number;
+  } | null;
+  conditions?: unknown;
+  sourceEntity?: string | null;
+}
+
 type Outcome =
   | { kind: 'skip-already-migrated'; key: string }
   | { kind: 'rewrite'; key: string; from: LegacyEventSpec; to: Record<string, unknown> }
-  | { kind: 'disable'; key: string; reason: string; from: LegacyEventSpec };
+  | { kind: 'rewrite-cron'; key: string; from: LegacyCronSpec; to: Record<string, unknown> }
+  | { kind: 'disable'; key: string; reason: string; from: LegacyEventSpec | LegacyCronSpec };
 
 const ANCHOR_TO_OPERATOR: Record<string, { field: string; operator: string }> = {
   probationEndDate: { field: 'employee.probationEndDate', operator: 'in_exactly_days' },
@@ -86,44 +98,113 @@ function buildNewSpec(
 }
 
 function planRewrite(rule: { key: string; triggerType: string; triggerSpec: unknown }): Outcome {
-  const spec = rule.triggerSpec as LegacyEventSpec | null;
+  const spec = rule.triggerSpec as (LegacyEventSpec | LegacyCronSpec) | null;
   if (!spec || typeof spec !== 'object') {
     return { kind: 'skip-already-migrated', key: rule.key };
+  }
+  // Cron rules using the legacy `query` field get converted to
+  // condition trees so the editor renders them and the new model is
+  // uniform across every rule.
+  if (rule.triggerType === 'cron') {
+    const cronSpec = spec as LegacyCronSpec;
+    if (!cronSpec.query) return { kind: 'skip-already-migrated', key: rule.key };
+    const to = buildCronFromLegacyQuery(cronSpec);
+    if (!to) {
+      return {
+        kind: 'disable',
+        key: rule.key,
+        reason: `unsupported legacy query '${cronSpec.query.kind}'`,
+        from: cronSpec,
+      };
+    }
+    return { kind: 'rewrite-cron', key: rule.key, from: cronSpec, to };
   }
   if (rule.triggerType !== 'event') {
     return { kind: 'skip-already-migrated', key: rule.key };
   }
-  if (!spec.relativeTo && !spec.offset) {
+  const eventSpec = spec as LegacyEventSpec;
+  if (!eventSpec.relativeTo && !eventSpec.offset) {
     // Plain event rule (no schedule offset) — nothing to migrate.
     return { kind: 'skip-already-migrated', key: rule.key };
   }
-  if (!spec.relativeTo || !spec.offset) {
+  if (!eventSpec.relativeTo || !eventSpec.offset) {
     return {
       kind: 'disable',
       key: rule.key,
       reason: 'partial offset spec (only one of relativeTo / offset set)',
-      from: spec,
+      from: eventSpec,
     };
   }
-  const mapping = ANCHOR_TO_OPERATOR[spec.relativeTo];
+  const mapping = ANCHOR_TO_OPERATOR[eventSpec.relativeTo];
   if (!mapping) {
     return {
       kind: 'disable',
       key: rule.key,
-      reason: `unsupported anchor field '${spec.relativeTo}'`,
-      from: spec,
+      reason: `unsupported anchor field '${eventSpec.relativeTo}'`,
+      from: eventSpec,
     };
   }
-  const days = parseOffsetDays(spec.offset);
+  const days = parseOffsetDays(eventSpec.offset);
   if (days === null || days <= 0) {
     return {
       kind: 'disable',
       key: rule.key,
-      reason: `non-day offset '${spec.offset}' — only -PND is supported`,
-      from: spec,
+      reason: `non-day offset '${eventSpec.offset}' — only -PND is supported`,
+      from: eventSpec,
     };
   }
-  return { kind: 'rewrite', key: rule.key, from: spec, to: buildNewSpec(spec, days, mapping) };
+  return {
+    kind: 'rewrite',
+    key: rule.key,
+    from: eventSpec,
+    to: buildNewSpec(eventSpec, days, mapping),
+  };
+}
+
+/** Map a legacy `query.kind` to a cron+conditions equivalent. */
+function buildCronFromLegacyQuery(spec: LegacyCronSpec): Record<string, unknown> | null {
+  if (!spec.query) return null;
+  let leaf: Record<string, unknown> | null = null;
+  switch (spec.query.kind) {
+    case 'birthday':
+      leaf = {
+        kind: 'leaf',
+        field: 'employee.dateOfBirth',
+        operator: 'matches_today_month_day',
+      };
+      break;
+    case 'work-anniversary':
+      leaf = {
+        kind: 'leaf',
+        field: 'employee.joinDate',
+        operator: 'matches_today_month_day',
+      };
+      break;
+    case 'probation-ending':
+      leaf = {
+        kind: 'leaf',
+        field: 'employee.probationEndDate',
+        operator: 'in_exactly_days',
+        value: spec.query.withinDays ?? 14,
+      };
+      break;
+    case 'document-expiring':
+      leaf = {
+        kind: 'leaf',
+        field: 'employeeDocument.expiresAt',
+        operator: 'in_exactly_days',
+        value: spec.query.withinDays ?? 90,
+      };
+      break;
+    default:
+      return null;
+  }
+  // Preserve any existing condition tree by AND-chaining it next to
+  // the new leaf — same approach the event-spec path uses.
+  const conditions = spec.conditions
+    ? { kind: 'group', conditions: [leaf, spec.conditions] }
+    : { kind: 'group', conditions: [leaf] };
+  return { kind: 'cron', cron: spec.cron, conditions };
 }
 
 async function run(): Promise<void> {
@@ -140,17 +221,26 @@ async function run(): Promise<void> {
   });
 
   const outcomes = rules.map((r) => ({ id: r.id, ...planRewrite(r) }));
-  const rewrites = outcomes.filter((o) => o.kind === 'rewrite');
+  const eventRewrites = outcomes.filter((o) => o.kind === 'rewrite');
+  const cronRewrites = outcomes.filter((o) => o.kind === 'rewrite-cron');
   const disables = outcomes.filter((o) => o.kind === 'disable');
   const skips = outcomes.filter((o) => o.kind === 'skip-already-migrated');
 
   console.info(
-    `\nSummary: ${rewrites.length} rewrite · ${disables.length} disable · ${skips.length} skip`,
+    `\nSummary: ${eventRewrites.length} event→cron · ${cronRewrites.length} cron-query→conditions · ${disables.length} disable · ${skips.length} skip`,
   );
-  for (const o of rewrites) {
+  for (const o of eventRewrites) {
     const detail = o as Extract<typeof o, { kind: 'rewrite' }>;
     console.info(
-      `  rewrite: ${o.key} ← relativeTo=${detail.from.relativeTo} offset=${detail.from.offset}`,
+      `  event→cron: ${o.key} ← relativeTo=${detail.from.relativeTo} offset=${detail.from.offset}`,
+    );
+  }
+  for (const o of cronRewrites) {
+    const detail = o as Extract<typeof o, { kind: 'rewrite-cron' }>;
+    console.info(
+      `  cron-query→conditions: ${o.key} ← query.kind=${detail.from.query?.kind}${
+        detail.from.query?.withinDays != null ? ` withinDays=${detail.from.query.withinDays}` : ''
+      }`,
     );
   }
   for (const o of disables) {
@@ -163,7 +253,7 @@ async function run(): Promise<void> {
     return;
   }
 
-  for (const o of rewrites) {
+  for (const o of eventRewrites) {
     const detail = o as Extract<typeof o, { kind: 'rewrite' }>;
     await prisma.reminderRule.update({
       where: { id: o.id },
@@ -171,6 +261,13 @@ async function run(): Promise<void> {
         triggerType: 'cron',
         triggerSpec: detail.to as never,
       },
+    });
+  }
+  for (const o of cronRewrites) {
+    const detail = o as Extract<typeof o, { kind: 'rewrite-cron' }>;
+    await prisma.reminderRule.update({
+      where: { id: o.id },
+      data: { triggerSpec: detail.to as never },
     });
   }
   for (const o of disables) {
@@ -186,7 +283,9 @@ async function run(): Promise<void> {
     });
   }
 
-  console.info(`\nApplied: ${rewrites.length} rewritten, ${disables.length} disabled.`);
+  console.info(
+    `\nApplied: ${eventRewrites.length} event→cron, ${cronRewrites.length} cron-query→conditions, ${disables.length} disabled.`,
+  );
 }
 
 run()

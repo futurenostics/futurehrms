@@ -42,13 +42,23 @@ export function defaultValueFor(operator: string, type: FieldType): ConditionLea
     operator === 'is_empty' ||
     operator === 'is_not_empty' ||
     operator === 'is_true' ||
-    operator === 'is_false'
+    operator === 'is_false' ||
+    operator === 'matches_today' ||
+    operator === 'matches_today_month_day'
   ) {
     return null;
   }
   if (operator === 'between') return [0, 0];
   if (operator === 'in' || operator === 'not_in') return [];
-  if (type === 'number' || operator === 'within_days' || operator === 'older_than_days') return 0;
+  if (
+    type === 'number' ||
+    operator === 'within_days' ||
+    operator === 'older_than_days' ||
+    operator === 'in_exactly_days' ||
+    operator === 'anniversary_in_exactly_days'
+  ) {
+    return 0;
+  }
   if (type === 'boolean') return null;
   return '';
 }
