@@ -106,7 +106,10 @@ export class ReminderRulesService {
     const [rows, total] = await Promise.all([
       prisma.reminderRule.findMany({
         where,
-        orderBy: [{ status: 'asc' }, { key: 'asc' }, { effectiveFrom: 'desc' }],
+        // Newest-first: a freshly created draft should land at the
+        // top of the list. Old ordering put drafts at the end because
+        // 'draft' sorts after 'active' / 'archived' alphabetically.
+        orderBy: [{ createdAt: 'desc' }],
       }),
       prisma.reminderRule.count({ where }),
     ]);

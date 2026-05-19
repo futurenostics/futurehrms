@@ -46,7 +46,7 @@ export default function ReminderRulesPage() {
   const canCreate = perms.has('reminders:create_rule');
   const canManage = perms.has('reminders:publish_rule');
 
-  const [filter, setFilter] = React.useState<'all' | 'active'>('active');
+  const [filter, setFilter] = React.useState<'all' | 'active'>('all');
 
   // Editor-sheet state lives in the URL so deep-links (`?sheet=create`,
   // `?sheet=edit&id=...`) work, the browser back button closes the
