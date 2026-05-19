@@ -525,3 +525,209 @@ this file at `docs/qa-reports/phase-2/README.md`.
 - DataTable `rowClassName` prop (would tint pending rule rows).
 - Project Commission History tab + Project Timeline tab still
   placeholders pending per-project breakdown/timeline endpoints.
+
+## Phase 3 — Notifications + Reminders + Approvals (2026-05-18)
+
+Phase 3 added three cross-cutting modules — Notifications (bell +
+preferences), Reminders (rule-driven scheduler), and a generic
+Approvals inbox. The records below capture the non-obvious choices
+that future sessions need before changing this area.
+
+### Polymorphic Approval table — one inbox, per-module ApprovalTypes
+
+There is one `Approval` table keyed by `(type, sourceType, sourceId)`
+and one `/api/approvals` endpoint. Each approvable kind registers an
+`ApprovalTypeDefinition` (kind, label, decisionPolicy,
+requiredPermission, softSoD, `loadSource`, `toMetadata`,
+`confirmationPhraseFor`, `validateConfirmation`, side-effect hooks)
+on its owning module's `onModuleInit`. The unified inbox at
+`/approvals` renders generically from `Approval.metadata`; no
+per-kind FE branching.
+
+**Why one inbox over per-module routes:** seven modules will need
+approvals (commissions, payroll, OT, leave, leave-eligibility,
+attendance corrections, evaluations). Each one shipping its own
+inbox page would mean seven divergent inboxes, seven copies of
+"Approve / Reject with reason" UX, and seven places to chase when
+the design changes. The cost is one tighter abstraction at
+submit-time (`toMetadata` writes the row blob); the saving is
+six fewer screens × design × test surface.
+
+**How to apply:** new approvable kinds add an
+`ApprovalTypeDefinition` and call `registry.register(...)` in their
+module init — no FE work. The legacy `/commissions/approvals` route
+became a server redirect; pre-existing deep links and notification
+CTAs still land on the right filtered view via the `?type=` param.
+
+### Soft separation of duties is per-type, opt-in
+
+`ApprovalTypeDefinition.softSoD: true` permits the submitter to also
+approve. `false` returns 403 on same-user approve. The
+`approverIsSubmitter` flag is always recorded on
+`ApprovalDecision.confirmationData` so downstream side effects can
+surface it (commission-run reads it onto
+`CommissionRun.approverIsSubmitter` for the audit trail).
+
+**Why opt-in:** Phase 2 deliberately chose soft SoD for commission
+runs (DECISIONS.md L401-412) — small finance team, dual roles in
+practice, blocking would create operational friction. Other kinds
+may want hard SoD (payroll, large expense approvals). A per-type
+flag avoids re-litigating the same trade-off when the next kind
+ships.
+
+**How to apply:** set the flag in the type definition. Do not add
+hard-coded user-id guards in service code — that would mean
+sprinkling the same check across every type's `onApproved` hook
+instead of declaring it once on the type.
+
+### `requiredPermission` denormalised on Approval
+
+The `Approval.requiredPermission` column is set from
+`ApprovalTypeDefinition.requiredPermission` at submit time. The
+inbox `for=me` filter is then a single index hit
+(`WHERE requiredPermission IN (viewer.permissions)`) instead of
+resolving each row's permission via the type registry at query time.
+
+**Why denormalise:** a 1000-row inbox with seven kinds would otherwise
+do 1000 registry lookups per request. The column is read-only after
+submit (the only writer is `ApprovalsService.submit`), so drift is
+not a risk.
+
+**How to apply:** if a type changes its `requiredPermission` after
+some approvals are already pending, those rows keep the old value
+until they resolve. Phase 3 doesn't ship a backfill — when a
+permission rename happens, write a one-shot migration.
+
+### App-level dedupe on (type, sourceId) pending — not a partial unique
+
+Prisma cannot express a partial unique constraint
+(`UNIQUE ... WHERE status='pending'`). Instead,
+`ApprovalsService.submit` does a `findFirst({ where: { type,
+sourceId, status: 'pending' } })` check before insert and throws
+`BadRequestException('already pending')`.
+
+**Why not a DB constraint:** a full unique on `(type, sourceId)`
+would block a rejected approval from being re-submitted, which is
+the normal recovery path. A partial unique requires a raw migration
+and locks us into a specific Postgres dialect. The app check is
+adequate because every write goes through one service method.
+
+**How to apply:** if a future module needs concurrent-submit safety
+(two services trying to submit the same source at the same instant),
+add an advisory lock around the check-then-insert pair. None of the
+current callers need it.
+
+### `recipients[]` payload contract preserved on commission.run.approved
+
+`commission-run.approval-type.ts:onApproved` still emits the original
+Phase 2 event `commission.run.approved` with the `recipients: Array<{
+employeeId, totalUsd }>` payload **before** firing the generic
+`approval.approved`. The timeline subscriber
+(`commission-timeline.subscriber.ts`) depends on this exact shape to
+fan out per-employee `TimelineEntry` rows.
+
+**Why both events:** the generic event is for cross-module audit /
+future analytics; the source-specific event preserves the
+established subscriber contract. Switching the timeline subscriber
+to listen on the generic event would either require it to know
+about every type's payload (defeating the abstraction) or require
+every type to fan out per-employee timeline rows itself (defeating
+the DRY).
+
+**How to apply:** when a new type's source has per-recipient
+side-effects, emit a source-specific event alongside the generic
+one. Comment the payload shape at the emit site —
+`commission-run.approval-type.ts:166-176` is the canonical example.
+
+### Reminder rules follow the immutable-rule pattern
+
+`ReminderRule` mirrors `CommissionRule` from Phase 2 — published
+rules are immutable; edits clone-and-bump-version. Fired
+`Reminder` rows FK to the specific rule version that scheduled
+them, never denormalise rule fields.
+
+**Why:** same property as commissions — a rule edit must not
+retroactively change reminders that already fired or are in
+flight. The trigger spec (cron string, event-relative offset) is
+the riskiest field to change; an FK is the cheapest way to make
+"history is stable" the default.
+
+**How to apply:** same as commissions — `ReminderRulesService.update`
+rejects edits to non-draft rules; the publish flow stamps
+`effectiveTo` on the prior version and inserts a new row.
+
+### Audit middleware still doesn't cover seed inserts
+
+Reinforced from Phase 2. The Prisma audit middleware is installed on
+NestJS `onApplicationBootstrap`; seed scripts run as standalone Node
+processes (`tsx prisma/seed-phase3.ts`) and never load the Nest
+container. Phase 3 seed rows — reminder rules and the backfilled
+commission-run `Approval` rows — generate **no** `AuditLog` entries.
+The runtime `submit`/`approve`/`reject` paths audit normally via
+`AuditService.record(...)`.
+
+**How to apply:** if a future workflow needs every approval row to
+have a corresponding audit entry even when seeded, write the audit
+log explicitly inside the seed (Prisma create + AuditLog create in
+a transaction).
+
+### Phase 3 — Done checklist
+
+Locked + verified at end of Session 5.
+
+**Backend**
+- `Notification` + `NotificationPreference` models; in-memory
+  `NotificationTypesRegistry` + `RecipientResolverRegistry`.
+- `ReminderRule` (versioned, FK-to-immutable like commission rules)
+  + `Reminder` (fired rows). BullMQ scheduler with Asia/Karachi
+  timezone; event-trigger subscriber computes deltas via ISO-8601
+  duration offsets (`-P14D`, `-PT2H`); cron-trigger queries
+  (birthday / work-anniversary / probation-ending / document-expiring
+  / custom).
+- `Approval` + `ApprovalDecision` (polymorphic source, denormalised
+  `requiredPermission`, decision policies: `single` implemented,
+  `multi`/`threshold` declared but rejected with NotImplemented).
+  `ApprovalTypeRegistry` + `ApprovalsService` with hard/soft SoD,
+  typed confirmation phrase, side-effect rollback on `onApproved`
+  failure.
+- Commission-run migrated onto the generic system —
+  `commission-run.approval-type.ts` registers the type; the bespoke
+  `CommissionRunsService.submit/approve/reject` are now thin shims
+  that delegate via `findActiveBySource`.
+
+**Frontend**
+- Notification bell in Topbar with unread badge polling (30s),
+  popover list, mark read / dismiss / mark all read.
+- `/settings/reminder-rules` list + editor sheet (event vs cron
+  trigger picker, recipient resolver dropdown, dept scope);
+  `/settings/reminders` scheduled viewer with timeline buckets +
+  cancel.
+- `/approvals` unified inbox (Brief 11) with kind chip rail filter
+  (per-kind hue dot from `KIND_HUE`), complex-vs-simple row split,
+  Reject reason dialog. `/commissions/approvals` →
+  `/approvals?type=commission-run` server redirect.
+
+**Tests + seed**
+- 11-case `approvals.service.spec.ts` (submit dedupe, hard/soft SoD,
+  missing-permission rejection, phrase validation, onApproved
+  rollback, reject reason validation, list `for=me` filter).
+- `vitest.config.ts` `fileParallelism: false` because the registry
+  and approvals specs both touch the shared dev Postgres.
+- `seed-phase3.ts` seeds 8 reminder rules and backfills `Approval`
+  rows for any Phase 2 commission run left in
+  `pending_approval` state. The backfill mirrors
+  `commission-run.approval-type.ts:toMetadata()` — keep both in sync.
+
+**Out-of-scope (explicit deferrals)**
+- `multi` and `threshold` decision policies (declared on the type
+  union; service rejects on submit) — land when a module needs
+  them.
+- Email delivery for notifications — Phase 3 ships in-app only; the
+  channel column is set to `'in_app'`. Email/Slack channels are a
+  Phase 4 follow-up.
+- A backfill for `requiredPermission` after a permission rename —
+  write a one-shot migration when the first rename happens.
+- The `approval.submitted` / `approval.approved` /
+  `approval.rejected` / `approval.cancelled` events have no
+  subscribers yet — they're emitted in case a future BI sink or
+  digest module wants them.

@@ -219,19 +219,19 @@ this section before touching commission code.
 
 ### Module locations
 
-| What                     | Where                                                                                                                                                          |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Projects backend         | `apps/api/src/modules/projects/` (`projects.{controller,service,scope,mapper,manifest,module}.ts`)                                                             |
-| Commissions backend      | `apps/api/src/modules/commissions/` (rules, runs, calc engine, scheduler, timeline subscriber, employee-breakdown controller)                                  |
-| Pure calc engine         | `apps/api/src/modules/commissions/commission-calc.ts` + 23 vitest unit tests in `commission-calc.spec.ts` — canonical source of truth for calculation behavior |
-| Projects frontend        | `apps/web/app/(app)/projects/` + `apps/web/components/projects/`                                                                                               |
-| `/commission-rules`      | rule list + editor sheet                                                                                                                                       |
-| `/monthly-processing`    | run list + `[runId]` detail with line items                                                                                                                    |
-| `/commissions/approvals` | filtered approvals inbox                                                                                                                                       |
-| Commission components    | `apps/web/components/commissions/` (approve-lock dialog + run-detail building blocks) + `apps/web/components/dashboard/commission-widgets.tsx`                 |
-| Project detail tabs      | Overview · Role Assignments · Commission History · Timeline · Settings                                                                                         |
-| Run state machine        | `draft → pending_approval → approved → locked`; `rejected` is a side branch back to `draft` via `reopenRejected`                                               |
-| E2E tests                | `apps/web/tests/e2e/commissions/` — Playwright; run with `pnpm test:e2e` after `pnpm test:e2e:install`                                                         |
+| What                             | Where                                                                                                                                                          |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Projects backend                 | `apps/api/src/modules/projects/` (`projects.{controller,service,scope,mapper,manifest,module}.ts`)                                                             |
+| Commissions backend              | `apps/api/src/modules/commissions/` (rules, runs, calc engine, scheduler, timeline subscriber, employee-breakdown controller)                                  |
+| Pure calc engine                 | `apps/api/src/modules/commissions/commission-calc.ts` + 23 vitest unit tests in `commission-calc.spec.ts` — canonical source of truth for calculation behavior |
+| Projects frontend                | `apps/web/app/(app)/projects/` + `apps/web/components/projects/`                                                                                               |
+| `/commission-rules`              | rule list + editor sheet                                                                                                                                       |
+| `/monthly-processing`            | run list + `[runId]` detail with line items                                                                                                                    |
+| `/approvals?type=commission-run` | unified approvals inbox filtered to commission runs (Phase 3; `/commissions/approvals` server-redirects here)                                                  |
+| Commission components            | `apps/web/components/commissions/` (approve-lock dialog + run-detail building blocks) + `apps/web/components/dashboard/commission-widgets.tsx`                 |
+| Project detail tabs              | Overview · Role Assignments · Commission History · Timeline · Settings                                                                                         |
+| Run state machine                | `draft → pending_approval → approved → locked`; `rejected` is a side branch back to `draft` via `reopenRejected`                                               |
+| E2E tests                        | `apps/web/tests/e2e/commissions/` — Playwright; run with `pnpm test:e2e` after `pnpm test:e2e:install`                                                         |
 
 ### Key architectural patterns
 
@@ -294,6 +294,123 @@ The timeline subscriber (`commission-timeline.subscriber.ts`) listens to `commis
 - Visual references: PNGs in `docs/design/screens/commissions-design/` (07 projects list, 08 new-project live preview, 09 run detail, 10 approve dialog, 11 rules list, 12 rule editor).
 - Calculation behavior: the 23-passing vitest suite in `apps/api/src/modules/commissions/commission-calc.spec.ts` is the canonical reference. Reach for it before re-deriving any formulas.
 - E2E regression net: `apps/web/tests/e2e/commissions/` — covers the lifecycle (draft → submit → approve), rejection + reopen, confirmation-phrase validation, and line-item adjustment guards.
+
+## Phase 3 — Notifications, Reminders, Approvals
+
+Phase 3 wired three cross-cutting modules — a notification bell, a
+rule-driven reminder scheduler, and a generic approvals inbox — on
+top of the HR Core. The patterns below are the contract; future
+modules opt in by registering, not by re-implementing.
+
+### Module locations
+
+| What                    | Where                                                                                                                                               |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Notifications backend   | `apps/api/src/modules/notifications/` (service, controller, manifest, types registry, recipient resolver registry)                                  |
+| Reminders backend       | `apps/api/src/modules/reminders/` (rule service + sheet editor, BullMQ scheduler, fire + retry pipeline, event subscriber, dept-scoped resolvers)   |
+| Approvals backend       | `apps/api/src/modules/approvals/` (`approval-type.registry`, `approvals.service`, `approvals.controller`, `approvals.manifest`, `approvals.module`) |
+| Approvals tests         | `apps/api/src/modules/approvals/approvals.service.spec.ts` — 11-case integration spec (submit dedupe, soft/hard SoD, phrase validation, rollback)   |
+| Notification bell       | `apps/web/components/shell/notification-bell.tsx` (Topbar) + queries in `apps/web/lib/queries/notifications.ts`                                     |
+| Reminder rules UI       | `/settings/reminder-rules` list + editor sheet (event vs cron); `/settings/reminders` scheduled-viewer; queries in `lib/queries/reminders.ts`       |
+| Unified approvals inbox | `/approvals` (chip rail filter + complex-vs-simple row split); legacy `/commissions/approvals` server-redirects to `/approvals?type=commission-run` |
+
+### Key architectural patterns
+
+**Generic Approval + per-module ApprovalType.**
+There is one `Approval` table and one `/api/approvals` endpoint. Each
+approvable kind (commission run today; payroll run, OT, leave next)
+registers an `ApprovalTypeDefinition` on its module's `onModuleInit`
+— see `commissions/commission-run.approval-type.ts` for the canonical
+example. The definition owns: `loadSource`, `toMetadata` (writes the
+inbox-row blob into `Approval.metadata`), `confirmationPhraseFor` /
+`validateConfirmation` (typed phrase guard, PNG 10),
+`onApproved` / `onRejected` / `onCancelled` (side-effects that
+dual-write any denormalised columns on the source and emit the
+source's domain event). The unified inbox at `/approvals` reads
+metadata generically; no per-kind FE branching.
+
+**Soft separation of duties is per-type, opt-in.**
+`ApprovalTypeDefinition.softSoD: true` lets the submitter also
+approve (commission-run keeps Phase 2's policy — see
+`docs/DECISIONS.md` L401-412 and the Phase 3 record). `softSoD: false`
+returns 403 on same-user approve. The decision-payload always
+carries `approverIsSubmitter` so downstream side effects can surface
+it. **Do not** add hard-coded user-id checks in service code — set
+the flag on the type.
+
+**FK-to-immutable rule, same as commissions.**
+`ReminderRule` follows the Phase 2 commission-rule integrity model.
+A rule is mutable while `status='draft'`. Publishing freezes it,
+bumps the version (semver minor), and creates a new draft if you
+want to edit further. The scheduler reads `status='active'` rows
+and joins back to the originating rule by `ruleId` — never
+denormalises rule fields onto fired `Reminder` rows. Result: edits
+to a rule never retroactively change reminders that already fired.
+
+**Bespoke endpoints become shims, not duplicates.**
+After Session 4B, `CommissionRunsService.submitForApproval / approve
+/ reject` are thin wrappers that delegate to `ApprovalsService` via
+`findActiveBySource('commission-run', runId)`. The Phase 2 FE and
+e2e suite see no behaviour change. When adding a new approvable kind,
+mirror this pattern — the new module's bespoke endpoints (if any
+exist for backwards-compat) delegate; the canonical implementation
+lives in `ApprovalsService`.
+
+**Polymorphic source columns + denormalised `requiredPermission`.**
+`Approval` carries `(sourceType, sourceId)` as a polymorphic FK
+(there's no DB-level constraint — the service uses
+`def.loadSource()` and 404s if the source vanished, then advises
+"cancel the approval"). The `requiredPermission` column is
+**denormalised** off `ApprovalTypeDefinition.requiredPermission` so
+the inbox `for=me` filter is a single index hit (`WHERE
+requiredPermission IN (viewer.permissions)`) instead of resolving
+permissions per-row at query time.
+
+**Audit middleware does not cover seed inserts (still true).**
+Same caveat as Phase 2 — seed scripts (`prisma/seed-phase3.ts`) talk
+directly to Prisma without bootstrapping Nest, so seed-time
+`Approval`/`Reminder`/`Notification` rows generate **no** AuditLog
+entries. The Phase 3 seed's `backfillCommissionRunApprovals()`
+helper deliberately mirrors `commission-run.approval-type.ts`
+`toMetadata()` because it can't call the registered type — keep the
+two in sync if either changes.
+
+### Permission model
+
+**Approvals** (4 perms; see `approvals.manifest.ts`):
+
+- Inbox reads: `view_own_inbox` (HR Admin, Finance Manager, Super Admin) · `view_all_inbox` (auditors)
+- Writes: `submit` (system / type-owning modules) · `cancel_any` (admin escape hatch)
+- Acting on an approval (`approve` / `reject`) is gated by the **owning type's** `requiredPermission`, not by an approvals-module permission. The service intersects with `viewer.permissions` per request.
+
+**Notifications + Reminders**: see each module's manifest. The bell
+endpoint requires `notifications:view_own`; reminder-rule edits
+require `reminders:manage_rules`.
+
+### Events emitted
+
+The EventBus is still the audit + side-effect highway.
+
+**Approvals:** `approval.submitted`, `approval.approved`,
+`approval.rejected`, `approval.cancelled` — these fire **in addition
+to** the source's own domain event (commission run's
+`commission.run.approved` still emits with the original
+`recipients[]` payload, because the timeline subscriber depends on
+that shape — see `commission-run.approval-type.ts:onApproved`).
+
+**Notifications:** `notification.created`, `notification.dismissed`,
+`notification.read`.
+
+**Reminders:** `reminder.scheduled`, `reminder.fired`,
+`reminder.cancelled`, `reminder.rule.published`,
+`reminder.rule.archived`.
+
+### Reference for future work
+
+- Generic approvals contract: `docs/DECISIONS.md` § "Phase 3 — Approvals + Reminders + Notifications".
+- Visual references: `docs/design/screens/approval-inbox.jsx` (Brief 11), `docs/design/screens/reminders/` (rule editor + scheduled viewer), and the bell mocks under `docs/design/screens/notifications/`.
+- The 11-case `approvals.service.spec.ts` is the canonical reference for the SoD / dedup / rollback contract — extend it before changing the service.
+- When introducing a new approvable kind, the diff is: define a `kind` slug, write an `ApprovalTypeDefinition`, register on `onModuleInit`, optionally keep a thin bespoke endpoint that delegates via `findActiveBySource`. No FE work needed — the unified inbox renders generically from `Approval.metadata`.
 
 ## Asking for clarification
 
