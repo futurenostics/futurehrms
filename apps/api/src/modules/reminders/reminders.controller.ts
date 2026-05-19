@@ -18,6 +18,7 @@ import { RemindersReadService } from './reminders-read.service';
 import { ReminderSchedulerService } from './reminder-scheduler.service';
 import { RecipientResolverRegistry } from './recipient-resolver';
 import { triggerSpecSchema } from './reminder-trigger.types';
+import { buildFieldCatalogResponse } from './reminder-field-catalog';
 
 const listQuerySchema = z.object({
   status: z.enum(['draft', 'active', 'archived']).optional(),
@@ -102,6 +103,12 @@ export class RemindersController {
   @RequirePermission('reminders:view_rules')
   async triggerCounts(@CurrentUser() user: AuthenticatedUser) {
     return this.read.triggerCountsNext30Days(user);
+  }
+
+  @Get('reminder-rules/field-catalog')
+  @RequirePermission('reminders:view_rules')
+  async fieldCatalog() {
+    return buildFieldCatalogResponse();
   }
 
   @Get('reminder-rules/:id')

@@ -1,11 +1,6 @@
 'use client';
 
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-  type QueryClient,
-} from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api-client';
 
 /* ---------- Types ---------- */
@@ -13,11 +8,29 @@ import { apiFetch } from '@/lib/api-client';
 export type ReminderRuleStatus = 'draft' | 'active' | 'archived';
 export type TriggerType = 'event' | 'cron';
 
+/* ---------- Condition tree (mirrors BE reminder-conditions.types.ts) ---------- */
+
+export interface ConditionLeaf {
+  kind: 'leaf';
+  field: string;
+  operator: string;
+  value?: string | number | boolean | null | Array<string | number>;
+}
+
+export interface ConditionGroup {
+  kind: 'group';
+  operator: 'and' | 'or';
+  conditions: Array<ConditionLeaf | ConditionGroup>;
+}
+
+export type ConditionNode = ConditionLeaf | ConditionGroup;
+
 export interface EventTriggerSpec {
   kind: 'event';
   eventType: string;
   relativeTo: string;
   offset: string; // ISO 8601 duration with optional leading -
+  conditions?: ConditionGroup | null;
 }
 
 export interface CronTriggerSpec {
@@ -29,9 +42,35 @@ export interface CronTriggerSpec {
     | { kind: 'probation-ending'; withinDays: number }
     | { kind: 'document-expiring'; withinDays: number }
     | { kind: 'custom'; spec: Record<string, unknown> };
+  conditions?: ConditionGroup | null;
 }
 
 export type TriggerSpec = EventTriggerSpec | CronTriggerSpec;
+
+/* ---------- Field catalog ---------- */
+
+export type FieldType = 'string' | 'number' | 'date' | 'boolean' | 'enum';
+
+export interface FieldDef {
+  path: string;
+  label: string;
+  type: FieldType;
+  entity: string;
+  hint?: string;
+  enumValues?: Array<{ value: string; label: string }>;
+}
+
+export interface EntityDef {
+  key: string;
+  label: string;
+  description: string;
+  fields: FieldDef[];
+}
+
+export interface FieldCatalogResponse {
+  entities: EntityDef[];
+  operators: Record<FieldType, Array<{ id: string; label: string }>>;
+}
 
 export interface ReminderRulePublic {
   id: string;
@@ -102,6 +141,7 @@ const KEY = {
   rule: (id: string) => ['reminder-rules', 'one', id] as const,
   resolvers: () => ['reminder-rules', 'recipient-resolvers'] as const,
   triggerCounts: () => ['reminder-rules', 'trigger-counts'] as const,
+  fieldCatalog: () => ['reminder-rules', 'field-catalog'] as const,
   status: () => ['reminders', 'status'] as const,
   timeline: () => ['reminders', 'timeline'] as const,
   scheduled: (s?: string) => ['reminders', 'list', s ?? 'all'] as const,
@@ -111,9 +151,7 @@ export function useReminderRules(status?: ReminderRuleStatus | 'all') {
   return useQuery<{ items: ReminderRulePublic[]; total: number }>({
     queryKey: KEY.rules(status),
     queryFn: () =>
-      apiFetch(
-        `/api/reminder-rules${status && status !== 'all' ? `?status=${status}` : ''}`,
-      ),
+      apiFetch(`/api/reminder-rules${status && status !== 'all' ? `?status=${status}` : ''}`),
   });
 }
 
@@ -137,6 +175,15 @@ export function useTriggerCounts() {
   return useQuery<Record<string, number>>({
     queryKey: KEY.triggerCounts(),
     queryFn: () => apiFetch('/api/reminder-rules/trigger-counts'),
+  });
+}
+
+/** Catalog of entities + fields + operators for the condition builder. */
+export function useFieldCatalog() {
+  return useQuery<FieldCatalogResponse>({
+    queryKey: KEY.fieldCatalog(),
+    queryFn: () => apiFetch('/api/reminder-rules/field-catalog'),
+    staleTime: 10 * 60 * 1000,
   });
 }
 
@@ -244,10 +291,9 @@ export function useTriggerTest() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) =>
-      apiFetch<{ notificationId: string }>(
-        `/api/reminder-rules/${id}/trigger-test`,
-        { method: 'POST' },
-      ),
+      apiFetch<{ notificationId: string }>(`/api/reminder-rules/${id}/trigger-test`, {
+        method: 'POST',
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['notifications'] });
     },

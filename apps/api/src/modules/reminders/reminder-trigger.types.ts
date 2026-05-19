@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { conditionGroupSchema } from './reminder-conditions.types';
 
 /**
  * Trigger spec shape. Stored in `ReminderRule.triggerSpec` as JSON.
@@ -43,6 +44,12 @@ export const eventTriggerSpecSchema = z.object({
     .regex(/^-?P(?:\d+Y)?(?:\d+M)?(?:\d+W)?(?:\d+D)?(?:T(?:\d+H)?(?:\d+M)?(?:\d+S)?)?$/, {
       message: 'offset must be an ISO 8601 duration, optionally prefixed with -',
     }),
+  /**
+   * Optional filter tree applied after the event fires — only entities
+   * matching all conditions schedule a reminder. Absent / null → fire
+   * for every matched entity (Phase-3 backwards-compatible behaviour).
+   */
+  conditions: conditionGroupSchema.optional().nullable(),
 });
 export type EventTriggerSpec = z.infer<typeof eventTriggerSpecSchema>;
 
@@ -74,6 +81,12 @@ export const cronTriggerSpecSchema = z.object({
     z.object({ kind: z.literal('work-anniversary') }),
     z.object({ kind: z.literal('custom'), spec: z.record(z.string(), z.unknown()) }),
   ]),
+  /**
+   * Optional filter tree applied after the cron candidate list is
+   * assembled — only entities matching all conditions schedule a
+   * reminder. Absent / null → fire for every candidate.
+   */
+  conditions: conditionGroupSchema.optional().nullable(),
 });
 export type CronTriggerSpec = z.infer<typeof cronTriggerSpecSchema>;
 
