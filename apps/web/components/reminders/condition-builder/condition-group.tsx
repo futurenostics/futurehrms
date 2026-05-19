@@ -13,7 +13,7 @@ import {
   type ConditionLeaf,
   type ConditionNode,
 } from './types';
-import type { EntityDef, FieldType } from '@/lib/queries/reminders';
+import type { DateRole, EntityDef, FieldType } from '@/lib/queries/reminders';
 
 /**
  * Recursive group node.
@@ -38,6 +38,7 @@ export function ConditionGroupBlock({
   group,
   entities,
   operatorsByType,
+  dateOperatorsByRole,
   onChange,
   onRemove,
   isRoot = false,
@@ -47,6 +48,7 @@ export function ConditionGroupBlock({
   group: ConditionGroup;
   entities: EntityDef[];
   operatorsByType: Record<FieldType, Array<{ id: string; label: string }>>;
+  dateOperatorsByRole: Record<DateRole, string[]>;
   onChange: (next: ConditionGroup) => void;
   onRemove?: () => void;
   isRoot?: boolean;
@@ -135,6 +137,7 @@ export function ConditionGroupBlock({
                   leaf={child as ConditionLeaf}
                   entities={entities}
                   operatorsByType={operatorsByType}
+                  dateOperatorsByRole={dateOperatorsByRole}
                   disabled={disabled}
                   onChange={(next) => updateChild(i, next)}
                   onRemove={() => removeChild(i)}
@@ -144,6 +147,7 @@ export function ConditionGroupBlock({
                   group={child as ConditionGroup}
                   entities={entities}
                   operatorsByType={operatorsByType}
+                  dateOperatorsByRole={dateOperatorsByRole}
                   disabled={disabled}
                   depth={depth + 1}
                   onChange={(next) => updateChild(i, next)}

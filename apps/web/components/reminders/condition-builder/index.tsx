@@ -57,6 +57,11 @@ export function ConditionBuilder({
     boolean: [],
     enum: [],
   };
+  const dateOperatorsByRole = catalog.data?.dateOperatorsByRole ?? {
+    anniversary: [],
+    'one-shot-future': [],
+    historical: [],
+  };
 
   if (catalog.isPending) {
     return (
@@ -128,6 +133,7 @@ export function ConditionBuilder({
         group={value}
         entities={entities}
         operatorsByType={operators}
+        dateOperatorsByRole={dateOperatorsByRole}
         disabled={disabled}
         isRoot
         onChange={(next) => onChange(next)}

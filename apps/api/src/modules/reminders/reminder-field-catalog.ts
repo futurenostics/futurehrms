@@ -32,6 +32,25 @@
 
 export type FieldType = 'string' | 'number' | 'date' | 'boolean' | 'enum';
 
+/**
+ * Semantic role for date fields — drives the operator menu so the
+ * user never sees an operator that can't fire against this field:
+ *
+ *   - `anniversary`     — historical date that recurs by month-day
+ *                         (joinDate, dateOfBirth). Show anniversary
+ *                         operators, hide forward-only ones.
+ *   - `one-shot-future` — date that passes once and won't recur
+ *                         (probationEndDate, expiresAt). Show
+ *                         forward-looking + literal-date operators,
+ *                         hide anniversary ones.
+ *   - `historical`      — past timestamp (terminatedAt, removedAt).
+ *                         Show backward-looking + literal-date,
+ *                         hide forward-only + anniversary.
+ *
+ * Default (no role specified) keeps every date operator visible.
+ */
+export type DateRole = 'anniversary' | 'one-shot-future' | 'historical';
+
 export interface FieldDef {
   /** Dotted path scoped to the source entity. */
   path: string;
@@ -41,6 +60,8 @@ export interface FieldDef {
   type: FieldType;
   /** For enum: known string values + display labels. */
   enumValues?: Array<{ value: string; label: string }>;
+  /** For date: semantic role that filters the operator menu. */
+  dateRole?: DateRole;
   /** Owning entity key (employee, project, …). */
   entity: string;
   /** Quick hint shown next to the value input. */
@@ -135,36 +156,47 @@ export const ENTITIES: EntityDef[] = [
         type: 'number',
         hint: 'Latest active salary',
       },
-      { entity: 'employee', path: 'employee.joinDate', label: 'Join date', type: 'date' },
+      {
+        entity: 'employee',
+        path: 'employee.joinDate',
+        label: 'Join date',
+        type: 'date',
+        dateRole: 'anniversary',
+      },
       {
         entity: 'employee',
         path: 'employee.dateOfBirth',
         label: 'Date of birth',
         type: 'date',
+        dateRole: 'anniversary',
       },
       {
         entity: 'employee',
         path: 'employee.probationEndDate',
         label: 'Probation end date',
         type: 'date',
+        dateRole: 'one-shot-future',
       },
       {
         entity: 'employee',
         path: 'employee.internshipEndDate',
         label: 'Internship end date',
         type: 'date',
+        dateRole: 'one-shot-future',
       },
       {
         entity: 'employee',
         path: 'employee.terminatedAt',
         label: 'Terminated at',
         type: 'date',
+        dateRole: 'historical',
       },
       {
         entity: 'employee',
         path: 'employee.noticePeriodStart',
         label: 'Notice period start',
         type: 'date',
+        dateRole: 'one-shot-future',
       },
       {
         entity: 'employee',
@@ -265,6 +297,7 @@ export const ENTITIES: EntityDef[] = [
         path: 'employeeDocument.expiresAt',
         label: 'Expires at',
         type: 'date',
+        dateRole: 'one-shot-future',
       },
       {
         entity: 'employeeDocument',
@@ -295,12 +328,19 @@ export const ENTITIES: EntityDef[] = [
         enumValues: PROJECT_STATUSES,
       },
       { entity: 'project', path: 'project.revenueUsd', label: 'Revenue (USD)', type: 'number' },
-      { entity: 'project', path: 'project.startDate', label: 'Start date', type: 'date' },
+      {
+        entity: 'project',
+        path: 'project.startDate',
+        label: 'Start date',
+        type: 'date',
+        dateRole: 'one-shot-future',
+      },
       {
         entity: 'project',
         path: 'project.expectedCompletionDate',
         label: 'Expected completion',
         type: 'date',
+        dateRole: 'one-shot-future',
       },
       {
         entity: 'project',
@@ -375,12 +415,14 @@ export const ENTITIES: EntityDef[] = [
         path: 'projectAssignment.assignedAt',
         label: 'Assigned at',
         type: 'date',
+        dateRole: 'historical',
       },
       {
         entity: 'projectAssignment',
         path: 'projectAssignment.removedAt',
         label: 'Removed at',
         type: 'date',
+        dateRole: 'historical',
       },
       {
         entity: 'projectAssignment',
@@ -534,11 +576,54 @@ export const OPERATORS_BY_TYPE: Record<FieldType, Array<{ id: string; label: str
   ],
 };
 
+/**
+ * Per-role allow-list for date operators. Used by the FE to filter
+ * the operator menu so users never see an option that can't fire
+ * against the chosen field — e.g. "is today" on Date of birth would
+ * only match a literal newborn.
+ */
+export const DATE_OPERATORS_BY_ROLE: Record<DateRole, string[]> = {
+  anniversary: [
+    // Recurring date — anchor by month-day, never by full date.
+    'before',
+    'after',
+    'older_than_days',
+    'anniversary_in_exactly_days',
+    'matches_today_month_day',
+    'is_empty',
+    'is_not_empty',
+  ],
+  'one-shot-future': [
+    // Forward-looking single date — fire on the day or N days before.
+    'before',
+    'after',
+    'within_days',
+    'in_exactly_days',
+    'matches_today',
+    'is_empty',
+    'is_not_empty',
+  ],
+  historical: [
+    // Past timestamp — only literal-date / before / after / older-than make sense.
+    'before',
+    'after',
+    'older_than_days',
+    'matches_today',
+    'is_empty',
+    'is_not_empty',
+  ],
+};
+
 export interface FieldCatalogResponse {
   entities: EntityDef[];
   operators: typeof OPERATORS_BY_TYPE;
+  dateOperatorsByRole: typeof DATE_OPERATORS_BY_ROLE;
 }
 
 export function buildFieldCatalogResponse(): FieldCatalogResponse {
-  return { entities: ENTITIES, operators: OPERATORS_BY_TYPE };
+  return {
+    entities: ENTITIES,
+    operators: OPERATORS_BY_TYPE,
+    dateOperatorsByRole: DATE_OPERATORS_BY_ROLE,
+  };
 }

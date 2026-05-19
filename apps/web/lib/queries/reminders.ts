@@ -60,6 +60,8 @@ export type TriggerSpec = EventTriggerSpec | CronTriggerSpec;
 
 export type FieldType = 'string' | 'number' | 'date' | 'boolean' | 'enum';
 
+export type DateRole = 'anniversary' | 'one-shot-future' | 'historical';
+
 export interface FieldDef {
   path: string;
   label: string;
@@ -67,6 +69,9 @@ export interface FieldDef {
   entity: string;
   hint?: string;
   enumValues?: Array<{ value: string; label: string }>;
+  /** Set on date fields — filters the operator menu so impossible
+   *  combinations (e.g. "is today" on Date of birth) are hidden. */
+  dateRole?: DateRole;
 }
 
 export interface EntityDef {
@@ -79,6 +84,7 @@ export interface EntityDef {
 export interface FieldCatalogResponse {
   entities: EntityDef[];
   operators: Record<FieldType, Array<{ id: string; label: string }>>;
+  dateOperatorsByRole: Record<DateRole, string[]>;
 }
 
 /* ---------- Event catalog ---------- */

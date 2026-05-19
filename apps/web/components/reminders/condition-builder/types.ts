@@ -21,8 +21,11 @@ import type {
 
 export type { ConditionGroup, ConditionLeaf, ConditionNode, EntityDef, FieldDef, FieldType };
 
-/** Default operator the picker pre-selects for a new leaf on a given type. */
-export function defaultOperatorFor(type: FieldType): string {
+/** Default operator the picker pre-selects for a new leaf on a given
+ *  field. For date fields the choice depends on the field's role so
+ *  the default is always valid for that field's allowed operator
+ *  list (e.g. `within_days` would be invalid on Date of birth). */
+export function defaultOperatorFor(type: FieldType, field?: FieldDef): string {
   switch (type) {
     case 'string':
     case 'enum':
@@ -30,7 +33,16 @@ export function defaultOperatorFor(type: FieldType): string {
     case 'number':
       return 'equals';
     case 'date':
-      return 'within_days';
+      switch (field?.dateRole) {
+        case 'anniversary':
+          return 'anniversary_in_exactly_days';
+        case 'one-shot-future':
+          return 'in_exactly_days';
+        case 'historical':
+          return 'older_than_days';
+        default:
+          return 'within_days';
+      }
     case 'boolean':
       return 'is_true';
   }
@@ -76,7 +88,7 @@ export function newLeaf(entities: EntityDef[]): ConditionLeaf {
   if (!f) {
     return { kind: 'leaf', field: '', operator: 'equals', value: '' };
   }
-  const op = defaultOperatorFor(f.type);
+  const op = defaultOperatorFor(f.type, f);
   return { kind: 'leaf', field: f.path, operator: op, value: defaultValueFor(op, f.type) };
 }
 
