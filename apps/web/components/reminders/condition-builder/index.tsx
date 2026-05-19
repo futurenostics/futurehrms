@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Filter, Loader2 } from 'lucide-react';
+import { AlertTriangle, Filter, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useFieldCatalog } from '@/lib/queries/reminders';
@@ -46,6 +46,35 @@ export function ConditionBuilder({ value, onChange, disabled }: ConditionBuilder
       <div className="gap-fn-2 flex items-center">
         <Loader2 className="text-fn-fg-faint h-fn-4 w-fn-4 animate-spin" />
         <Skeleton className="h-fn-9 flex-1" />
+      </div>
+    );
+  }
+
+  if (catalog.isError || entities.length === 0) {
+    return (
+      <div className="rounded-fn-xs border-fn-warning/35 bg-fn-warning-soft/30 gap-fn-2 px-fn-4 py-fn-3_5 flex flex-col border">
+        <div className="gap-fn-2 flex items-center">
+          <AlertTriangle className="text-fn-warning h-fn-4 w-fn-4 shrink-0" />
+          <span className="text-fn-fg font-fn-semibold text-[13px]">Field catalog unavailable</span>
+        </div>
+        <p className="text-fn-fg-muted max-w-[560px] text-[12px]">
+          The condition builder needs the catalog of queryable fields from the API. The endpoint
+          returned an error or no entities — most often this means the API process is still serving
+          an older build that doesn&apos;t have{' '}
+          <code className="font-mono text-[11px]">GET /api/reminder-rules/field-catalog</code>{' '}
+          registered. Restart the API (kill <code className="font-mono">node ./dist/main</code> and
+          re-run <code className="font-mono">pnpm --filter @futurenostics/api dev</code>) and reload
+          this page.
+        </p>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={() => void catalog.refetch()}
+          className="self-start"
+        >
+          Retry
+        </Button>
       </div>
     );
   }

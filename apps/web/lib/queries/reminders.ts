@@ -184,6 +184,11 @@ export function useFieldCatalog() {
     queryKey: KEY.fieldCatalog(),
     queryFn: () => apiFetch('/api/reminder-rules/field-catalog'),
     staleTime: 10 * 60 * 1000,
+    // The catalog endpoint is a static read — retrying a 404/500
+    // just delays the error toast; the answer won't change in a
+    // few hundred ms. Fail fast so the ConditionBuilder can show
+    // an actionable empty state.
+    retry: false,
   });
 }
 
