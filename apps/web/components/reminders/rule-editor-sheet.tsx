@@ -38,6 +38,7 @@ import {
   type TriggerSpec,
 } from '@/lib/queries/reminders';
 import { ConditionBuilder, countLeaves } from '@/components/reminders/condition-builder';
+import { EventPicker } from '@/components/reminders/event-picker';
 
 /**
  * Rule editor sheet — used in two modes:
@@ -70,14 +71,6 @@ const NOTIFICATION_TYPES = [
   { key: 'reminders.work-anniversary', label: 'Work anniversary' },
   { key: 'reminders.visa-renewal', label: 'Visa renewal' },
   { key: 'reminders.document-expiring', label: 'Document expiring' },
-];
-
-const EVENT_TYPES = [
-  { key: 'employee.created', label: 'Employee created' },
-  { key: 'employee.updated', label: 'Employee updated' },
-  { key: 'employee.terminated', label: 'Employee terminated' },
-  { key: 'project.created', label: 'Project created' },
-  { key: 'commission.run.approved', label: 'Commission run approved' },
 ];
 
 const RELATIVE_FIELDS = [
@@ -122,7 +115,7 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
   const [isEnabled, setIsEnabled] = React.useState(true);
 
   // event-trigger fields
-  const [eventType, setEventType] = React.useState(EVENT_TYPES[0]!.key);
+  const [eventType, setEventType] = React.useState('employee.created');
   const [relativeTo, setRelativeTo] = React.useState(RELATIVE_FIELDS[0]!.key);
   const [offsetValue, setOffsetValue] = React.useState(14);
   const [offsetUnit, setOffsetUnit] = React.useState<'D' | 'W' | 'H'>('D');
@@ -425,19 +418,11 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
 
               {triggerType === 'event' ? (
                 <>
-                  <Field label="Event type">
-                    <Select value={eventType} onValueChange={setEventType} disabled={!isDraft}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {EVENT_TYPES.map((t) => (
-                          <SelectItem key={t.key} value={t.key}>
-                            {t.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                  <Field
+                    label="Event type"
+                    hint="Pick an emitted event the system already publishes, or type a custom string."
+                  >
+                    <EventPicker value={eventType} onChange={setEventType} disabled={!isDraft} />
                   </Field>
 
                   {/* Schedule offset — optional. Default = fire immediately. */}

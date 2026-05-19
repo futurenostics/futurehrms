@@ -81,6 +81,29 @@ export interface FieldCatalogResponse {
   operators: Record<FieldType, Array<{ id: string; label: string }>>;
 }
 
+/* ---------- Event catalog ---------- */
+
+export type EventSourceKind =
+  | 'employee'
+  | 'employeeDocument'
+  | 'project'
+  | 'commissionRun'
+  | 'approval'
+  | null;
+
+export interface EventTypeDef {
+  type: string;
+  label: string;
+  description: string;
+  group: string;
+  sourceKind: EventSourceKind;
+}
+
+export interface EventCatalogResponse {
+  events: EventTypeDef[];
+  groups: string[];
+}
+
 export interface ReminderRulePublic {
   id: string;
   key: string;
@@ -151,6 +174,7 @@ const KEY = {
   resolvers: () => ['reminder-rules', 'recipient-resolvers'] as const,
   triggerCounts: () => ['reminder-rules', 'trigger-counts'] as const,
   fieldCatalog: () => ['reminder-rules', 'field-catalog'] as const,
+  eventCatalog: () => ['reminder-rules', 'event-catalog'] as const,
   status: () => ['reminders', 'status'] as const,
   timeline: () => ['reminders', 'timeline'] as const,
   scheduled: (s?: string) => ['reminders', 'list', s ?? 'all'] as const,
@@ -184,6 +208,18 @@ export function useTriggerCounts() {
   return useQuery<Record<string, number>>({
     queryKey: KEY.triggerCounts(),
     queryFn: () => apiFetch('/api/reminder-rules/trigger-counts'),
+  });
+}
+
+/** Catalog of event types the picker can offer. Same pattern as
+ *  useFieldCatalog: cached for 10 minutes, fail-fast on error so the
+ *  picker can render an actionable empty state. */
+export function useEventCatalog() {
+  return useQuery<EventCatalogResponse>({
+    queryKey: KEY.eventCatalog(),
+    queryFn: () => apiFetch<EventCatalogResponse>('/api/reminder-rules/event-catalog'),
+    staleTime: 10 * 60 * 1000,
+    retry: false,
   });
 }
 

@@ -19,6 +19,7 @@ import { ReminderSchedulerService } from './reminder-scheduler.service';
 import { RecipientResolverRegistry } from './recipient-resolver';
 import { triggerSpecSchema } from './reminder-trigger.types';
 import { buildFieldCatalogResponse } from './reminder-field-catalog';
+import { buildEventCatalogResponse } from './event-type-catalog';
 
 const listQuerySchema = z.object({
   status: z.enum(['draft', 'active', 'archived']).optional(),
@@ -109,6 +110,12 @@ export class RemindersController {
   @RequirePermission('reminders:view_rules')
   async fieldCatalog() {
     return buildFieldCatalogResponse();
+  }
+
+  @Get('reminder-rules/event-catalog')
+  @RequirePermission('reminders:view_rules')
+  async eventCatalog() {
+    return buildEventCatalogResponse();
   }
 
   @Get('reminder-rules/:id')
