@@ -28,22 +28,29 @@ export const eventTriggerSpecSchema = z.object({
   eventType: z.string().min(1),
   /**
    * Field name on the event's payload that carries the anchor date —
-   * the `offset` is applied relative to this. Empty / missing field on
-   * the actual event payload → the trigger no-ops for that event.
+   * the `offset` is applied relative to this. Both `relativeTo` and
+   * `offset` are OPTIONAL: when either is missing the reminder fires
+   * at the event time. Use the pair only when you want to schedule
+   * ahead of (or after) a date on the entity — e.g. fire 14 days
+   * before probationEndDate.
    */
-  relativeTo: z.string().min(1),
+  relativeTo: z.string().min(1).optional().nullable(),
   /**
    * ISO 8601 duration string with optional leading minus sign. Negative
    * = before the anchor, positive = after. Examples:
    *   `-P30D`   30 days before
    *   `-PT2H`   2 hours before
    *   `P14D`    14 days after
+   *
+   * Optional — see `relativeTo` above.
    */
   offset: z
     .string()
     .regex(/^-?P(?:\d+Y)?(?:\d+M)?(?:\d+W)?(?:\d+D)?(?:T(?:\d+H)?(?:\d+M)?(?:\d+S)?)?$/, {
       message: 'offset must be an ISO 8601 duration, optionally prefixed with -',
-    }),
+    })
+    .optional()
+    .nullable(),
   /**
    * Optional filter tree applied after the event fires — only entities
    * matching all conditions schedule a reminder. Absent / null → fire

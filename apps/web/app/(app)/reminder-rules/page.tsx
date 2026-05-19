@@ -170,7 +170,10 @@ export default function ReminderRulesPage() {
             rule.triggerType === 'event'
               ? {
                   kind: 'event',
-                  offset: rule.triggerSpec.kind === 'event' ? rule.triggerSpec.offset : undefined,
+                  offset:
+                    rule.triggerSpec.kind === 'event'
+                      ? (rule.triggerSpec.offset ?? undefined)
+                      : undefined,
                 }
               : { kind: 'cron' },
           );

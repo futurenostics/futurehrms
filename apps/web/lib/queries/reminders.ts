@@ -28,8 +28,10 @@ export type ConditionNode = ConditionLeaf | ConditionGroup;
 export interface EventTriggerSpec {
   kind: 'event';
   eventType: string;
-  relativeTo: string;
-  offset: string; // ISO 8601 duration with optional leading -
+  /** Optional. Date field on the event payload to anchor the schedule. */
+  relativeTo?: string | null;
+  /** Optional ISO 8601 duration; negative = before, positive = after. */
+  offset?: string | null;
   conditions?: ConditionGroup | null;
 }
 

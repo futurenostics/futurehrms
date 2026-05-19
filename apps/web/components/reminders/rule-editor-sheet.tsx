@@ -136,6 +136,12 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
   // condition-tree (shared across both trigger types)
   const [conditions, setConditions] = React.useState<ConditionGroup | null>(null);
 
+  // Schedule offset is OPTIONAL on event-based rules. Default is
+  // "fire immediately when the event fires" — conditions handle the
+  // filtering. Expand the disclosure only when you want to schedule
+  // ahead of (or after) a date on the entity (e.g. probationEndDate).
+  const [useScheduleOffset, setUseScheduleOffset] = React.useState(false);
+
   // Hydrate from existing rule when editing
   React.useEffect(() => {
     if (mode !== 'edit' || !existing.data) return;
@@ -150,8 +156,12 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
     setIsEnabled(r.isEnabled);
     if (r.triggerSpec.kind === 'event') {
       setEventType(r.triggerSpec.eventType);
-      setRelativeTo(r.triggerSpec.relativeTo);
-      const m = /^(-?)P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?)?$/.exec(r.triggerSpec.offset);
+      setUseScheduleOffset(!!(r.triggerSpec.relativeTo && r.triggerSpec.offset));
+      if (r.triggerSpec.relativeTo) setRelativeTo(r.triggerSpec.relativeTo);
+      const m =
+        r.triggerSpec.offset != null
+          ? /^(-?)P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?)?$/.exec(r.triggerSpec.offset)
+          : null;
       if (m) {
         setOffsetDirection(m[1] === '-' ? 'before' : 'after');
         if (m[2]) {
@@ -200,20 +210,24 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
 
   function buildTriggerSpec(): TriggerSpec {
     if (triggerType === 'event') {
-      const offset = `${offsetDirection === 'before' ? '-' : ''}P${
-        offsetUnit === 'W'
-          ? `${offsetValue}W`
-          : offsetUnit === 'D'
-            ? `${offsetValue}D`
-            : `T${offsetValue}H`
-      }`;
+      // Schedule offset is optional. Only attach relativeTo + offset
+      // when the disclosure is expanded — otherwise the BE schedules
+      // for the event time (fire immediately).
       const spec: EventTriggerSpec = {
         kind: 'event',
         eventType,
-        relativeTo,
-        offset,
         conditions,
       };
+      if (useScheduleOffset) {
+        spec.relativeTo = relativeTo;
+        spec.offset = `${offsetDirection === 'before' ? '-' : ''}P${
+          offsetUnit === 'W'
+            ? `${offsetValue}W`
+            : offsetUnit === 'D'
+              ? `${offsetValue}D`
+              : `T${offsetValue}H`
+        }`;
+      }
       return spec;
     }
     const query: CronTriggerSpec['query'] =
@@ -397,74 +411,103 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
 
               {triggerType === 'event' ? (
                 <>
-                  <div className="gap-fn-3 grid grid-cols-2">
-                    <Field label="Event type">
-                      <Select value={eventType} onValueChange={setEventType} disabled={!isDraft}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {EVENT_TYPES.map((t) => (
-                            <SelectItem key={t.key} value={t.key}>
-                              {t.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    <Field label="Anchor field">
-                      <Select value={relativeTo} onValueChange={setRelativeTo} disabled={!isDraft}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {RELATIVE_FIELDS.map((f) => (
-                            <SelectItem key={f.key} value={f.key}>
-                              {f.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                  </div>
-                  <Field label="Offset" hint="Fire this far before/after the anchor field's date">
-                    <div className="gap-fn-2 grid grid-cols-3">
-                      <Input
-                        type="number"
-                        value={offsetValue}
-                        onChange={(e) => setOffsetValue(Number(e.target.value))}
-                        min={0}
-                        disabled={!isDraft}
-                      />
-                      <Select
-                        value={offsetUnit}
-                        onValueChange={(v) => setOffsetUnit(v as typeof offsetUnit)}
-                        disabled={!isDraft}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="D">Days</SelectItem>
-                          <SelectItem value="W">Weeks</SelectItem>
-                          <SelectItem value="H">Hours</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Select
-                        value={offsetDirection}
-                        onValueChange={(v) => setOffsetDirection(v as typeof offsetDirection)}
-                        disabled={!isDraft}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="before">before</SelectItem>
-                          <SelectItem value="after">after</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                  <Field label="Event type">
+                    <Select value={eventType} onValueChange={setEventType} disabled={!isDraft}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {EVENT_TYPES.map((t) => (
+                          <SelectItem key={t.key} value={t.key}>
+                            {t.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </Field>
+
+                  {/* Schedule offset — optional. Default = fire immediately. */}
+                  <div className="rounded-fn-xs border-fn-border bg-fn-bg-subtle/40 gap-fn-2_5 px-fn-3 py-fn-2_5 flex flex-col border">
+                    <div className="gap-fn-2 flex items-center justify-between">
+                      <div className="gap-fn-0_5 flex flex-col">
+                        <span className="text-fn-fg font-fn-semibold text-[12.5px]">
+                          Schedule offset
+                        </span>
+                        <span className="text-fn-fg-faint text-[11.5px]">
+                          {useScheduleOffset
+                            ? 'Fire ahead of (or after) a date on the entity.'
+                            : 'Off — reminder fires when the event happens. Use conditions to filter who qualifies.'}
+                        </span>
+                      </div>
+                      <Switch
+                        checked={useScheduleOffset}
+                        disabled={!isDraft}
+                        onCheckedChange={setUseScheduleOffset}
+                        aria-label="Toggle schedule offset"
+                      />
+                    </div>
+
+                    {useScheduleOffset && (
+                      <>
+                        <Field label="Anchor field" hint="Date field on the event payload">
+                          <Select
+                            value={relativeTo}
+                            onValueChange={setRelativeTo}
+                            disabled={!isDraft}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {RELATIVE_FIELDS.map((f) => (
+                                <SelectItem key={f.key} value={f.key}>
+                                  {f.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                        <Field label="Offset" hint="Fire this far before/after the anchor date">
+                          <div className="gap-fn-2 grid grid-cols-3">
+                            <Input
+                              type="number"
+                              value={offsetValue}
+                              onChange={(e) => setOffsetValue(Number(e.target.value))}
+                              min={0}
+                              disabled={!isDraft}
+                            />
+                            <Select
+                              value={offsetUnit}
+                              onValueChange={(v) => setOffsetUnit(v as typeof offsetUnit)}
+                              disabled={!isDraft}
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="D">Days</SelectItem>
+                                <SelectItem value="W">Weeks</SelectItem>
+                                <SelectItem value="H">Hours</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Select
+                              value={offsetDirection}
+                              onValueChange={(v) => setOffsetDirection(v as typeof offsetDirection)}
+                              disabled={!isDraft}
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="before">before</SelectItem>
+                                <SelectItem value="after">after</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </Field>
+                      </>
+                    )}
+                  </div>
                 </>
               ) : (
                 <>
