@@ -289,6 +289,84 @@ describe('today-anchored date operators', () => {
     const lastYear = { employee: { ...employee.employee, joinDate: '2024-05-19T08:00:00Z' } };
     expect(evaluateConditions(tree, lastYear)).toBe(false);
   });
+
+  it('in_exactly_days fires only on the matching day (no early/late hits)', () => {
+    // Today (PKT) is 2026-05-19. Probation ends 2026-06-02 → 14 days away.
+    const tree = (n: number): ConditionGroup => ({
+      kind: 'group',
+      operator: 'and',
+      conditions: [
+        {
+          kind: 'leaf',
+          field: 'employee.probationEndDate',
+          operator: 'in_exactly_days',
+          value: n,
+        },
+      ],
+    });
+    const probationOn = (iso: string) => ({
+      employee: { ...employee.employee, probationEndDate: iso },
+    });
+    expect(evaluateConditions(tree(14), probationOn('2026-06-02T00:00:00Z'))).toBe(true);
+    expect(evaluateConditions(tree(14), probationOn('2026-06-01T00:00:00Z'))).toBe(false);
+    expect(evaluateConditions(tree(14), probationOn('2026-06-03T00:00:00Z'))).toBe(false);
+    // Past dates resolve to a negative diff; never match a positive N.
+    expect(evaluateConditions(tree(14), probationOn('2026-05-05T00:00:00Z'))).toBe(false);
+  });
+
+  it('anniversary_in_exactly_days fires across year-end wrap', () => {
+    // Today (PKT) is 2026-05-19. joinDate 2020-06-09 → next anniversary
+    // is 2026-06-09, 21 days away.
+    const tree = (n: number): ConditionGroup => ({
+      kind: 'group',
+      operator: 'and',
+      conditions: [
+        {
+          kind: 'leaf',
+          field: 'employee.joinDate',
+          operator: 'anniversary_in_exactly_days',
+          value: n,
+        },
+      ],
+    });
+    const joinedOn = (iso: string) => ({
+      employee: { ...employee.employee, joinDate: iso },
+    });
+    expect(evaluateConditions(tree(21), joinedOn('2020-06-09T00:00:00Z'))).toBe(true);
+    expect(evaluateConditions(tree(21), joinedOn('2020-06-10T00:00:00Z'))).toBe(false);
+    // Wrap: today 2026-05-19, joinDate is in March → this year's
+    // anniversary already passed; next is 2027-03-... — not 21 days away.
+    expect(evaluateConditions(tree(21), joinedOn('2018-03-15T00:00:00Z'))).toBe(false);
+  });
+});
+
+describe('in_exactly_days — year-end wrap', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    // 2026-12-30 PKT (Asia/Karachi = UTC+5).
+    vi.setSystemTime(new Date('2026-12-29T20:00:00Z'));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('counts across the new-year boundary', () => {
+    const tree: ConditionGroup = {
+      kind: 'group',
+      operator: 'and',
+      conditions: [
+        {
+          kind: 'leaf',
+          field: 'employee.probationEndDate',
+          operator: 'in_exactly_days',
+          value: 14,
+        },
+      ],
+    };
+    // 14 days after 2026-12-30 = 2027-01-13.
+    const ctx = {
+      employee: { ...employee.employee, probationEndDate: '2027-01-13T00:00:00Z' },
+    };
+    expect(evaluateConditions(tree, ctx)).toBe(true);
+  });
 });
 
 describe('mixed per-pair connectors (SQL precedence)', () => {

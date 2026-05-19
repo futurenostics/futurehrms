@@ -52,6 +52,12 @@ export const CONDITION_OPERATORS = [
   'older_than_days',
   'matches_today_month_day',
   'matches_today',
+  // exact "N days away" — used to replace the old event-trigger
+  // offset (e.g. fire exactly 14 days before probationEndDate).
+  'in_exactly_days',
+  // exact "N days away from the next yearly anniversary of this
+  // date" — replaces offset against a recurring anchor like joinDate.
+  'anniversary_in_exactly_days',
   // boolean
   'is_true',
   'is_false',

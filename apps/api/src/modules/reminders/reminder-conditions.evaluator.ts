@@ -185,6 +185,25 @@ function evalLeaf(leaf: ConditionLeaf, ctx: EvalContext): boolean {
       }).format(new Date());
       return a === today;
     }
+    case 'in_exactly_days': {
+      // Whole-day calendar difference in Asia/Karachi.
+      // True when (field-day - today) === value.
+      if (typeof value !== 'number') return false;
+      const fieldDay = pktDateOnly(actual);
+      const todayDay = pktDateOnly(new Date());
+      if (fieldDay === null || todayDay === null) return false;
+      return diffCalendarDays(fieldDay, todayDay) === value;
+    }
+    case 'anniversary_in_exactly_days': {
+      // Same as in_exactly_days, but against the NEXT yearly
+      // anniversary of `field` from today. Handles year-wrap (Dec → Jan).
+      if (typeof value !== 'number') return false;
+      const fieldDay = pktDateOnly(actual);
+      const todayDay = pktDateOnly(new Date());
+      if (fieldDay === null || todayDay === null) return false;
+      const anniv = nextYearlyAnniversary(fieldDay, todayDay);
+      return diffCalendarDays(anniv, todayDay) === value;
+    }
 
     default:
       return false;
@@ -224,6 +243,57 @@ function isEmpty(value: unknown): boolean {
   if (typeof value === 'string') return value.length === 0;
   if (Array.isArray(value)) return value.length === 0;
   return false;
+}
+
+/**
+ * Get the {year, month, day} of a value in Asia/Karachi. Returns
+ * null if the value isn't a parseable date. Used by the exact-day
+ * operators so DST / TZ shifts can't push a comparison off by one.
+ */
+function pktDateOnly(value: unknown): { y: number; m: number; d: number } | null {
+  const ms = value instanceof Date ? value.getTime() : toDateMs(value);
+  if (ms === null) return null;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Karachi',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date(ms));
+  const get = (type: string): number => Number(parts.find((p) => p.type === type)?.value ?? '0');
+  return { y: get('year'), m: get('month'), d: get('day') };
+}
+
+/** Whole-day signed difference (a - b) using a UTC-noon proxy to avoid DST jitter. */
+function diffCalendarDays(
+  a: { y: number; m: number; d: number },
+  b: { y: number; m: number; d: number },
+): number {
+  const aMs = Date.UTC(a.y, a.m - 1, a.d, 12);
+  const bMs = Date.UTC(b.y, b.m - 1, b.d, 12);
+  return Math.round((aMs - bMs) / 86_400_000);
+}
+
+/**
+ * The next yearly anniversary of `source` on or after `today`. If
+ * today is past this year's MM-DD, returns next year's. Leap-day
+ * anchors (Feb 29) land on Mar 1 in non-leap years (Date's natural
+ * roll-forward).
+ */
+function nextYearlyAnniversary(
+  source: { y: number; m: number; d: number },
+  today: { y: number; m: number; d: number },
+): { y: number; m: number; d: number } {
+  const thisYear = { y: today.y, m: source.m, d: source.d };
+  // Normalize leap-day so Date.UTC doesn't silently roll into March
+  // and break the equality check we do downstream.
+  const normalized = (cand: { y: number; m: number; d: number }) => {
+    const ms = Date.UTC(cand.y, cand.m - 1, cand.d, 12);
+    const dt = new Date(ms);
+    return { y: dt.getUTCFullYear(), m: dt.getUTCMonth() + 1, d: dt.getUTCDate() };
+  };
+  const thisYearNorm = normalized(thisYear);
+  if (diffCalendarDays(thisYearNorm, today) >= 0) return thisYearNorm;
+  return normalized({ y: today.y + 1, m: source.m, d: source.d });
 }
 
 /** Accept ISO string, Date, or epoch number. Returns ms or null. */
