@@ -113,7 +113,10 @@ export interface ReminderRulePublic {
   triggerType: TriggerType;
   triggerSpec: TriggerSpec;
   notificationType: string;
+  /** Legacy single-resolver key. */
   recipientResolver: string;
+  /** New multi-source recipient list. Null on legacy rows. */
+  recipientResolvers: RecipientEntry[] | null;
   departmentId: string | null;
   isEnabled: boolean;
   version: string;
@@ -141,10 +144,30 @@ export interface TimelineBucket {
   total: number;
 }
 
+/** Schema field describing one input the resolver expects in its config. */
+export type ResolverConfigField =
+  | { key: string; type: 'user-multi'; label: string; required?: boolean }
+  | { key: string; type: 'role'; label: string; required?: boolean }
+  | {
+      key: string;
+      type: 'enum';
+      label: string;
+      required?: boolean;
+      options: Array<{ value: string; label: string; description?: string }>;
+    };
+
 export interface RecipientResolver {
   key: string;
   label: string;
   description: string | null;
+  /** Null = no user-supplied config (the resolver is static). */
+  configSchema: ResolverConfigField[] | null;
+}
+
+/** One entry in `recipientResolvers` on a rule. */
+export interface RecipientEntry {
+  kind: string;
+  config?: Record<string, unknown>;
 }
 
 export interface ReminderPublic {
@@ -175,6 +198,7 @@ const KEY = {
   triggerCounts: () => ['reminder-rules', 'trigger-counts'] as const,
   fieldCatalog: () => ['reminder-rules', 'field-catalog'] as const,
   eventCatalog: () => ['reminder-rules', 'event-catalog'] as const,
+  roles: () => ['reminder-rules', 'roles'] as const,
   status: () => ['reminders', 'status'] as const,
   timeline: () => ['reminders', 'timeline'] as const,
   scheduled: (s?: string) => ['reminders', 'list', s ?? 'all'] as const,
@@ -208,6 +232,16 @@ export function useTriggerCounts() {
   return useQuery<Record<string, number>>({
     queryKey: KEY.triggerCounts(),
     queryFn: () => apiFetch('/api/reminder-rules/trigger-counts'),
+  });
+}
+
+/** Roles list for the recipient-resolver picker. */
+export function useReminderRoles() {
+  return useQuery<{ items: Array<{ slug: string; name: string }> }>({
+    queryKey: KEY.roles(),
+    queryFn: () =>
+      apiFetch<{ items: Array<{ slug: string; name: string }> }>('/api/reminder-rules/roles'),
+    staleTime: 10 * 60 * 1000,
   });
 }
 
@@ -270,6 +304,7 @@ export interface CreateRuleInput {
   triggerSpec: TriggerSpec;
   notificationType: string;
   recipientResolver: string;
+  recipientResolvers?: RecipientEntry[];
   departmentId?: string | null;
 }
 
@@ -279,6 +314,7 @@ export interface UpdateRuleInput {
   triggerSpec?: TriggerSpec;
   notificationType?: string;
   recipientResolver?: string;
+  recipientResolvers?: RecipientEntry[] | null;
   departmentId?: string | null;
   isEnabled?: boolean;
 }

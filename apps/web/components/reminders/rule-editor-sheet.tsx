@@ -29,7 +29,6 @@ import {
   useArchiveRule,
   useCreateRule,
   usePublishRule,
-  useRecipientResolvers,
   useReminderRule,
   useUpdateRule,
   type ConditionGroup,
@@ -39,6 +38,8 @@ import {
 } from '@/lib/queries/reminders';
 import { ConditionBuilder, countLeaves } from '@/components/reminders/condition-builder';
 import { EventPicker } from '@/components/reminders/event-picker';
+import { RecipientList } from '@/components/reminders/recipient-list';
+import type { RecipientEntry } from '@/lib/queries/reminders';
 
 /**
  * Rule editor sheet — used in two modes:
@@ -97,7 +98,6 @@ const CRON_QUERIES: Array<{ key: CronTriggerSpec['query']['kind']; label: string
 export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditorSheetProps) {
   const router = useRouter();
   const refs = useReferences();
-  const resolvers = useRecipientResolvers();
   const existing = useReminderRule(mode === 'edit' ? ruleId : null);
   const create = useCreateRule();
   const update = useUpdateRule(ruleId ?? '');
@@ -111,7 +111,13 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
   const [triggerType, setTriggerType] = React.useState<'event' | 'cron'>('event');
   const [departmentId, setDepartmentId] = React.useState<string | null>(null);
   const [notificationType, setNotificationType] = React.useState(NOTIFICATION_TYPES[0]!.key);
-  const [recipientResolver, setRecipientResolver] = React.useState('manager+hr');
+  // Multi-source recipient list. Defaults to a single 'self' entry
+  // for new rules so the user has something to start adjusting.
+  // The legacy `recipientResolver` column is derived from the first
+  // entry's kind at save time — see handleSaveDraft.
+  const [recipientResolvers, setRecipientResolvers] = React.useState<RecipientEntry[]>([
+    { kind: 'self' },
+  ]);
   const [isEnabled, setIsEnabled] = React.useState(true);
 
   // event-trigger fields
@@ -145,7 +151,14 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
     setTriggerType(r.triggerType);
     setDepartmentId(r.departmentId);
     setNotificationType(r.notificationType);
-    setRecipientResolver(r.recipientResolver);
+    // Prefer the new multi-source array if present; otherwise fall
+    // back to a single entry built from the legacy column so the
+    // user sees what they had before.
+    setRecipientResolvers(
+      r.recipientResolvers && r.recipientResolvers.length > 0
+        ? r.recipientResolvers
+        : [{ kind: r.recipientResolver }],
+    );
     setIsEnabled(r.isEnabled);
     if (r.triggerSpec.kind === 'event') {
       setEventType(r.triggerSpec.eventType);
@@ -237,6 +250,9 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
   async function handleSaveDraft() {
     try {
       const spec = buildTriggerSpec();
+      // The legacy single-string column stays in sync with the first
+      // entry's kind so older read paths get a sensible value too.
+      const legacyResolver = recipientResolvers[0]?.kind ?? 'self';
       if (mode === 'create') {
         const created = await create.mutateAsync({
           key,
@@ -245,7 +261,8 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
           triggerType,
           triggerSpec: spec,
           notificationType,
-          recipientResolver,
+          recipientResolver: legacyResolver,
+          recipientResolvers,
           departmentId,
         });
         toast.success(`Draft "${created.key}" created`);
@@ -256,7 +273,8 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
           description,
           triggerSpec: spec,
           notificationType,
-          recipientResolver,
+          recipientResolver: legacyResolver,
+          recipientResolvers,
           departmentId,
           isEnabled,
         });
@@ -592,23 +610,15 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="Recipients">
-                <Select
-                  value={recipientResolver}
-                  onValueChange={setRecipientResolver}
+              <Field
+                label="Recipients"
+                hint="Add one or more sources — Specific employees, Role members, a Relation to the source (manager / reports / etc.), or the static groups like HR. The final list is the dedup'd union."
+              >
+                <RecipientList
+                  value={recipientResolvers}
+                  onChange={setRecipientResolvers}
                   disabled={readonly}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(resolvers.data?.items ?? []).map((r) => (
-                      <SelectItem key={r.key} value={r.key}>
-                        {r.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                />
               </Field>
             </FormSection>
 

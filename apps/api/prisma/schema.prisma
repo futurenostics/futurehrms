@@ -728,8 +728,16 @@ model ReminderRule {
   /// FK-like reference to NotificationType.key (no FK to keep types
   /// registry decoupled from the DB).
   notificationType  String
-  /// Key of a registered RecipientResolver.
+  /// Key of a registered RecipientResolver. LEGACY single-source field.
+  /// New rules write `recipientResolvers` instead; we keep this column
+  /// for back-compat reads of rules created before Phase 3.5.
   recipientResolver String
+  /// New multi-source recipient list: Array<{ kind: string; config?: object }>.
+  /// `kind` references a key from the resolver registry; `config` is the
+  /// resolver-specific param blob (e.g. { userIds: [...] } for specific-users).
+  /// Final recipient list = dedup'd union of every entry. Null = fall back to
+  /// the legacy single-string column.
+  recipientResolvers Json?
   version           String   @default("1.0")
   effectiveFrom     DateTime?
   effectiveTo       DateTime?

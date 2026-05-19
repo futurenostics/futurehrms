@@ -26,6 +26,11 @@ const listQuerySchema = z.object({
   key: z.string().optional(),
 });
 
+const recipientEntrySchema = z.object({
+  kind: z.string().trim().min(1).max(80),
+  config: z.record(z.string(), z.unknown()).optional(),
+});
+
 const createSchema = z.object({
   key: z
     .string()
@@ -38,7 +43,11 @@ const createSchema = z.object({
   triggerType: z.enum(['event', 'cron']),
   triggerSpec: triggerSpecSchema,
   notificationType: z.string().trim().min(1).max(120),
+  /** LEGACY. FE keeps sending the first entry's kind so older rows
+   *  retain a non-null fallback. */
   recipientResolver: z.string().trim().min(1).max(80),
+  /** New multi-source array — preferred by the FE. */
+  recipientResolvers: z.array(recipientEntrySchema).min(1).max(20).optional(),
   departmentId: z.string().nullable().optional(),
 });
 
@@ -48,6 +57,7 @@ const updateSchema = z.object({
   triggerSpec: triggerSpecSchema.optional(),
   notificationType: z.string().trim().min(1).max(120).optional(),
   recipientResolver: z.string().trim().min(1).max(80).optional(),
+  recipientResolvers: z.array(recipientEntrySchema).min(1).max(20).nullable().optional(),
   departmentId: z.string().nullable().optional(),
   isEnabled: z.boolean().optional(),
 });
@@ -96,6 +106,7 @@ export class RemindersController {
         key: r.key,
         label: r.label,
         description: r.description ?? null,
+        configSchema: r.configSchema ?? null,
       })),
     };
   }
@@ -116,6 +127,17 @@ export class RemindersController {
   @RequirePermission('reminders:view_rules')
   async eventCatalog() {
     return buildEventCatalogResponse();
+  }
+
+  /**
+   * Roles list used by the recipient-resolver picker (specifically
+   * the `role-members` kind). Scoped to the reminders module instead
+   * of a broader admin endpoint to keep the public surface focused.
+   */
+  @Get('reminder-rules/roles')
+  @RequirePermission('reminders:view_rules')
+  async listRoles() {
+    return this.rules.listRoles();
   }
 
   @Get('reminder-rules/:id')

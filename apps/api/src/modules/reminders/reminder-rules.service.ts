@@ -23,7 +23,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { prisma } from '@futurenostics/db';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import type { AuthenticatedUser } from '../../core/auth/types';
 import { EventBusService } from '../../core/events/event-bus.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -38,7 +38,10 @@ export interface ReminderRulePublic {
   triggerType: string;
   triggerSpec: TriggerSpec;
   notificationType: string;
+  /** LEGACY single resolver key — kept on the wire for back-compat. */
   recipientResolver: string;
+  /** New multi-source recipient list. Null on legacy rows. */
+  recipientResolvers: Array<{ kind: string; config?: Record<string, unknown> }> | null;
   version: string;
   effectiveFrom: string | null;
   effectiveTo: string | null;
@@ -56,6 +59,7 @@ export interface CreateRuleInput {
   triggerSpec: TriggerSpec;
   notificationType: string;
   recipientResolver: string;
+  recipientResolvers?: Array<{ kind: string; config?: Record<string, unknown> }>;
   /** Optional department scope — null/undefined = org-wide. */
   departmentId?: string | null;
 }
@@ -66,6 +70,7 @@ export interface UpdateRuleInput {
   triggerSpec?: TriggerSpec;
   notificationType?: string;
   recipientResolver?: string;
+  recipientResolvers?: Array<{ kind: string; config?: Record<string, unknown> }> | null;
   departmentId?: string | null;
   isEnabled?: boolean;
 }
@@ -125,6 +130,15 @@ export class ReminderRulesService {
     return { items: ordered.map(toPublic), total };
   }
 
+  /** Lightweight role list for the recipient-resolver picker. */
+  async listRoles(): Promise<{ items: Array<{ slug: string; name: string }> }> {
+    const rows = await prisma.role.findMany({
+      orderBy: { name: 'asc' },
+      select: { slug: true, name: true },
+    });
+    return { items: rows };
+  }
+
   async findOne(viewer: AuthenticatedUser, id: string): Promise<ReminderRulePublic> {
     this.require('reminders:view_rules', viewer);
     const row = await prisma.reminderRule.findUnique({ where: { id } });
@@ -161,6 +175,8 @@ export class ReminderRulesService {
         triggerSpec: triggerSpec as never,
         notificationType: input.notificationType,
         recipientResolver: input.recipientResolver,
+        recipientResolvers:
+          input.recipientResolvers !== undefined ? (input.recipientResolvers as never) : undefined,
         departmentId: input.departmentId ?? null,
         version,
         createdById: viewer.id,
@@ -188,6 +204,7 @@ export class ReminderRulesService {
       'triggerSpec',
       'notificationType',
       'recipientResolver',
+      'recipientResolvers',
       'departmentId',
     ] as const;
     const hasContentChange = contentFields.some(
@@ -204,6 +221,10 @@ export class ReminderRulesService {
     if (input.description !== undefined) data.description = input.description;
     if (input.notificationType !== undefined) data.notificationType = input.notificationType;
     if (input.recipientResolver !== undefined) data.recipientResolver = input.recipientResolver;
+    if (input.recipientResolvers !== undefined) {
+      data.recipientResolvers =
+        input.recipientResolvers === null ? Prisma.JsonNull : (input.recipientResolvers as never);
+    }
     if (input.departmentId !== undefined) {
       data.department = input.departmentId
         ? { connect: { id: input.departmentId } }
@@ -319,6 +340,9 @@ function toPublic(row: Prisma.ReminderRuleGetPayload<Record<string, never>>): Re
     triggerSpec: row.triggerSpec as unknown as TriggerSpec,
     notificationType: row.notificationType,
     recipientResolver: row.recipientResolver,
+    recipientResolvers: Array.isArray(row.recipientResolvers)
+      ? (row.recipientResolvers as ReminderRulePublic['recipientResolvers'])
+      : null,
     version: row.version,
     effectiveFrom: row.effectiveFrom?.toISOString() ?? null,
     effectiveTo: row.effectiveTo?.toISOString() ?? null,

@@ -18,7 +18,11 @@
 import { Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common';
 import { prisma } from '@futurenostics/db';
 import { EventBusService, type DomainEvent } from '../../core/events/event-bus.service';
-import { RecipientResolverRegistry, type ResolverSource } from './recipient-resolver';
+import {
+  RecipientResolverRegistry,
+  readRecipientEntries,
+  type ResolverSource,
+} from './recipient-resolver';
 import { applyOffset, type EventTriggerSpec, type TriggerSpec } from './reminder-trigger.types';
 import { evaluateConditions } from './reminder-conditions.evaluator';
 import { buildConditionContext } from './reminder-condition-context';
@@ -151,7 +155,11 @@ export class TriggerEvaluatorService implements OnApplicationBootstrap {
       }
     }
 
-    const recipients = await this.resolvers.resolve(rule.recipientResolver, rule as never, source);
+    const recipients = await this.resolvers.resolveMany(
+      readRecipientEntries(rule as never),
+      rule as never,
+      source,
+    );
 
     if (recipients.length === 0) {
       this.logger.debug(`rule ${rule.key}: zero recipients — skipping`);

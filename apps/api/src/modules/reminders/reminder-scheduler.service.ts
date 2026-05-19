@@ -39,7 +39,11 @@ import { BULL_REDIS_CONNECTION } from '../../core/scheduler/scheduler.module';
 import { AppConfigService } from '../../config/app.config';
 import { EventBusService } from '../../core/events/event-bus.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { RecipientResolverRegistry, type ResolverSource } from './recipient-resolver';
+import {
+  RecipientResolverRegistry,
+  readRecipientEntries,
+  type ResolverSource,
+} from './recipient-resolver';
 import type { CronTriggerSpec } from './reminder-trigger.types';
 import { evaluateConditions } from './reminder-conditions.evaluator';
 import { buildConditionContext } from './reminder-condition-context';
@@ -269,7 +273,7 @@ export class ReminderSchedulerService implements OnApplicationBootstrap, OnModul
           continue;
         }
       }
-      const recipients = await this.resolvers.resolve(rule.recipientResolver, rule, source);
+      const recipients = await this.resolvers.resolveMany(readRecipientEntries(rule), rule, source);
       if (recipients.length === 0) continue;
       await prisma.reminder.createMany({
         data: recipients.map((recipientUserId) => ({
