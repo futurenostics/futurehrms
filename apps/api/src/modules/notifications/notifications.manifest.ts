@@ -36,15 +36,22 @@ export const notificationsManifest: ModuleManifest = {
       description:
         'Send a notification not tied to a domain event — super admin only, for runbooks',
     },
+    {
+      action: 'manage_types',
+      description: 'Create / update / archive custom notification types (HR admin + super admin)',
+    },
   ],
   navItems: [],
   dashboardWidgets: [],
-  auditedEntities: ['Notification'],
+  auditedEntities: ['Notification', 'CustomNotificationType'],
   defaultRolePermissions: [
     { roleSlug: 'employee', actions: ['view_own'] },
     { roleSlug: 'team_lead', actions: ['view_own'] },
     { roleSlug: 'department_manager', actions: ['view_own'] },
-    { roleSlug: 'hr_admin', actions: ['view_own', 'view_all_admin', 'mark_read'] },
+    {
+      roleSlug: 'hr_admin',
+      actions: ['view_own', 'view_all_admin', 'mark_read', 'manage_types'],
+    },
     { roleSlug: 'finance_manager', actions: ['view_own'] },
   ],
 };

@@ -8,6 +8,7 @@ import { NotificationTypesRegistry } from './notification-types.registry';
 import { NotificationsController } from './notifications.controller';
 import { NotificationsService } from './notifications.service';
 import { notificationsManifest } from './notifications.manifest';
+import { CustomNotificationTypesService } from './custom-notification-types.service';
 
 /**
  * Phase 3 Notifications module.
@@ -23,16 +24,29 @@ import { notificationsManifest } from './notifications.manifest';
   providers: [
     NotificationTypesRegistry,
     NotificationPreferencesService,
+    CustomNotificationTypesService,
     InAppChannel,
     EmailChannel,
     NotificationsService,
   ],
-  exports: [NotificationsService, NotificationTypesRegistry, NotificationPreferencesService],
+  exports: [
+    NotificationsService,
+    NotificationTypesRegistry,
+    NotificationPreferencesService,
+    CustomNotificationTypesService,
+  ],
 })
 export class NotificationsModule implements OnModuleInit {
-  constructor(private readonly registry: RegistryService) {}
+  constructor(
+    private readonly registry: RegistryService,
+    private readonly customTypes: CustomNotificationTypesService,
+  ) {}
 
-  onModuleInit(): void {
+  async onModuleInit(): Promise<void> {
     this.registry.register(notificationsManifest);
+    // Pull every active CustomNotificationType row into the in-memory
+    // registry so the rest of the system treats DB-defined types
+    // identically to module-shipped ones.
+    await this.customTypes.hydrateRegistryOnBoot();
   }
 }

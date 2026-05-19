@@ -38,6 +38,7 @@ import {
 import { ConditionBuilder, countLeaves } from '@/components/reminders/condition-builder';
 import { EventPicker } from '@/components/reminders/event-picker';
 import { RecipientList } from '@/components/reminders/recipient-list';
+import { NotificationTypePicker } from '@/components/reminders/notification-type-picker';
 import type { RecipientEntry } from '@/lib/queries/reminders';
 
 /**
@@ -61,17 +62,6 @@ export interface RuleEditorSheetProps {
   mode: 'create' | 'edit';
   ruleId: string | null;
 }
-
-const NOTIFICATION_TYPES = [
-  { key: 'reminders.probation-ending', label: 'Probation ending' },
-  { key: 'reminders.internship-ending', label: 'Internship ending' },
-  { key: 'reminders.annual-review', label: 'Annual review' },
-  { key: 'reminders.biannual-review', label: 'Biannual review' },
-  { key: 'reminders.birthday', label: 'Birthday' },
-  { key: 'reminders.work-anniversary', label: 'Work anniversary' },
-  { key: 'reminders.visa-renewal', label: 'Visa renewal' },
-  { key: 'reminders.document-expiring', label: 'Document expiring' },
-];
 
 const RELATIVE_FIELDS = [
   { key: 'joinDate', label: 'joinDate' },
@@ -102,7 +92,10 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
   const [description, setDescription] = React.useState('');
   const [triggerType, setTriggerType] = React.useState<'event' | 'cron'>('event');
   const [departmentId, setDepartmentId] = React.useState<string | null>(null);
-  const [notificationType, setNotificationType] = React.useState(NOTIFICATION_TYPES[0]!.key);
+  // Default to the first reminders-module type; the picker fetches
+  // the live registry on mount so the user sees every available
+  // type (module-shipped + custom) by then.
+  const [notificationType, setNotificationType] = React.useState('reminders.probation-ending');
   // Multi-source recipient list. Defaults to a single 'self' entry
   // for new rules so the user has something to start adjusting.
   // The legacy `recipientResolver` column is derived from the first
@@ -548,23 +541,15 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
 
             {/* Notification + recipients */}
             <FormSection title="Notification">
-              <Field label="Notification type" hint="Defines the title, body, and email template">
-                <Select
+              <Field
+                label="Notification type"
+                hint="Defines the title, body, and email template. Manage custom types from the rules-list header."
+              >
+                <NotificationTypePicker
                   value={notificationType}
-                  onValueChange={setNotificationType}
+                  onChange={setNotificationType}
                   disabled={readonly}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {NOTIFICATION_TYPES.map((t) => (
-                      <SelectItem key={t.key} value={t.key}>
-                        {t.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                />
               </Field>
               <Field
                 label="Recipients"

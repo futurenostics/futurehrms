@@ -16,6 +16,26 @@ import type { AuthenticatedUser } from '../../core/auth/types';
 import { NotificationsService } from './notifications.service';
 import { NotificationTypesRegistry } from './notification-types.registry';
 import { NotificationPreferencesService } from './notification-preferences.service';
+import { CustomNotificationTypesService } from './custom-notification-types.service';
+
+const customTypeCreateSchema = z.object({
+  key: z.string().trim().min(1).max(120),
+  name: z.string().trim().min(1).max(160),
+  description: z.string().trim().max(2000).nullable().optional(),
+  severity: z.enum(['info', 'success', 'warning', 'danger']),
+  channels: z
+    .array(z.enum(['in_app', 'email', 'push', 'slack']))
+    .min(1)
+    .max(4),
+  titleTemplate: z.string().trim().min(1).max(500),
+  bodyTemplate: z.string().trim().min(1).max(2000),
+  linkTemplate: z.string().trim().max(500).nullable().optional(),
+});
+
+const customTypeUpdateSchema = customTypeCreateSchema
+  .partial()
+  .omit({ key: true })
+  .extend({ isActive: z.boolean().optional() });
 
 const listQuerySchema = z.object({
   status: z.enum(['unread', 'read', 'dismissed', 'sent', 'active']).optional(),
@@ -50,6 +70,7 @@ export class NotificationsController {
     private readonly notifications: NotificationsService,
     private readonly types: NotificationTypesRegistry,
     private readonly prefs: NotificationPreferencesService,
+    private readonly customTypes: CustomNotificationTypesService,
   ) {}
 
   @Get()
@@ -119,6 +140,57 @@ export class NotificationsController {
   @RequirePermission('notifications:view_own')
   async dismiss(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.notifications.dismiss(user, id);
+  }
+
+  /* ---------- Custom notification types (admin) ---------- */
+
+  @Get('custom-types')
+  @RequirePermission('notifications:view_own')
+  async listCustomTypes() {
+    return { items: await this.customTypes.listAll() };
+  }
+
+  @Post('custom-types')
+  @RequirePermission('notifications:manage_types')
+  async createCustomType(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    const input = customTypeCreateSchema.parse(body);
+    return this.customTypes.create(user, {
+      key: input.key,
+      name: input.name,
+      description: input.description ?? null,
+      severity: input.severity,
+      channels: input.channels,
+      titleTemplate: input.titleTemplate,
+      bodyTemplate: input.bodyTemplate,
+      linkTemplate: input.linkTemplate ?? null,
+    });
+  }
+
+  @Patch('custom-types/:id')
+  @RequirePermission('notifications:manage_types')
+  async updateCustomType(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const input = customTypeUpdateSchema.parse(body);
+    return this.customTypes.update(user, id, {
+      ...(input.name !== undefined && { name: input.name }),
+      ...(input.description !== undefined && { description: input.description }),
+      ...(input.severity !== undefined && { severity: input.severity }),
+      ...(input.channels !== undefined && { channels: input.channels }),
+      ...(input.titleTemplate !== undefined && { titleTemplate: input.titleTemplate }),
+      ...(input.bodyTemplate !== undefined && { bodyTemplate: input.bodyTemplate }),
+      ...(input.linkTemplate !== undefined && { linkTemplate: input.linkTemplate }),
+      ...(input.isActive !== undefined && { isActive: input.isActive }),
+    });
+  }
+
+  @Post('custom-types/:id/archive')
+  @RequirePermission('notifications:manage_types')
+  @HttpCode(HttpStatus.OK)
+  async archiveCustomType(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.customTypes.archive(user, id);
   }
 
   /**

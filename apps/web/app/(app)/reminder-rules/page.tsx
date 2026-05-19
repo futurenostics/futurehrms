@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Copy, Plus } from 'lucide-react';
+import { Bell, Copy, Plus } from 'lucide-react';
 import type { ReferencesResponse } from '@futurenostics/types';
 import { AppShell } from '@/components/shell/app-shell';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,7 @@ import { SchedulerStatusCard } from '@/components/reminders/scheduler-status-car
 import { ScheduledTimeline } from '@/components/reminders/scheduled-timeline';
 import { leadTimeLabel, ruleHue, templateLabel } from '@/components/reminders/rule-visuals';
 import { RuleEditorSheet } from '@/components/reminders/rule-editor-sheet';
+import { CustomTypesSheet } from '@/components/reminders/custom-types-sheet';
 import { countLeaves } from '@/components/reminders/condition-builder';
 import {
   useRecipientResolvers,
@@ -53,6 +54,9 @@ export default function ReminderRulesPage() {
   // `?sheet=edit&id=...`) work, the browser back button closes the
   // sheet, and the list page stays mounted underneath. Mirrors the
   // Employees pattern in apps/web/app/(app)/employees/page.tsx.
+  const [typesSheetOpen, setTypesSheetOpen] = React.useState(false);
+  const canManageTypes = perms.has('notifications:manage_types');
+
   const sheetParam = searchParams.get('sheet');
   const sheetEditId = sheetParam === 'edit' ? searchParams.get('id') : null;
   const sheetMode: 'create' | 'edit' | null =
@@ -299,6 +303,11 @@ export default function ReminderRulesPage() {
             </p>
           </div>
           <div className="gap-fn-2 flex items-center">
+            {canManageTypes && (
+              <Button variant="ghost" size="md" onClick={() => setTypesSheetOpen(true)}>
+                <Bell className="h-fn-4 w-fn-4" /> Manage notification types
+              </Button>
+            )}
             <Button variant="secondary" size="md" disabled>
               <Copy className="h-fn-4 w-fn-4" /> Duplicate from…
             </Button>
@@ -365,6 +374,8 @@ export default function ReminderRulesPage() {
           }}
         />
       )}
+
+      <CustomTypesSheet open={typesSheetOpen} onOpenChange={setTypesSheetOpen} />
     </AppShell>
   );
 }

@@ -792,6 +792,33 @@ model Reminder {
 /// Absence implies the type's registered default (in-app on, email on for
 /// `severity >= warning`). A row exists only when the user has explicitly
 /// overridden a default — keeps the table small and lookups cheap.
+/// User-defined notification types. Modules ship a static set via
+/// the NotificationTypesRegistry; this table lets HR admins add new
+/// ones at runtime without a deploy. On boot + on each mutation, the
+/// registry hydrates active rows into the same in-memory map as the
+/// static types — at send time, the runtime treats them identically.
+model CustomNotificationType {
+  id            String   @id @default(cuid())
+  /// Stable identifier. Convention: prefix with `custom.` so they're
+  /// visually distinct from module-shipped types in the picker.
+  key           String   @unique
+  name          String
+  description   String?
+  /// info | success | warning | danger — must match the Severity union.
+  severity      String   @default("info")
+  /// Channels enabled by default — overridden per user via prefs.
+  channels      String[] @default(["in_app"])
+  titleTemplate String
+  bodyTemplate  String
+  linkTemplate  String?
+  isActive      Boolean  @default(true)
+  createdById   String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([isActive])
+}
+
 model NotificationPreference {
   id        String   @id @default(cuid())
   userId    String
