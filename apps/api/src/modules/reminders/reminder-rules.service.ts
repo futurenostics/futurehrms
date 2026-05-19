@@ -113,7 +113,16 @@ export class ReminderRulesService {
       }),
       prisma.reminderRule.count({ where }),
     ]);
-    return { items: rows.map(toPublic), total };
+    // Promote drafts to the top within an unfiltered view — they're
+    // the half of the lifecycle that needs HR attention. createdAt
+    // desc is preserved within each group, so the newest draft sits
+    // first, then the newest active/archived rule, etc. Skipped when
+    // the caller already narrowed by status (no point partitioning a
+    // single-status set).
+    const ordered = query.status
+      ? rows
+      : [...rows.filter((r) => r.status === 'draft'), ...rows.filter((r) => r.status !== 'draft')];
+    return { items: ordered.map(toPublic), total };
   }
 
   async findOne(viewer: AuthenticatedUser, id: string): Promise<ReminderRulePublic> {
