@@ -192,11 +192,23 @@ export default function ReminderRulesPage() {
       {
         id: 'recipients',
         header: 'Recipients',
-        cell: (rule) => (
-          <span className="text-fn-fg-muted text-[12.5px]">
-            {resolverLabel.get(rule.recipientResolver) ?? rule.recipientResolver}
-          </span>
-        ),
+        cell: (rule) => {
+          // Prefer the new multi-source array. Falls back to the
+          // legacy single resolver for older rows.
+          const entries =
+            rule.recipientResolvers && rule.recipientResolvers.length > 0
+              ? rule.recipientResolvers
+              : [{ kind: rule.recipientResolver }];
+          const first = entries[0];
+          const firstLabel = (first && resolverLabel.get(first.kind)) ?? first?.kind ?? '—';
+          const extra = entries.length - 1;
+          return (
+            <span className="text-fn-fg-muted text-[12.5px]">
+              {firstLabel}
+              {extra > 0 && <span className="text-fn-fg-faint ml-fn-1">+ {extra} more</span>}
+            </span>
+          );
+        },
       },
       {
         id: 'template',
