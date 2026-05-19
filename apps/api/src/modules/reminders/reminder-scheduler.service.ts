@@ -220,45 +220,72 @@ export class ReminderSchedulerService implements OnApplicationBootstrap, OnModul
   private async runCronQuery(rule: ReminderRule, spec: CronTriggerSpec): Promise<number> {
     const now = new Date();
     let sources: ResolverSource[] = [];
+    let payloadTag: Record<string, unknown> = {};
 
-    switch (spec.query.kind) {
-      case 'birthday': {
-        const employees = await this.matchingEmployees({
-          deptScopeId: rule.departmentId,
-          dateField: 'dateOfBirth',
-          mmDdMatch: monthDayString(now),
+    // NEW preferred path: cron + sourceEntity + conditions. We scan
+    // every active row in the target table (dept-scoped if the rule
+    // has one) and let the condition tree do the filtering.
+    if (spec.sourceEntity) {
+      payloadTag = { _cronSource: spec.sourceEntity };
+      if (spec.sourceEntity === 'employee') {
+        const employees = await prisma.employee.findMany({
+          where: {
+            deletedAt: null,
+            ...(rule.departmentId ? { departmentId: rule.departmentId } : {}),
+          },
+          select: { id: true },
         });
         sources = employees.map((e) => ({ kind: 'employee' as const, id: e.id }));
-        break;
-      }
-      case 'work-anniversary': {
-        const employees = await this.matchingEmployees({
-          deptScopeId: rule.departmentId,
-          dateField: 'joinDate',
-          mmDdMatch: monthDayString(now),
+      } else if (spec.sourceEntity === 'project') {
+        // Project sources currently work for the condition path but
+        // recipient resolvers don't traverse Project → User yet, so
+        // a rule on project must explicitly use specific-employees /
+        // role-members / hr-admins entries.
+        const projects = await prisma.project.findMany({
+          where: {
+            deletedAt: null,
+            ...(rule.departmentId ? { departmentId: rule.departmentId } : {}),
+          },
+          select: { id: true },
         });
-        sources = employees.map((e) => ({ kind: 'employee' as const, id: e.id }));
-        break;
+        sources = projects.map(() => null);
       }
-      case 'probation-ending': {
-        const employees = await this.employeesWithUpcomingField(
-          'probationEndDate',
-          spec.query.withinDays,
-          rule.departmentId,
-        );
-        sources = employees.map((e) => ({ kind: 'employee' as const, id: e.id }));
-        break;
+    } else if (spec.query) {
+      // LEGACY path — fixed query kinds.
+      payloadTag = { _cronKind: spec.query.kind };
+      switch (spec.query.kind) {
+        case 'birthday': {
+          const employees = await this.matchingEmployees({
+            deptScopeId: rule.departmentId,
+            dateField: 'dateOfBirth',
+            mmDdMatch: monthDayString(now),
+          });
+          sources = employees.map((e) => ({ kind: 'employee' as const, id: e.id }));
+          break;
+        }
+        case 'work-anniversary': {
+          const employees = await this.matchingEmployees({
+            deptScopeId: rule.departmentId,
+            dateField: 'joinDate',
+            mmDdMatch: monthDayString(now),
+          });
+          sources = employees.map((e) => ({ kind: 'employee' as const, id: e.id }));
+          break;
+        }
+        case 'probation-ending': {
+          const employees = await this.employeesWithUpcomingField(
+            'probationEndDate',
+            spec.query.withinDays,
+            rule.departmentId,
+          );
+          sources = employees.map((e) => ({ kind: 'employee' as const, id: e.id }));
+          break;
+        }
+        case 'document-expiring':
+        case 'custom':
+          sources = [];
+          break;
       }
-      case 'document-expiring': {
-        // Note: Phase 3 has no expiresAt column on EmployeeDocument yet;
-        // the Documents module lands later. We return zero matches today
-        // and the rule is harmless — the scheduler logs it.
-        sources = [];
-        break;
-      }
-      case 'custom':
-        sources = [];
-        break;
     }
 
     if (sources.length === 0) return 0;
@@ -283,7 +310,7 @@ export class ReminderSchedulerService implements OnApplicationBootstrap, OnModul
           sourceId: source?.id ?? null,
           scheduledFor: now,
           status: 'scheduled' as const,
-          payload: { _cronKind: spec.query.kind } as never,
+          payload: payloadTag as never,
         })),
       });
       scheduled += recipients.length;

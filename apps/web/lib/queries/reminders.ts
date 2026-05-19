@@ -45,12 +45,16 @@ export interface EventTriggerSpec {
 export interface CronTriggerSpec {
   kind: 'cron';
   cron: string;
-  query:
+  /** New preferred path: entity to scan + condition tree filter. */
+  sourceEntity?: 'employee' | 'project' | null;
+  /** LEGACY built-in queries. Kept for back-compat reads. */
+  query?:
     | { kind: 'birthday' }
     | { kind: 'work-anniversary' }
     | { kind: 'probation-ending'; withinDays: number }
     | { kind: 'document-expiring'; withinDays: number }
-    | { kind: 'custom'; spec: Record<string, unknown> };
+    | { kind: 'custom'; spec: Record<string, unknown> }
+    | null;
   conditions?: ConditionGroup | null;
 }
 

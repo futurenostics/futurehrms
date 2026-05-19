@@ -65,29 +65,39 @@ export const cronTriggerSpecSchema = z.object({
   /** Standard 5-field cron, evaluated in `Asia/Karachi` by the scheduler. */
   cron: z.string().min(1),
   /**
-   * Which built-in query the tick runs. Each kind reads from a known
-   * source entity; the rule's recipientResolver decides who's notified.
+   * NEW preferred path. When set, the scheduler scans all rows of
+   * this entity at each matching tick and applies the rule's
+   * `conditions` tree. Replaces the legacy fixed `query` kinds.
+   */
+  sourceEntity: z.enum(['employee', 'project']).optional().nullable(),
+  /**
+   * LEGACY built-in queries. Kept for back-compat reads of rules
+   * created before sourceEntity landed. New rules write
+   * `sourceEntity` + `conditions` instead.
    *
-   * Built-ins in Phase 3:
+   * Built-ins:
    *   - `birthday`         : Employees whose dateOfBirth matches today (MM-DD)
    *   - `document-expiring`: EmployeeDocuments with expiresAt in `withinDays` days
    *   - `probation-ending` : Employees with probationEndDate in `withinDays` days
    *   - `work-anniversary` : Employees whose joinDate matches today (MM-DD)
    *   - `custom`           : Reserved — Phase 3 doesn't ship custom queries
    */
-  query: z.discriminatedUnion('kind', [
-    z.object({ kind: z.literal('birthday') }),
-    z.object({
-      kind: z.literal('document-expiring'),
-      withinDays: z.coerce.number().int().positive().max(365),
-    }),
-    z.object({
-      kind: z.literal('probation-ending'),
-      withinDays: z.coerce.number().int().positive().max(365),
-    }),
-    z.object({ kind: z.literal('work-anniversary') }),
-    z.object({ kind: z.literal('custom'), spec: z.record(z.string(), z.unknown()) }),
-  ]),
+  query: z
+    .discriminatedUnion('kind', [
+      z.object({ kind: z.literal('birthday') }),
+      z.object({
+        kind: z.literal('document-expiring'),
+        withinDays: z.coerce.number().int().positive().max(365),
+      }),
+      z.object({
+        kind: z.literal('probation-ending'),
+        withinDays: z.coerce.number().int().positive().max(365),
+      }),
+      z.object({ kind: z.literal('work-anniversary') }),
+      z.object({ kind: z.literal('custom'), spec: z.record(z.string(), z.unknown()) }),
+    ])
+    .optional()
+    .nullable(),
   /**
    * Optional filter tree applied after the cron candidate list is
    * assembled — only entities matching all conditions schedule a

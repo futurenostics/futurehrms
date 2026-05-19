@@ -32,7 +32,6 @@ import {
   useReminderRule,
   useUpdateRule,
   type ConditionGroup,
-  type CronTriggerSpec,
   type EventTriggerSpec,
   type TriggerSpec,
 } from '@/lib/queries/reminders';
@@ -88,13 +87,6 @@ const CRON_PRESETS = [
   { value: '0 9 1 * *', label: '1st of month 9:00 PKT' },
 ];
 
-const CRON_QUERIES: Array<{ key: CronTriggerSpec['query']['kind']; label: string }> = [
-  { key: 'birthday', label: 'Birthday (today)' },
-  { key: 'work-anniversary', label: 'Work anniversary (today)' },
-  { key: 'probation-ending', label: 'Probation ending soon' },
-  { key: 'document-expiring', label: 'Document expiring soon' },
-];
-
 export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditorSheetProps) {
   const router = useRouter();
   const refs = useReferences();
@@ -129,8 +121,7 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
 
   // cron-trigger fields
   const [cron, setCron] = React.useState(CRON_PRESETS[0]!.value);
-  const [queryKind, setQueryKind] = React.useState<CronTriggerSpec['query']['kind']>('birthday');
-  const [withinDays, setWithinDays] = React.useState(14);
+  const [sourceEntity, setSourceEntity] = React.useState<'employee' | 'project'>('employee');
 
   // condition-tree (shared across both trigger types)
   const [conditions, setConditions] = React.useState<ConditionGroup | null>(null);
@@ -183,13 +174,9 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
       }
     } else if (r.triggerSpec.kind === 'cron') {
       setCron(r.triggerSpec.cron);
-      setQueryKind(r.triggerSpec.query.kind);
-      if (
-        r.triggerSpec.query.kind === 'probation-ending' ||
-        r.triggerSpec.query.kind === 'document-expiring'
-      ) {
-        setWithinDays(r.triggerSpec.query.withinDays);
-      }
+      // New rules carry sourceEntity. Legacy rules carry a query.kind —
+      // every shipped legacy kind targets Employee, so default to that.
+      setSourceEntity(r.triggerSpec.sourceEntity ?? 'employee');
     }
     setConditions(r.triggerSpec.conditions ?? null);
   }, [mode, existing.data]);
@@ -236,15 +223,10 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
       }
       return spec;
     }
-    const query: CronTriggerSpec['query'] =
-      queryKind === 'probation-ending'
-        ? { kind: 'probation-ending', withinDays }
-        : queryKind === 'document-expiring'
-          ? { kind: 'document-expiring', withinDays }
-          : queryKind === 'work-anniversary'
-            ? { kind: 'work-anniversary' }
-            : { kind: 'birthday' };
-    return { kind: 'cron', cron, query, conditions };
+    // New shape: sourceEntity + conditions handle what the legacy
+    // query kinds did. The BE still reads old rows with `query.kind`
+    // via its legacy code path, but new writes don't emit query.
+    return { kind: 'cron', cron, sourceEntity, conditions };
   }
 
   async function handleSaveDraft() {
@@ -542,36 +524,24 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
                       </SelectContent>
                     </Select>
                   </Field>
-                  <Field label="Query">
+                  <Field
+                    label="Source entity"
+                    hint="Each tick scans every row in this table and applies the Conditions below. Add a date condition with matches_today_month_day / within_days to recreate birthday / anniversary / probation-ending behaviour."
+                  >
                     <Select
-                      value={queryKind}
-                      onValueChange={(v) => setQueryKind(v as CronTriggerSpec['query']['kind'])}
+                      value={sourceEntity}
+                      onValueChange={(v) => setSourceEntity(v as 'employee' | 'project')}
                       disabled={!isDraft}
                     >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {CRON_QUERIES.map((q) => (
-                          <SelectItem key={q.key} value={q.key}>
-                            {q.label}
-                          </SelectItem>
-                        ))}
+                        <SelectItem value="employee">Employee</SelectItem>
+                        <SelectItem value="project">Project</SelectItem>
                       </SelectContent>
                     </Select>
                   </Field>
-                  {(queryKind === 'probation-ending' || queryKind === 'document-expiring') && (
-                    <Field label="Within (days)">
-                      <Input
-                        type="number"
-                        value={withinDays}
-                        onChange={(e) => setWithinDays(Number(e.target.value))}
-                        min={1}
-                        max={365}
-                        disabled={!isDraft}
-                      />
-                    </Field>
-                  )}
                 </>
               )}
             </FormSection>

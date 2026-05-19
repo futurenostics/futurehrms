@@ -136,10 +136,42 @@ function evalLeaf(leaf: ConditionLeaf, ctx: EvalContext): boolean {
       const now = Date.now();
       return now - a >= value * 86_400_000;
     }
+    case 'matches_today_month_day': {
+      // Compare just MM-DD (Asia/Karachi). Used for birthdays /
+      // anniversaries — the year shouldn't matter.
+      const a = toDateString(actual, { month: '2-digit', day: '2-digit' });
+      if (!a) return false;
+      const today = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Karachi',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date());
+      return a === today;
+    }
+    case 'matches_today': {
+      // Full-date equality (YYYY-MM-DD, Asia/Karachi).
+      const a = toDateString(actual, { year: 'numeric', month: '2-digit', day: '2-digit' });
+      if (!a) return false;
+      const today = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Karachi',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date());
+      return a === today;
+    }
 
     default:
       return false;
   }
+}
+
+function toDateString(value: unknown, opts: Intl.DateTimeFormatOptions): string | null {
+  const ms = toDateMs(value);
+  if (ms === null) return null;
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Karachi', ...opts }).format(
+    new Date(ms),
+  );
 }
 
 /* ---------- helpers ---------- */

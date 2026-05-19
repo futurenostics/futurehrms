@@ -50,6 +50,8 @@ export const CONDITION_OPERATORS = [
   'after',
   'within_days',
   'older_than_days',
+  'matches_today_month_day',
+  'matches_today',
   // boolean
   'is_true',
   'is_false',

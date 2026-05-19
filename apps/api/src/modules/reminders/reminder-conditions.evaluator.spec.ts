@@ -248,6 +248,49 @@ describe('group composition', () => {
   });
 });
 
+describe('today-anchored date operators', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    // Asia/Karachi is UTC+5; pick a UTC instant that lands on 2026-05-19 PKT.
+    vi.setSystemTime(new Date('2026-05-19T05:00:00Z'));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('matches_today_month_day fires when the year differs but MM-DD lines up', () => {
+    const tree: ConditionGroup = {
+      kind: 'group',
+      operator: 'and',
+      conditions: [
+        {
+          kind: 'leaf',
+          field: 'employee.dateOfBirth',
+          operator: 'matches_today_month_day',
+        },
+      ],
+    };
+    const today = {
+      employee: { ...employee.employee, dateOfBirth: '1990-05-19T00:00:00Z' },
+    };
+    expect(evaluateConditions(tree, today)).toBe(true);
+    const notToday = {
+      employee: { ...employee.employee, dateOfBirth: '1990-06-19T00:00:00Z' },
+    };
+    expect(evaluateConditions(tree, notToday)).toBe(false);
+  });
+
+  it('matches_today requires full-date equality', () => {
+    const tree: ConditionGroup = {
+      kind: 'group',
+      operator: 'and',
+      conditions: [{ kind: 'leaf', field: 'employee.joinDate', operator: 'matches_today' }],
+    };
+    const exact = { employee: { ...employee.employee, joinDate: '2026-05-19T08:00:00Z' } };
+    expect(evaluateConditions(tree, exact)).toBe(true);
+    const lastYear = { employee: { ...employee.employee, joinDate: '2024-05-19T08:00:00Z' } };
+    expect(evaluateConditions(tree, lastYear)).toBe(false);
+  });
+});
+
 describe('mixed per-pair connectors (SQL precedence)', () => {
   it('connectors override the group-level operator', () => {
     // (engineering) OR (operations) — connector[0]='or'
