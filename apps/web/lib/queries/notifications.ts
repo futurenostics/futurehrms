@@ -58,6 +58,9 @@ export interface CustomNotificationTypePublic {
   bodyTemplate: string;
   linkTemplate: string | null;
   isActive: boolean;
+  /** Non-deleted reminder rules currently referencing this type's
+   *  key. Disables the Delete button in the admin sheet when > 0. */
+  usageCount: number;
   createdAt: string;
   updatedAt: string;
 }

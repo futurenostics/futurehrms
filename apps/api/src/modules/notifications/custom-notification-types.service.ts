@@ -38,6 +38,10 @@ export interface CustomTypePublic {
   bodyTemplate: string;
   linkTemplate: string | null;
   isActive: boolean;
+  /** Count of non-deleted reminder rules currently referencing
+   *  this type's key. Drives the "Delete" button disabled state in
+   *  the admin sheet — a referenced type cannot be hard-deleted. */
+  usageCount: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -77,7 +81,21 @@ export class CustomNotificationTypesService {
     const rows = await prisma.customNotificationType.findMany({
       orderBy: [{ isActive: 'desc' }, { createdAt: 'desc' }],
     });
-    return rows.map(toPublic);
+    if (rows.length === 0) return [];
+    // One groupBy gets every rule's notificationType usage in a
+    // single round trip; map back onto rows by key.
+    const usage = await prisma.reminderRule.groupBy({
+      by: ['notificationType'],
+      where: {
+        deletedAt: null,
+        notificationType: { in: rows.map((r) => r.key) },
+      },
+      _count: { _all: true },
+    });
+    const usageByKey = new Map<string, number>(
+      usage.map((u) => [u.notificationType, u._count._all]),
+    );
+    return rows.map((row) => toPublic(row, usageByKey.get(row.key) ?? 0));
   }
 
   /**
@@ -283,7 +301,7 @@ function validatePartial(input: UpdateCustomTypeInput): void {
   }
 }
 
-function toPublic(row: CustomNotificationType): CustomTypePublic {
+function toPublic(row: CustomNotificationType, usageCount = 0): CustomTypePublic {
   return {
     id: row.id,
     key: row.key,
@@ -295,6 +313,7 @@ function toPublic(row: CustomNotificationType): CustomTypePublic {
     bodyTemplate: row.bodyTemplate,
     linkTemplate: row.linkTemplate,
     isActive: row.isActive,
+    usageCount,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

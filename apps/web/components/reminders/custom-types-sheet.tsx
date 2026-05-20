@@ -320,7 +320,14 @@ export function CustomTypesSheet({ open, onOpenChange }: CustomTypesSheetProps) 
                             {row.key}
                           </div>
                         </div>
-                        {!row.isActive && <Badge tone="warning">Archived</Badge>}
+                        <div className="gap-fn-1 flex shrink-0 flex-col items-end">
+                          {!row.isActive && <Badge tone="warning">Archived</Badge>}
+                          {row.usageCount > 0 && (
+                            <Badge tone="accent">
+                              {row.usageCount} rule{row.usageCount === 1 ? '' : 's'}
+                            </Badge>
+                          )}
+                        </div>
                       </div>
                       <div className="gap-fn-1 flex flex-wrap">
                         <Button
@@ -356,7 +363,12 @@ export function CustomTypesSheet({ open, onOpenChange }: CustomTypesSheetProps) 
                           variant="ghost"
                           size="sm"
                           onClick={() => void handleDelete(row)}
-                          disabled={busy}
+                          disabled={busy || row.usageCount > 0}
+                          title={
+                            row.usageCount > 0
+                              ? `In use by ${row.usageCount} reminder rule${row.usageCount === 1 ? '' : 's'} — archive or update them first`
+                              : 'Permanently delete this type'
+                          }
                           className="text-fn-fg-muted hover:text-fn-danger"
                         >
                           <Trash2 className="h-fn-3 w-fn-3" /> Delete
