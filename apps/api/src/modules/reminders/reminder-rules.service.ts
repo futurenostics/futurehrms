@@ -66,6 +66,8 @@ export interface CreateRuleInput {
 }
 
 export interface UpdateRuleInput {
+  /** Draft-only — rename the rule's slug. Rejected if another non-deleted rule already uses it. */
+  key?: string;
   name?: string;
   description?: string | null;
   triggerSpec?: TriggerSpec;
@@ -268,6 +270,7 @@ export class ReminderRulesService {
     // Every other field is content — draft-only, drafting a new
     // version is how you change an active rule.
     const contentFields = [
+      'key',
       'name',
       'description',
       'triggerSpec',
@@ -286,6 +289,23 @@ export class ReminderRulesService {
     }
 
     const data: Prisma.ReminderRuleUpdateInput = {};
+    if (input.key !== undefined && input.key !== existing.key) {
+      // Each key identifies a rule "chain" — every version of the same
+      // rule shares it. Renaming a draft therefore must not collide
+      // with any other non-deleted rule (draft or active).
+      const collision = await prisma.reminderRule.findFirst({
+        where: {
+          key: input.key,
+          deletedAt: null,
+          NOT: { id: existing.id },
+        },
+        select: { id: true },
+      });
+      if (collision) {
+        throw new BadRequestException(`A rule with key "${input.key}" already exists`);
+      }
+      data.key = input.key;
+    }
     if (input.name !== undefined) data.name = input.name;
     if (input.description !== undefined) data.description = input.description;
     if (input.notificationType !== undefined) data.notificationType = input.notificationType;
@@ -372,6 +392,98 @@ export class ReminderRulesService {
       { actorId: viewer.id },
     );
     return toPublic(archived);
+  }
+
+  /**
+   * Soft-delete a draft or archived version of a rule (sets
+   * `deletedAt`). Active rules must be archived first via
+   * `archive()` — refuse here so a user can't accidentally orphan a
+   * key chain. Past schedules/notifications keep their FK reference
+   * because the row stays in the table; the list/lookup paths just
+   * skip it via the `deletedAt IS NULL` predicate.
+   */
+  async delete(viewer: AuthenticatedUser, id: string): Promise<{ id: string }> {
+    this.require('reminders:archive_rule', viewer);
+    const existing = await prisma.reminderRule.findUnique({ where: { id } });
+    if (!existing || existing.deletedAt) throw new NotFoundException('Reminder rule not found');
+    if (existing.status === 'active') {
+      throw new BadRequestException(
+        'Active rules cannot be deleted — archive the rule first, then delete the archived version.',
+      );
+    }
+    await prisma.reminderRule.update({ where: { id }, data: { deletedAt: new Date() } });
+    this.events.emit(
+      'reminder.rule.deleted',
+      { ruleId: existing.id, key: existing.key, version: existing.version },
+      { actorId: viewer.id },
+    );
+    return { id };
+  }
+
+  /**
+   * Branch a new draft off an existing version. Unlike `duplicate()`,
+   * which makes a fresh chain with its own `-copy` key, this stays in
+   * the same chain — same `key`, version minor-bumped, status=draft.
+   * It's how you "edit an active rule": active rules are read-only,
+   * so the user drafts the next version, tweaks it, then publishes.
+   *
+   * Rejected when an unpublished draft already exists for this key —
+   * the data model permits multiple drafts per chain, but the UI
+   * assumes one-at-a-time and publishing two stacked drafts would
+   * race the previous-active stamping.
+   */
+  async draftNewVersion(viewer: AuthenticatedUser, id: string): Promise<ReminderRulePublic> {
+    this.require('reminders:create_rule', viewer);
+    const source = await prisma.reminderRule.findUnique({ where: { id } });
+    if (!source || source.deletedAt) throw new NotFoundException('Reminder rule not found');
+    if (source.status === 'draft') {
+      throw new BadRequestException(
+        'This version is already a draft — edit it directly instead of drafting a new version.',
+      );
+    }
+
+    const existingDraft = await prisma.reminderRule.findFirst({
+      where: { key: source.key, status: 'draft', deletedAt: null },
+      select: { id: true, version: true },
+    });
+    if (existingDraft) {
+      throw new BadRequestException(
+        `A draft already exists for "${source.key}" (v${existingDraft.version}) — edit or delete it first.`,
+      );
+    }
+
+    // Find the highest version in this chain so the new draft sits
+    // above all of them — even archived versions count, so re-drafting
+    // after a publish keeps version numbers monotonic.
+    const latest = await prisma.reminderRule.findFirst({
+      where: { key: source.key, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
+    const version = this.bumpVersion(latest?.version ?? source.version);
+
+    const created = await prisma.reminderRule.create({
+      data: {
+        key: source.key,
+        name: source.name,
+        description: source.description,
+        status: 'draft',
+        triggerType: source.triggerType,
+        triggerSpec: source.triggerSpec as never,
+        notificationType: source.notificationType,
+        recipientResolver: source.recipientResolver,
+        recipientResolvers: source.recipientResolvers as never,
+        departmentId: source.departmentId,
+        version,
+        createdById: viewer.id,
+      },
+    });
+
+    this.events.emit(
+      'reminder.rule.draft-new-version',
+      { ruleId: created.id, sourceRuleId: source.id, key: created.key, version: created.version },
+      { actorId: viewer.id },
+    );
+    return toPublic(created);
   }
 
   /**

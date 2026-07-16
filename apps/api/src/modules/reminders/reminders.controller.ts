@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -54,6 +55,17 @@ const createSchema = z.object({
 });
 
 const updateSchema = z.object({
+  // Slug edits are allowed on draft rules only — same shape as the
+  // create schema so a duplicated draft can be renamed before it's
+  // published. The service-layer uniqueness check rejects collisions
+  // with any other chain.
+  key: z
+    .string()
+    .trim()
+    .min(1)
+    .max(80)
+    .regex(/^[a-z0-9][a-z0-9-]*$/, 'lowercase letters, digits, dashes')
+    .optional(),
   name: z.string().trim().min(1).max(160).optional(),
   description: z.string().trim().max(2000).nullable().optional(),
   triggerSpec: triggerSpecSchema.optional(),
@@ -217,6 +229,20 @@ export class RemindersController {
   @HttpCode(HttpStatus.OK)
   async archive(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.rules.archive(user, id);
+  }
+
+  @Post('reminder-rules/:id/draft-new-version')
+  @RequirePermission('reminders:create_rule')
+  @HttpCode(HttpStatus.OK)
+  async draftNewVersion(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.rules.draftNewVersion(user, id);
+  }
+
+  @Delete('reminder-rules/:id')
+  @RequirePermission('reminders:archive_rule')
+  @HttpCode(HttpStatus.OK)
+  async deleteRule(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.rules.delete(user, id);
   }
 
   @Post('reminder-rules/:id/trigger-test')

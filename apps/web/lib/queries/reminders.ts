@@ -218,6 +218,19 @@ export function useReminderRules(status?: ReminderRuleStatus | 'all') {
   });
 }
 
+/**
+ * Fetch every version of a single rule chain, newest first. Backs the
+ * version-history panel in the editor sheet — also drives the "Draft
+ * new version" affordance (which we hide if a draft already exists).
+ */
+export function useRuleVersions(key: string | null | undefined) {
+  return useQuery<{ items: ReminderRulePublic[]; total: number }>({
+    queryKey: ['reminder-rules', 'versions', key ?? ''],
+    queryFn: () => apiFetch(`/api/reminder-rules?key=${encodeURIComponent(key ?? '')}`),
+    enabled: !!key,
+  });
+}
+
 export function useReminderRule(id: string | null) {
   return useQuery<ReminderRulePublic>({
     queryKey: KEY.rule(id ?? ''),
@@ -374,6 +387,8 @@ export interface CreateRuleInput {
 }
 
 export interface UpdateRuleInput {
+  /** Draft-only — rename the rule's slug. The API rejects collisions. */
+  key?: string;
   name?: string;
   description?: string | null;
   triggerSpec?: TriggerSpec;
@@ -428,11 +443,41 @@ export function useDuplicateRule() {
   });
 }
 
-export function useArchiveRule(id: string) {
+export function useArchiveRule() {
   const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () =>
-      apiFetch<ReminderRulePublic>(`/api/reminder-rules/${id}/archive`, { method: 'POST' }),
+  return useMutation<ReminderRulePublic, Error, string>({
+    mutationFn: (id) =>
+      apiFetch<ReminderRulePublic>(`/api/reminder-rules/${id}/archive`, {
+        method: 'POST',
+      }),
+    onSuccess: () => invalidateAll(qc),
+  });
+}
+
+/**
+ * Branch a new draft off an existing version (same `key`, version
+ * bumped). The BE rejects when an unpublished draft already exists
+ * for the chain — surface that error to the caller untouched.
+ */
+export function useDraftNewVersion() {
+  const qc = useQueryClient();
+  return useMutation<ReminderRulePublic, Error, string>({
+    mutationFn: (id) =>
+      apiFetch<ReminderRulePublic>(`/api/reminder-rules/${id}/draft-new-version`, {
+        method: 'POST',
+      }),
+    onSuccess: () => invalidateAll(qc),
+  });
+}
+
+/**
+ * Hard-delete (soft via `deletedAt`) a draft or archived rule. The BE
+ * refuses on active rules — the caller must archive first.
+ */
+export function useDeleteRule() {
+  const qc = useQueryClient();
+  return useMutation<{ id: string }, Error, string>({
+    mutationFn: (id) => apiFetch<{ id: string }>(`/api/reminder-rules/${id}`, { method: 'DELETE' }),
     onSuccess: () => invalidateAll(qc),
   });
 }

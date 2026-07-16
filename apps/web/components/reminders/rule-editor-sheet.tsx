@@ -43,6 +43,8 @@ import { EventPicker } from '@/components/reminders/event-picker';
 import { RecipientList } from '@/components/reminders/recipient-list';
 import { NotificationTypePicker } from '@/components/reminders/notification-type-picker';
 import { CronPicker } from '@/components/reminders/cron-picker';
+import { RuleVersionsPanel } from '@/components/reminders/rule-versions-panel';
+import { usePermissions } from '@/hooks/use-permissions';
 import type { RecipientEntry } from '@/lib/queries/reminders';
 
 /**
@@ -70,14 +72,20 @@ export interface RuleEditorSheetProps {
 export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditorSheetProps) {
   const router = useRouter();
   const refs = useReferences();
+  const perms = usePermissions();
+  const canCreate = perms.has('reminders:create_rule');
+  const canDelete = perms.has('reminders:archive_rule');
   const existing = useReminderRule(mode === 'edit' ? ruleId : null);
   const create = useCreateRule();
   const update = useUpdateRule(ruleId ?? '');
   const publish = usePublishRule(ruleId ?? '');
-  const archive = useArchiveRule(ruleId ?? '');
+  const archive = useArchiveRule();
 
   /* ---------- Local form state ---------- */
   const [key, setKey] = React.useState('');
+  // The key the rule was loaded with — used to detect a rename in
+  // edit-draft mode so we only PATCH `key` when it actually changed.
+  const [initialKey, setInitialKey] = React.useState('');
   const [name, setName] = React.useState('');
   const [description, setDescription] = React.useState('');
   const [triggerType, setTriggerType] = React.useState<'event' | 'cron'>('event');
@@ -109,6 +117,7 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
     if (mode !== 'edit' || !existing.data) return;
     const r = existing.data;
     setKey(r.key);
+    setInitialKey(r.key);
     setName(r.name);
     setDescription(r.description ?? '');
     setTriggerType(r.triggerType);
@@ -172,9 +181,11 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
 
   // Required-field validation. Mirrors the BE zod schema so the user
   // gets inline feedback before the request lands and the Save button
-  // doesn't fire a doomed POST.
+  // doesn't fire a doomed POST. Drafts in edit mode also validate so
+  // a slug rename (e.g. after duplicating a rule) can't be saved with
+  // an illegal value.
   const keyError =
-    mode === 'create' && (key.trim().length === 0 || !/^[a-z0-9][a-z0-9-]*$/.test(key.trim()))
+    isDraft && (key.trim().length === 0 || !/^[a-z0-9][a-z0-9-]*$/.test(key.trim()))
       ? 'lowercase letters, digits, dashes — used in seeds + URLs'
       : null;
   const nameError = isDraft && name.trim().length === 0 ? 'Name is required' : null;
@@ -219,7 +230,12 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
         toast.success(`Draft "${created.key}" created`);
         router.push(`/reminder-rules?sheet=edit&id=${encodeURIComponent(created.id)}`);
       } else if (ruleId && isDraft) {
+        const trimmedKey = key.trim();
         await update.mutateAsync({
+          // Only send the slug when it actually changed — keeps the
+          // payload minimal and skips the BE collision-check on the
+          // common "edit details, leave the slug alone" path.
+          ...(trimmedKey !== initialKey ? { key: trimmedKey } : {}),
           name,
           description,
           triggerSpec: spec,
@@ -251,7 +267,7 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
     if (!ruleId) return;
     if (!confirm('Archive this rule? It will stop firing immediately.')) return;
     try {
-      await archive.mutateAsync();
+      await archive.mutateAsync(ruleId);
       toast.success('Rule archived');
       onOpenChange(false);
     } catch (e) {
@@ -266,15 +282,23 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
           <SheetTitle>
             {mode === 'create' ? 'New reminder rule' : `${name || 'Reminder rule'}`}
           </SheetTitle>
-          <p className="text-fn-fg-faint text-[12px]">
-            {mode === 'create'
-              ? 'Drafts can be edited freely. Publishing creates v1.0; future edits draft a new version.'
-              : existing.data
-                ? `v${existing.data.version} · ${existing.data.status}${
-                    readonly ? ' · view only' : ''
-                  }`
-                : 'Loading…'}
-          </p>
+          {mode === 'create' ? (
+            <p className="text-fn-fg-faint text-[12px]">
+              Drafts can be edited freely. Publishing creates v1.0; future edits draft a new
+              version.
+            </p>
+          ) : existing.data ? (
+            <div className="mt-fn-1 gap-fn-2 flex flex-wrap items-center">
+              <RuleVersionsPanel rule={existing.data} canCreate={canCreate} canDelete={canDelete} />
+              {readonly && (
+                <span className="text-fn-fg-faint text-[11.5px]">
+                  view only — draft a new version to edit
+                </span>
+              )}
+            </div>
+          ) : (
+            <p className="text-fn-fg-faint text-[12px]">Loading…</p>
+          )}
         </SheetHeader>
 
         <SheetBody>
@@ -303,7 +327,11 @@ export function RuleEditorSheet({ open, onOpenChange, mode, ruleId }: RuleEditor
                         .replace(/-{2,}/g, '-'),
                     )
                   }
-                  disabled={mode === 'edit'}
+                  // Only locked once the rule is published — drafts
+                  // (including freshly duplicated ones) can be renamed
+                  // in place. The BE rejects any collision with
+                  // another non-deleted rule's key.
+                  disabled={readonly}
                   placeholder="probation-end-eng"
                   aria-invalid={!!(key.length > 0 && keyError)}
                 />

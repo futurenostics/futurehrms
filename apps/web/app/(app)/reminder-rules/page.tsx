@@ -2,16 +2,34 @@
 
 import * as React from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Bell, Plus } from 'lucide-react';
+import { Bell, Plus, Search } from 'lucide-react';
 import type { ReferencesResponse } from '@futurenostics/types';
 import { AppShell } from '@/components/shell/app-shell';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import {
   DataTable,
   type DataTableColumn,
   type DataTableRowAction,
 } from '@/components/ui/data-table';
+import {
+  AdvancedFilters,
+  AdvancedFiltersRoot,
+  AdvancedFiltersTrigger,
+  ChipsBar,
+  useAdvancedFiltersActiveCount,
+  useAdvancedFiltersValue,
+  useFilterDispatch,
+  type FilterCounts,
+  type FilterSchema,
+  type FilterState,
+} from '@/components/ui/advanced-filters';
+import {
+  applyReminderRulesFilters,
+  buildReminderRulesFilterSchema,
+  computeReminderRulesFilterCounts,
+} from '@/components/reminders/reminder-rules-filter-schema';
 import { SchedulerStatusCard } from '@/components/reminders/scheduler-status-card';
 import { ScheduledTimeline } from '@/components/reminders/scheduled-timeline';
 import { leadTimeLabel, ruleHue, templateLabel } from '@/components/reminders/rule-visuals';
@@ -19,19 +37,29 @@ import { RuleEditorSheet } from '@/components/reminders/rule-editor-sheet';
 import { CustomTypesSheet } from '@/components/reminders/custom-types-sheet';
 import { countLeaves } from '@/components/reminders/condition-builder';
 import {
+  useArchiveRule,
+  useDraftNewVersion,
   useDuplicateRule,
   useRecipientResolvers,
   useReminderRules,
   useToggleRule,
   useTriggerCounts,
   useTriggerTest,
+  type RecipientResolver,
   type ReminderRulePublic,
 } from '@/lib/queries/reminders';
-import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { toast } from 'sonner';
 import { useReferences } from '@/lib/queries/employees';
 import { usePermissions } from '@/hooks/use-permissions';
 import { cn } from '@/lib/utils';
+
+/**
+ * Stable empty-array fallbacks so we don't allocate a new `[]` on
+ * every render — keeping the `useMemo` deps stable is what lets the
+ * AdvancedFilters store's counts debounce actually settle.
+ */
+const EMPTY_RULES: ReminderRulePublic[] = [];
+const EMPTY_RESOLVERS: RecipientResolver[] = [];
 
 /**
  * Reminder Rules list page — matches PNG 12.
@@ -40,10 +68,67 @@ import { cn } from '@/lib/utils';
  *   1. Page header (h1 + subtitle + Duplicate from / + New rule)
  *   2. Dark "Reminder scheduler" status card with Dry run button
  *   3. "Next 30 days · scheduled triggers" timeline strip
- *   4. "Rule library" — All / Active filter chips + DataTable with the
- *      design's 7 columns + per-row ON/OFF toggle
+ *   4. "Rule library" toolbar — search input + Advanced filters trigger +
+ *      chips bar — and the DataTable with the design's 7 columns +
+ *      per-row ON/OFF toggle. The AdvancedFilters store owns the filter
+ *      state for the drawer, the chips, and the URL; the schema declares
+ *      sections (status, trigger type, department, template, recipients,
+ *      enabled) and filtering runs client-side against the in-memory rule
+ *      list (the rule set is small enough that a server-side
+ *      filter-counts endpoint isn't worth the extra surface).
  */
 export default function ReminderRulesPage() {
+  // Build the schema once we have the references + resolvers + rules.
+  // Until those resolve the drawer renders with empty option lists; the
+  // store API is happy with that.
+  const refs = useReferences();
+  const resolversQuery = useRecipientResolvers();
+  const rulesQuery = useReminderRules('all');
+  // Memoise the empty-fallback so the array identity stays stable
+  // across renders before the queries resolve. Without this, every
+  // pre-load render returns a fresh `[]` and the dependent `useMemo`s
+  // (schema, onCountsRequest) thrash on every render — which in turn
+  // forces the AdvancedFilters store to cancel its in-flight counts
+  // debounce, so the per-option badges never settle.
+  const allRules = rulesQuery.data?.items ?? EMPTY_RULES;
+  const resolvers = resolversQuery.data?.items ?? EMPTY_RESOLVERS;
+
+  const schema = React.useMemo(
+    () =>
+      buildReminderRulesFilterSchema({
+        references: refs.data,
+        resolvers,
+        rules: allRules,
+      }),
+    [refs.data, resolvers, allRules],
+  );
+
+  // Counts handler — runs entirely client-side off the full rule list
+  // so the drawer footer total and per-option badges stay accurate as
+  // the user toggles selections. Wrapped in a stable callback the store
+  // can re-invoke on every dispatch.
+  const onCountsRequest = React.useCallback(
+    async (state: FilterState): Promise<FilterCounts> =>
+      computeReminderRulesFilterCounts(allRules, state, '', schema),
+    [allRules, schema],
+  );
+
+  return (
+    <AdvancedFiltersRoot schema={schema} onCountsRequest={onCountsRequest}>
+      <ReminderRulesInner schema={schema} allRules={allRules} rulesQuery={rulesQuery} />
+    </AdvancedFiltersRoot>
+  );
+}
+
+function ReminderRulesInner({
+  schema,
+  allRules,
+  rulesQuery,
+}: {
+  schema: FilterSchema;
+  allRules: ReminderRulePublic[];
+  rulesQuery: ReturnType<typeof useReminderRules>;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -51,7 +136,22 @@ export default function ReminderRulesPage() {
   const canCreate = perms.has('reminders:create_rule');
   const canManage = perms.has('reminders:publish_rule');
 
-  const [filter, setFilter] = React.useState<'all' | 'active'>('all');
+  const [search, setSearch] = React.useState('');
+  const [debouncedSearch, setDebouncedSearch] = React.useState('');
+  React.useEffect(() => {
+    const id = window.setTimeout(() => setDebouncedSearch(search), 250);
+    return () => window.clearTimeout(id);
+  }, [search]);
+
+  const filterState = useAdvancedFiltersValue();
+  const activeFiltersCount = useAdvancedFiltersActiveCount();
+  const dispatch = useFilterDispatch();
+  const [filterPanelOpen, setFilterPanelOpen] = React.useState(false);
+
+  const visibleRules = React.useMemo(
+    () => applyReminderRulesFilters(allRules, filterState, debouncedSearch),
+    [allRules, filterState, debouncedSearch],
+  );
 
   // Editor-sheet state lives in the URL so deep-links (`?sheet=create`,
   // `?sheet=edit&id=...`) work, the browser back button closes the
@@ -90,29 +190,43 @@ export default function ReminderRulesPage() {
     router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }, [router, pathname, searchParams]);
 
-  const rulesQuery = useReminderRules('all');
-  const allRules = rulesQuery.data?.items ?? [];
-  const visibleRules = React.useMemo(
-    () => (filter === 'all' ? allRules : allRules.filter((r) => r.status === 'active')),
-    [allRules, filter],
-  );
-
   const refs = useReferences();
   const resolversQuery = useRecipientResolvers();
   const countsQuery = useTriggerCounts();
   const toggleRule = useToggleRule();
   const triggerTest = useTriggerTest();
   const duplicateRule = useDuplicateRule();
+  const draftNewVersion = useDraftNewVersion();
+  // Shared mutation reused across every row's Delete action — the
+  // hook's id is passed at mutate() time, not at hook-bind time.
+  const archiveRule = useArchiveRule();
+  const canDelete = perms.has('reminders:publish_rule');
 
-  const duplicateOptions = React.useMemo<ComboboxOption[]>(
-    () =>
-      allRules.map((r) => ({
-        value: r.id,
-        label: r.name,
-        description: r.key,
-        keywords: [r.key, r.name, r.notificationType],
-      })),
-    [allRules],
+  const handleDraftNewVersion = React.useCallback(
+    async (rule: ReminderRulePublic) => {
+      try {
+        const created = await draftNewVersion.mutateAsync(rule.id);
+        toast.success(`Drafted v${created.version} from v${rule.version}`);
+        openEdit(created.id);
+      } catch (e) {
+        toast.error((e as Error).message);
+      }
+    },
+    [draftNewVersion, openEdit],
+  );
+
+  const handleArchive = React.useCallback(
+    async (rule: ReminderRulePublic) => {
+      const label = rule.status === 'active' ? 'archive this rule' : 'delete this rule';
+      if (!confirm(`Are you sure you want to ${label}? It will stop firing immediately.`)) return;
+      try {
+        await archiveRule.mutateAsync(rule.id);
+        toast.success(rule.status === 'active' ? 'Rule archived' : 'Rule deleted');
+      } catch (e) {
+        toast.error((e as Error).message);
+      }
+    },
+    [archiveRule],
   );
 
   const handleDuplicate = React.useCallback(
@@ -141,8 +255,13 @@ export default function ReminderRulesPage() {
   }, [resolversQuery.data]);
 
   const counts = countsQuery.data ?? {};
-  const totalActive = allRules.filter((r) => r.status === 'active').length;
-  const totalAll = allRules.length;
+  const totalActiveCount = activeFiltersCount + (debouncedSearch ? 1 : 0);
+
+  function clearFilters() {
+    setSearch('');
+    setDebouncedSearch('');
+    dispatch({ type: 'CLEAR_ALL' });
+  }
 
   const columns = React.useMemo<DataTableColumn<ReminderRulePublic>[]>(
     () => [
@@ -298,9 +417,37 @@ export default function ReminderRulesPage() {
           onClick: () => openEdit(rule.id),
         });
       }
+      if (canCreate && rule.status === 'active') {
+        items.push({
+          label: 'Draft new version',
+          onClick: () => handleDraftNewVersion(rule),
+        });
+      }
+      if (canCreate) {
+        items.push({
+          label: 'Duplicate',
+          onClick: () => handleDuplicate(rule.id),
+        });
+      }
+      if (canDelete && rule.status !== 'archived') {
+        items.push({
+          label: rule.status === 'active' ? 'Archive' : 'Delete',
+          variant: 'destructive',
+          onClick: () => handleArchive(rule),
+        });
+      }
       return items;
     },
-    [openEdit, canManage, triggerTest],
+    [
+      openEdit,
+      canManage,
+      canCreate,
+      canDelete,
+      triggerTest,
+      handleDuplicate,
+      handleDraftNewVersion,
+      handleArchive,
+    ],
   );
 
   return (
@@ -327,19 +474,6 @@ export default function ReminderRulesPage() {
               </Button>
             )}
             {canCreate && (
-              <div className="w-fn-56">
-                <Combobox
-                  options={duplicateOptions}
-                  value=""
-                  placeholder="Duplicate from…"
-                  searchPlaceholder="Search rules"
-                  emptyLabel="rules"
-                  disabled={duplicateRule.isPending || duplicateOptions.length === 0}
-                  onValueChange={(v) => v && handleDuplicate(v)}
-                />
-              </div>
-            )}
-            {canCreate && (
               <Button size="md" onClick={openCreate}>
                 <Plus className="h-fn-4 w-fn-4" /> New rule
               </Button>
@@ -355,24 +489,40 @@ export default function ReminderRulesPage() {
 
         {/* Rule library */}
         <div className="border-fn-border bg-fn-bg-panel rounded-fn-xs flex min-h-0 flex-1 flex-col overflow-hidden border">
+          {/* Toolbar — search + advanced filters trigger + clear,
+              mirrors the Employees toolbar. */}
           <div className="border-fn-divider gap-fn-2_5 px-fn-5 py-fn-3_5 flex shrink-0 flex-wrap items-center border-b">
-            <h2 className="text-fn-fg font-fn-semibold text-[14px]">Rule library</h2>
-            <div className="gap-fn-1 ml-fn-3 flex items-center">
-              <FilterChip
-                label={`All [${totalAll}]`}
-                active={filter === 'all'}
-                onClick={() => setFilter('all')}
-              />
-              <FilterChip
-                label={`Active [${totalActive}]`}
-                active={filter === 'active'}
-                onClick={() => setFilter('active')}
+            <div className="relative w-full max-w-[320px] flex-1">
+              <Search className="text-fn-fg-faint left-fn-2_5 h-fn-3_5 w-fn-3_5 pointer-events-none absolute top-1/2 -translate-y-1/2" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search rules by name, key, or template…"
+                className="pl-fn-8"
               />
             </div>
+            <AdvancedFiltersTrigger onClick={() => setFilterPanelOpen(true)} />
+            {(activeFiltersCount > 0 || debouncedSearch) && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="text-fn-accent-soft-fg font-fn-semibold cursor-pointer text-[12.5px] hover:underline"
+              >
+                Clear ({totalActiveCount})
+              </button>
+            )}
             <span className="text-fn-fg-faint ml-auto text-[12px]">
               {visibleRules.length} {visibleRules.length === 1 ? 'rule' : 'rules'}
             </span>
           </div>
+
+          {/* Active-filter chips bar — same primitive employees uses;
+              self-hides when no filters are active. */}
+          {activeFiltersCount > 0 && (
+            <div className="px-fn-5 pt-fn-3">
+              <ChipsBar schema={schema} />
+            </div>
+          )}
 
           <div className="min-h-0 flex-1">
             <DataTable<ReminderRulePublic>
@@ -386,7 +536,9 @@ export default function ReminderRulesPage() {
               totalCount={visibleRules.length}
               onRowClick={(r) => openEdit(r.id)}
               rowActions={rowActions}
-              emptyState={<RulesEmptyState canCreate={canCreate} />}
+              emptyState={
+                <RulesEmptyState canCreate={canCreate} hasFilters={totalActiveCount > 0} />
+              }
             />
           </div>
         </div>
@@ -404,32 +556,11 @@ export default function ReminderRulesPage() {
       )}
 
       <CustomTypesSheet open={typesSheetOpen} onOpenChange={setTypesSheetOpen} />
-    </AppShell>
-  );
-}
 
-function FilterChip({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'rounded-fn-xs px-fn-2_5 py-fn-1 font-fn-medium cursor-pointer border text-[12.5px] transition-colors',
-        active
-          ? 'border-fn-accent/30 bg-fn-accent-soft text-fn-accent-soft-fg'
-          : 'border-fn-border bg-fn-bg-panel text-fn-fg-muted hover:border-fn-fg-faint',
-      )}
-    >
-      {label}
-    </button>
+      {/* Advanced Filters drawer — lives at the page level so its open
+          state survives toolbar re-renders. */}
+      <AdvancedFilters schema={schema} open={filterPanelOpen} onOpenChange={setFilterPanelOpen} />
+    </AppShell>
   );
 }
 
@@ -470,14 +601,18 @@ function deptHue(slug: string): number {
   return Math.abs(h) % 360;
 }
 
-function RulesEmptyState({ canCreate }: { canCreate: boolean }) {
+function RulesEmptyState({ canCreate, hasFilters }: { canCreate: boolean; hasFilters: boolean }) {
   return (
     <div className="gap-fn-3 py-fn-12 flex flex-col items-center text-center">
-      <p className="text-fn-fg font-fn-semibold text-[14px]">No reminder rules yet</p>
+      <p className="text-fn-fg font-fn-semibold text-[14px]">
+        {hasFilters ? 'No rules match your filters' : 'No reminder rules yet'}
+      </p>
       <p className="text-fn-fg-muted max-w-[400px] text-[12.5px]">
-        {canCreate
-          ? 'Create the first rule to start sending lifecycle reminders. Rules are versioned — editing creates a new version that leaves past schedules intact.'
-          : 'Ask HR to set up reminder rules for your team.'}
+        {hasFilters
+          ? 'Try clearing a filter or adjusting your search.'
+          : canCreate
+            ? 'Create the first rule to start sending lifecycle reminders. Rules are versioned — editing creates a new version that leaves past schedules intact.'
+            : 'Ask HR to set up reminder rules for your team.'}
       </p>
     </div>
   );
