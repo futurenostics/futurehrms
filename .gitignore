@@ -50,3 +50,10 @@ apps/web/tests/.auth/
 # Misc
 .cache/
 tmp/
+
+# Local tooling settings
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+
+# Ad-hoc verification screenshots dropped in the repo root
+/*.png
