@@ -233,6 +233,10 @@ export class CommissionRulesService {
         poolMode: input.poolMode,
         poolValue: new Prisma.Decimal(input.poolValue),
         minProjectRevenueUsd: new Prisma.Decimal(input.minProjectRevenueUsd ?? 0),
+        perPersonFloorUsd:
+          input.perPersonFloorUsd != null ? new Prisma.Decimal(input.perPersonFloorUsd) : null,
+        perPersonCapUsd:
+          input.perPersonCapUsd != null ? new Prisma.Decimal(input.perPersonCapUsd) : null,
         rolePercentages: input.rolePercentages as unknown as Prisma.InputJsonValue,
         disbursementSchedule:
           (input.disbursementSchedule as Prisma.InputJsonValue | undefined) ?? Prisma.DbNull,
@@ -271,6 +275,14 @@ export class CommissionRulesService {
     if (input.poolValue !== undefined) data.poolValue = new Prisma.Decimal(input.poolValue);
     if (input.minProjectRevenueUsd !== undefined) {
       data.minProjectRevenueUsd = new Prisma.Decimal(input.minProjectRevenueUsd);
+    }
+    if (input.perPersonFloorUsd !== undefined) {
+      data.perPersonFloorUsd =
+        input.perPersonFloorUsd != null ? new Prisma.Decimal(input.perPersonFloorUsd) : null;
+    }
+    if (input.perPersonCapUsd !== undefined) {
+      data.perPersonCapUsd =
+        input.perPersonCapUsd != null ? new Prisma.Decimal(input.perPersonCapUsd) : null;
     }
     if (input.rolePercentages !== undefined) {
       this.validateRolePercentages(input.rolePercentages, input.status ?? existing.status);

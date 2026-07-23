@@ -226,6 +226,114 @@ describe('calcProjectLineItems', () => {
   });
 });
 
+describe('per-person guardrails (cap / floor)', () => {
+  // Single-shot $10k project, 24% pool = $2,400 for the sole winner.
+  it('caps a share that exceeds perPersonCapUsd', () => {
+    const items = calcProjectLineItems(
+      makeProject({
+        rule: {
+          poolMode: 'percentage',
+          poolValue: 24,
+          minProjectRevenueUsd: 0,
+          perPersonCapUsd: 2_000,
+        },
+      }),
+      { monthKey: '2026-05' },
+    );
+    expect(items[0].calculatedAmountUsd).toBe(2_000);
+  });
+
+  it('floors an eligible share below perPersonFloorUsd', () => {
+    // Two winners split 50/50 → $1,200 each; floor lifts each to $1,500.
+    const items = calcProjectLineItems(
+      makeProject({
+        rule: {
+          poolMode: 'percentage',
+          poolValue: 24,
+          minProjectRevenueUsd: 0,
+          perPersonFloorUsd: 1_500,
+        },
+        assignments: [
+          { employeeId: 'e1', roleName: 'winner', percentage: 50 },
+          { employeeId: 'e2', roleName: 'winner', percentage: 50 },
+        ],
+      }),
+      { monthKey: '2026-05' },
+    );
+    expect(items.map((i) => i.calculatedAmountUsd)).toEqual([1_500, 1_500]);
+  });
+
+  it('leaves shares between floor and cap untouched', () => {
+    const items = calcProjectLineItems(
+      makeProject({
+        rule: {
+          poolMode: 'percentage',
+          poolValue: 24,
+          minProjectRevenueUsd: 0,
+          perPersonFloorUsd: 1_000,
+          perPersonCapUsd: 3_000,
+        },
+      }),
+      { monthKey: '2026-05' },
+    );
+    expect(items[0].calculatedAmountUsd).toBe(2_400);
+  });
+
+  it('does not floor a zero share (unassigned / no participation)', () => {
+    // percentage 0 → $0 share; the floor must not hand them the minimum.
+    const items = calcProjectLineItems(
+      makeProject({
+        rule: {
+          poolMode: 'percentage',
+          poolValue: 24,
+          minProjectRevenueUsd: 0,
+          perPersonFloorUsd: 500,
+        },
+        assignments: [
+          { employeeId: 'e1', roleName: 'winner', percentage: 100 },
+          { employeeId: 'e2', roleName: 'eligible_team', percentage: 0 },
+        ],
+      }),
+      { monthKey: '2026-05' },
+    );
+    const zero = items.find((i) => i.employeeId === 'e2');
+    expect(zero?.calculatedAmountUsd).toBe(0);
+  });
+
+  it('applies both bounds: floor then cap, with cap winning at the ceiling', () => {
+    // $2,400 share, cap 2,000 → 2,000 (floor 500 is below, no effect).
+    const items = calcProjectLineItems(
+      makeProject({
+        rule: {
+          poolMode: 'percentage',
+          poolValue: 24,
+          minProjectRevenueUsd: 0,
+          perPersonFloorUsd: 500,
+          perPersonCapUsd: 2_000,
+        },
+      }),
+      { monthKey: '2026-05' },
+    );
+    expect(items[0].calculatedAmountUsd).toBe(2_000);
+  });
+
+  it('null bounds behave as no guardrails', () => {
+    const items = calcProjectLineItems(
+      makeProject({
+        rule: {
+          poolMode: 'percentage',
+          poolValue: 24,
+          minProjectRevenueUsd: 0,
+          perPersonFloorUsd: null,
+          perPersonCapUsd: null,
+        },
+      }),
+      { monthKey: '2026-05' },
+    );
+    expect(items[0].calculatedAmountUsd).toBe(2_400);
+  });
+});
+
 describe('roundUsd', () => {
   it('rounds to two decimals via Math.round (IEEE half-to-even on binary)', () => {
     // Values chosen to avoid IEEE-754 representation edge cases. The

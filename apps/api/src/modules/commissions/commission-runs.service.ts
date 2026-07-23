@@ -332,6 +332,14 @@ export class CommissionRunsService {
         poolMode: p.commissionRule.poolMode as 'percentage' | 'fixed',
         poolValue: Number(p.commissionRule.poolValue),
         minProjectRevenueUsd: Number(p.commissionRule.minProjectRevenueUsd),
+        perPersonFloorUsd:
+          p.commissionRule.perPersonFloorUsd != null
+            ? Number(p.commissionRule.perPersonFloorUsd)
+            : null,
+        perPersonCapUsd:
+          p.commissionRule.perPersonCapUsd != null
+            ? Number(p.commissionRule.perPersonCapUsd)
+            : null,
       },
       assignments: p.assignments.map((a) => ({
         employeeId: a.employeeId,

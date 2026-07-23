@@ -40,23 +40,47 @@ export type RolePercentages = z.infer<typeof rolePercentagesSchema>;
 
 /* ---------- Create + Update ---------- */
 
-export const commissionRuleCreateSchema = z.object({
-  department: z.string().min(1).max(60),
-  categoryId: z.string().min(1),
-  poolMode: poolModeSchema,
-  poolValue: z.coerce.number().min(0).max(99_999_999.99),
-  /** Projects below this revenue threshold generate no line items. 0 = no threshold. */
-  minProjectRevenueUsd: z.coerce.number().min(0).max(99_999_999.99).default(0),
-  rolePercentages: rolePercentagesSchema,
-  disbursementSchedule: z.record(z.string(), z.unknown()).nullable().optional(),
-  effectiveFrom: z.string().min(1).optional(),
-  status: commissionRuleStatusSchema.default('draft'),
-  pendingReason: z.string().trim().max(500).optional(),
-});
+export const commissionRuleCreateSchema = z
+  .object({
+    department: z.string().min(1).max(60),
+    categoryId: z.string().min(1),
+    poolMode: poolModeSchema,
+    poolValue: z.coerce.number().min(0).max(99_999_999.99),
+    /** Projects below this revenue threshold generate no line items. 0 = no threshold. */
+    minProjectRevenueUsd: z.coerce.number().min(0).max(99_999_999.99).default(0),
+    /**
+     * Per-person payout guardrails applied to each line item's
+     * calculated amount. null / omitted = no bound. Cap must be
+     * >= floor when both are set.
+     */
+    perPersonFloorUsd: z.coerce.number().min(0).max(99_999_999.99).nullable().optional(),
+    perPersonCapUsd: z.coerce.number().min(0).max(99_999_999.99).nullable().optional(),
+    rolePercentages: rolePercentagesSchema,
+    disbursementSchedule: z.record(z.string(), z.unknown()).nullable().optional(),
+    effectiveFrom: z.string().min(1).optional(),
+    status: commissionRuleStatusSchema.default('draft'),
+    pendingReason: z.string().trim().max(500).optional(),
+  })
+  .refine(
+    (r) =>
+      r.perPersonCapUsd == null ||
+      r.perPersonFloorUsd == null ||
+      r.perPersonCapUsd >= r.perPersonFloorUsd,
+    { message: 'perPersonCapUsd must be >= perPersonFloorUsd', path: ['perPersonCapUsd'] },
+  );
 export type CommissionRuleCreateInput = z.infer<typeof commissionRuleCreateSchema>;
 
 /** Update a draft rule. Cannot edit a published rule — publish a new version instead. */
-export const commissionRuleUpdateSchema = commissionRuleCreateSchema.partial();
+export const commissionRuleUpdateSchema = commissionRuleCreateSchema
+  .innerType()
+  .partial()
+  .refine(
+    (r) =>
+      r.perPersonCapUsd == null ||
+      r.perPersonFloorUsd == null ||
+      r.perPersonCapUsd >= r.perPersonFloorUsd,
+    { message: 'perPersonCapUsd must be >= perPersonFloorUsd', path: ['perPersonCapUsd'] },
+  );
 export type CommissionRuleUpdateInput = z.infer<typeof commissionRuleUpdateSchema>;
 
 export const commissionRulePublishSchema = z.object({
@@ -79,6 +103,8 @@ export const commissionRulePublicSchema = z.object({
   poolMode: poolModeSchema,
   poolValue: z.number(),
   minProjectRevenueUsd: z.number(),
+  perPersonFloorUsd: z.number().nullable(),
+  perPersonCapUsd: z.number().nullable(),
   rolePercentages: rolePercentagesSchema,
   disbursementSchedule: z.record(z.string(), z.unknown()).nullable(),
   effectiveFrom: z.string(),

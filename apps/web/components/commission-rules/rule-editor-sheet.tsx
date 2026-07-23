@@ -10,6 +10,7 @@ import {
   CircleDashed,
   CircleDot,
   CircleUserRound,
+  Gauge,
   Layers,
   Megaphone,
   Plus,
@@ -122,6 +123,9 @@ export function CommissionRuleEditorSheet({
   const [categoryId, setCategoryId] = React.useState<string>('');
   const [poolMode, setPoolMode] = React.useState<PoolMode>('percentage');
   const [poolValue, setPoolValue] = React.useState<number>(24);
+  // Per-person payout guardrails. Empty string = no bound (null).
+  const [perPersonFloor, setPerPersonFloor] = React.useState<string>('');
+  const [perPersonCap, setPerPersonCap] = React.useState<string>('');
   const [roles, setRoles] = React.useState<Array<{ key: string; pct: number }>>([
     { key: 'winner', pct: 50 },
     { key: 'communicator', pct: 30 },
@@ -137,6 +141,10 @@ export function CommissionRuleEditorSheet({
       setCategoryId(existing.category.id);
       setPoolMode(existing.poolMode as PoolMode);
       setPoolValue(Number(existing.poolValue));
+      setPerPersonFloor(
+        existing.perPersonFloorUsd != null ? String(existing.perPersonFloorUsd) : '',
+      );
+      setPerPersonCap(existing.perPersonCapUsd != null ? String(existing.perPersonCapUsd) : '');
       const next = Object.entries(existing.rolePercentages).map(([key, pct]) => ({
         key,
         pct: Number(pct),
@@ -156,8 +164,18 @@ export function CommissionRuleEditorSheet({
   const splitsValid = Math.abs(splitsTotal - 100) <= 0.01;
   const selectedCategory = categories.find((c) => c.id === categoryId);
 
+  // Guardrails: empty / invalid input => no bound (null).
+  const floorNum = parseGuard(perPersonFloor);
+  const capNum = parseGuard(perPersonCap);
+  const guardrailsValid = floorNum == null || capNum == null || capNum >= floorNum;
+  const guardPayload = { perPersonFloorUsd: floorNum, perPersonCapUsd: capNum };
+
   /* ---------- Mutations ---------- */
   async function saveAsDraft() {
+    if (!guardrailsValid) {
+      toast.error('Per-person cap must be greater than or equal to the floor.');
+      return;
+    }
     try {
       if (mode === 'edit' && existing) {
         if (existing.status !== 'draft') {
@@ -168,6 +186,7 @@ export function CommissionRuleEditorSheet({
         await updateMutation.mutateAsync({
           poolMode,
           poolValue,
+          ...guardPayload,
           rolePercentages: rolesToMap(roles),
           status: 'draft',
         });
@@ -179,6 +198,7 @@ export function CommissionRuleEditorSheet({
           poolMode,
           poolValue,
           minProjectRevenueUsd: 0,
+          ...guardPayload,
           rolePercentages: rolesToMap(roles),
           status: 'draft',
         });
@@ -198,6 +218,7 @@ export function CommissionRuleEditorSheet({
       poolMode,
       poolValue,
       minProjectRevenueUsd: existing.minProjectRevenueUsd,
+      ...guardPayload,
       rolePercentages: rolesToMap(roles),
       status: 'draft',
     });
@@ -210,6 +231,10 @@ export function CommissionRuleEditorSheet({
       toast.error(`Role percentages must sum to 100 (currently ${splitsTotal.toFixed(2)}).`);
       return;
     }
+    if (!guardrailsValid) {
+      toast.error('Per-person cap must be greater than or equal to the floor.');
+      return;
+    }
     try {
       let targetId: string;
       if (mode === 'edit' && existing && existing.status === 'draft') {
@@ -217,6 +242,7 @@ export function CommissionRuleEditorSheet({
         await updateMutation.mutateAsync({
           poolMode,
           poolValue,
+          ...guardPayload,
           rolePercentages: rolesToMap(roles),
         });
       } else if (mode === 'edit' && existing) {
@@ -226,6 +252,7 @@ export function CommissionRuleEditorSheet({
           poolMode,
           poolValue,
           minProjectRevenueUsd: existing.minProjectRevenueUsd,
+          ...guardPayload,
           rolePercentages: rolesToMap(roles),
           status: 'draft',
         });
@@ -237,6 +264,7 @@ export function CommissionRuleEditorSheet({
           poolMode,
           poolValue,
           minProjectRevenueUsd: 0,
+          ...guardPayload,
           rolePercentages: rolesToMap(roles),
           status: 'draft',
         });
@@ -409,6 +437,50 @@ export function CommissionRuleEditorSheet({
                       : `Each project under this rule pays out exactly ${formatUsd(samplePoolUsd)} into the commission pool.`}
                   </p>
                 </div>
+              </Section>
+
+              {/* Payout guardrails */}
+              <Section
+                icon={<Gauge className="h-fn-4 w-fn-4" />}
+                title="Payout guardrails"
+                hint="Optional per-person limits applied to each monthly commission share before manual adjustments. Leave blank for no limit."
+              >
+                <div className="gap-fn-3 grid grid-cols-1 sm:grid-cols-2">
+                  <Field label="Minimum per person (USD)">
+                    <Input
+                      type="number"
+                      min={0}
+                      step={50}
+                      inputMode="decimal"
+                      placeholder="No minimum"
+                      value={perPersonFloor}
+                      onChange={(e) => setPerPersonFloor(e.target.value)}
+                    />
+                  </Field>
+                  <Field label="Maximum per person (USD)">
+                    <Input
+                      type="number"
+                      min={0}
+                      step={50}
+                      inputMode="decimal"
+                      placeholder="No cap"
+                      value={perPersonCap}
+                      onChange={(e) => setPerPersonCap(e.target.value)}
+                    />
+                  </Field>
+                </div>
+                {!guardrailsValid && (
+                  <div className="rounded-fn-xs border-fn-warning/30 bg-fn-warning-soft/40 text-fn-warning-soft-fg px-fn-3 py-fn-2 gap-fn-2 flex items-center border text-[12px]">
+                    <AlertCircle className="h-fn-3_5 w-fn-3_5" />
+                    <span className="font-fn-medium">
+                      The cap must be greater than or equal to the floor.
+                    </span>
+                  </div>
+                )}
+                <p className="text-fn-fg-faint text-[11.5px]">
+                  The floor only lifts shares that already earned something this month; it never
+                  pays a non-participant. The cap trims any share above the ceiling.
+                </p>
               </Section>
 
               {/* Pool split */}
@@ -883,6 +955,14 @@ function CompareRow({
 }
 
 /* ───────────────────────── Helpers ───────────────────────── */
+
+/** Parse a guardrail input: blank / non-finite / negative → null (no bound). */
+function parseGuard(raw: string): number | null {
+  if (raw.trim() === '') return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return n;
+}
 
 function rolesToMap(roles: Array<{ key: string; pct: number }>): Record<string, number> {
   const out: Record<string, number> = {};

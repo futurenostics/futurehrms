@@ -24,6 +24,14 @@ export interface CalcRuleSnapshot {
   poolMode: 'percentage' | 'fixed';
   poolValue: number;
   minProjectRevenueUsd: number;
+  /**
+   * Per-person payout guardrails. null = no bound.
+   *   - floor raises an eligible (non-zero) share up to the minimum;
+   *   - cap clamps a share down to the ceiling.
+   * Applied to each assignment's calculated share below.
+   */
+  perPersonFloorUsd?: number | null;
+  perPersonCapUsd?: number | null;
 }
 
 export interface CalcAssignment {
@@ -126,7 +134,7 @@ export function calcProjectLineItems(project: CalcProject, options: CalcOptions)
   const monthShare = (totalPool * overlapDays) / totalActiveDays;
 
   return project.assignments.map((a) => {
-    const calculatedAmountUsd = (monthShare * a.percentage) / 100;
+    const rawShare = (monthShare * a.percentage) / 100;
     return {
       projectId: project.id,
       employeeId: a.employeeId,
@@ -135,9 +143,27 @@ export function calcProjectLineItems(project: CalcProject, options: CalcOptions)
       baseRevenueUsd: project.revenueUsd,
       monthFractionNumerator: overlapDays,
       monthFractionDenominator: daysInMonth,
-      calculatedAmountUsd: roundUsd(calculatedAmountUsd),
+      calculatedAmountUsd: applyGuardrails(roundUsd(rawShare), project.rule),
     };
   });
+}
+
+/**
+ * Clamp a per-person calculated share to the rule's payout guardrails.
+ * The floor only lifts an eligible (already non-zero) share so that
+ * people who earned nothing this month aren't handed the minimum; the
+ * cap always clamps down. Cap is assumed >= floor (validated at the
+ * API layer). Both are optional — null/undefined means no bound.
+ */
+function applyGuardrails(amount: number, rule: CalcRuleSnapshot): number {
+  let out = amount;
+  if (rule.perPersonFloorUsd != null && out > 0 && out < rule.perPersonFloorUsd) {
+    out = rule.perPersonFloorUsd;
+  }
+  if (rule.perPersonCapUsd != null && out > rule.perPersonCapUsd) {
+    out = rule.perPersonCapUsd;
+  }
+  return roundUsd(out);
 }
 
 /**
