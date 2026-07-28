@@ -3,10 +3,12 @@ import type { Response } from 'express';
 import {
   commissionLineItemAdjustSchema,
   commissionLineItemManualCreateSchema,
+  commissionRunAnalyticsQuerySchema,
   commissionRunApproveSchema,
   commissionRunCreateSchema,
   commissionRunListQuerySchema,
   commissionRunRejectSchema,
+  commissionRunsTrendQuerySchema,
   commissionRunSubmitSchema,
 } from '@futurenostics/types';
 import { CurrentUser } from '../../core/auth/decorators/current-user.decorator';
@@ -25,10 +27,34 @@ export class CommissionRunsController {
     return this.runs.list(user, query);
   }
 
+  /**
+   * Cross-run trend (period-over-period). Declared before the `:id`
+   * routes so the static `analytics/trend` path isn't shadowed by the
+   * `:id` param matcher.
+   */
+  @Get('analytics/trend')
+  @RequirePermission('commissions:view_runs')
+  async trend(@CurrentUser() user: AuthenticatedUser, @Query() rawQuery: Record<string, unknown>) {
+    const query = commissionRunsTrendQuerySchema.parse(rawQuery);
+    return this.runs.runsTrend(user, query);
+  }
+
   @Get(':id')
   @RequirePermission('commissions:view_runs')
   async findOne(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.runs.findOne(user, id);
+  }
+
+  /** Per-run rollups + top-earner leaderboard. */
+  @Get(':id/analytics')
+  @RequirePermission('commissions:view_runs')
+  async analytics(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Query() rawQuery: Record<string, unknown>,
+  ) {
+    const query = commissionRunAnalyticsQuerySchema.parse(rawQuery);
+    return this.runs.runAnalytics(user, id, query);
   }
 
   /**

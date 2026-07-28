@@ -35,9 +35,13 @@ import {
   type CommissionRunApproveInput,
   type CommissionRunCreateInput,
   type CommissionRunDetail,
+  type CommissionRunAnalytics,
+  type CommissionRunAnalyticsQuery,
   type CommissionRunListQuery,
   type CommissionRunListResponse,
   type CommissionRunRejectInput,
+  type CommissionRunsTrend,
+  type CommissionRunsTrendQuery,
   type CommissionRunStatus,
   type CommissionRunSubmitInput,
   type CommissionRunSummary,
@@ -980,6 +984,185 @@ export class CommissionRunsService {
         monthLabel: monthLabel(m),
         totalUsd: byMonth.get(m) ?? 0,
       })),
+    };
+  }
+
+  /* ---------- Analytics / rollups ---------- */
+
+  /**
+   * Per-run rollups: top-earner leaderboard plus totals grouped by
+   * department, project category, and role. Read-only; gated on
+   * `view_runs` like the rest of the run detail surface. Amounts use
+   * `finalAmountUsd` so adjustments and manual lines are reflected.
+   */
+  async runAnalytics(
+    viewer: AuthenticatedUser,
+    id: string,
+    query: CommissionRunAnalyticsQuery,
+  ): Promise<CommissionRunAnalytics> {
+    this.requireRunsView(viewer);
+    const run = await prisma.commissionRun.findUnique({
+      where: { id },
+      include: COMMISSION_RUN_INCLUDE,
+    });
+    if (!run) throw new NotFoundException('Commission run not found');
+
+    const total = roundUsd(run.lineItems.reduce((s, li) => s + Number(li.finalAmountUsd), 0));
+
+    // Per-employee leaderboard.
+    type EmpAgg = { fullName: string; eid: string; departmentName: string | null; total: number };
+    const byEmployee = new Map<string, EmpAgg>();
+    // Grouped rollups keyed by dept / category / role.
+    const deptAgg = new Map<string, { label: string; total: number; employees: Set<string> }>();
+    const catAgg = new Map<
+      string,
+      { label: string; color: string | null; total: number; employees: Set<string> }
+    >();
+    const roleAgg = new Map<string, { total: number; employees: Set<string> }>();
+
+    for (const li of run.lineItems) {
+      const amount = Number(li.finalAmountUsd);
+
+      const emp = byEmployee.get(li.employeeId) ?? {
+        fullName: li.employee.fullName,
+        eid: li.employee.eid,
+        departmentName: li.employee.department?.name ?? null,
+        total: 0,
+      };
+      emp.total += amount;
+      byEmployee.set(li.employeeId, emp);
+
+      const deptName = li.employee.department?.name ?? 'Unassigned';
+      const dept = deptAgg.get(deptName) ?? { label: deptName, total: 0, employees: new Set() };
+      dept.total += amount;
+      dept.employees.add(li.employeeId);
+      deptAgg.set(deptName, dept);
+
+      const cat = catAgg.get(li.project.category.id) ?? {
+        label: li.project.category.name,
+        color: li.project.category.color,
+        total: 0,
+        employees: new Set(),
+      };
+      cat.total += amount;
+      cat.employees.add(li.employeeId);
+      catAgg.set(li.project.category.id, cat);
+
+      const role = roleAgg.get(li.roleName) ?? { total: 0, employees: new Set() };
+      role.total += amount;
+      role.employees.add(li.employeeId);
+      roleAgg.set(li.roleName, role);
+    }
+
+    const topEarners = Array.from(byEmployee.entries())
+      .map(([employeeId, e]) => ({
+        employeeId,
+        fullName: e.fullName,
+        eid: e.eid,
+        departmentName: e.departmentName,
+        totalUsd: roundUsd(e.total),
+        shareOfRun: total > 0 ? roundUsd((e.total / total) * 100) / 100 : 0,
+      }))
+      .sort((a, b) => b.totalUsd - a.totalUsd)
+      .slice(0, query.topN);
+
+    const byDepartment = Array.from(deptAgg.entries())
+      .map(([key, d]) => ({
+        key,
+        label: d.label,
+        color: null,
+        totalUsd: roundUsd(d.total),
+        recipientCount: d.employees.size,
+      }))
+      .sort((a, b) => b.totalUsd - a.totalUsd);
+
+    const byCategory = Array.from(catAgg.entries())
+      .map(([key, c]) => ({
+        key,
+        label: c.label,
+        color: c.color,
+        totalUsd: roundUsd(c.total),
+        recipientCount: c.employees.size,
+      }))
+      .sort((a, b) => b.totalUsd - a.totalUsd);
+
+    const byRole = Array.from(roleAgg.entries())
+      .map(([key, r]) => ({
+        key,
+        label: key,
+        color: null,
+        totalUsd: roundUsd(r.total),
+        recipientCount: r.employees.size,
+      }))
+      .sort((a, b) => b.totalUsd - a.totalUsd);
+
+    return {
+      runId: run.id,
+      monthKey: run.monthKey,
+      monthLabel: monthLabel(run.monthKey),
+      status: run.status as CommissionRunStatus,
+      totalUsd: total,
+      recipientCount: byEmployee.size,
+      projectCount: new Set(run.lineItems.map((li) => li.projectId)).size,
+      topEarners,
+      byDepartment,
+      byCategory,
+      byRole,
+    };
+  }
+
+  /**
+   * Cross-run trend for period-over-period analysis: one point per
+   * month over the trailing `monthsBack` window, whether or not a run
+   * exists. Read-only; gated on `view_runs`.
+   */
+  async runsTrend(
+    viewer: AuthenticatedUser,
+    query: CommissionRunsTrendQuery,
+  ): Promise<CommissionRunsTrend> {
+    this.requireRunsView(viewer);
+
+    const months: string[] = [];
+    const now = new Date();
+    for (let i = 0; i < query.monthsBack; i += 1) {
+      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+      months.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`);
+    }
+    months.reverse();
+
+    const runs = await prisma.commissionRun.findMany({
+      where: { monthKey: { in: months } },
+      select: {
+        monthKey: true,
+        status: true,
+        lineItems: { select: { finalAmountUsd: true, employeeId: true } },
+      },
+    });
+
+    const byMonth = new Map(runs.map((r) => [r.monthKey, r]));
+
+    return {
+      points: months.map((m) => {
+        const r = byMonth.get(m);
+        if (!r) {
+          return {
+            monthKey: m,
+            monthLabel: monthLabel(m),
+            status: null,
+            totalUsd: 0,
+            recipientCount: 0,
+          };
+        }
+        const totalUsd = roundUsd(r.lineItems.reduce((s, li) => s + Number(li.finalAmountUsd), 0));
+        const recipientCount = new Set(r.lineItems.map((li) => li.employeeId)).size;
+        return {
+          monthKey: m,
+          monthLabel: monthLabel(m),
+          status: r.status as CommissionRunStatus,
+          totalUsd,
+          recipientCount,
+        };
+      }),
     };
   }
 

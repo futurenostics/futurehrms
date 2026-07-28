@@ -20,7 +20,9 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type {
+  CommissionLeaderboardRow,
   CommissionLineItemPublic,
+  CommissionRollupRow,
   CommissionRunDetail,
   CommissionRunStatus,
 } from '@futurenostics/types';
@@ -44,6 +46,7 @@ import {
   useAddLineItem,
   useAdjustLineItem,
   useCommissionRun,
+  useCommissionRunAnalytics,
   useRecalculateCommissionRun,
   useRejectCommissionRun,
   useRemoveLineItem,
@@ -147,6 +150,9 @@ export default function CommissionRunDetailPage() {
 
         {/* KPI strip */}
         <KpiStrip run={run} />
+
+        {/* Insights — leaderboard + rollups */}
+        <InsightsSection runId={run.id} />
 
         {/* Line items table */}
         <LineItemsTable run={run} canAdjust={canAdjust && run.status === 'draft'} />
@@ -1043,6 +1049,123 @@ function AddLineItemDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/* ───────────────────────── Insights ───────────────────────── */
+
+function InsightsSection({ runId }: { runId: string }) {
+  const query = useCommissionRunAnalytics(runId, 10);
+  const data = query.data;
+
+  if (query.isPending) {
+    return <Skeleton className="h-[280px] w-full" />;
+  }
+  // Nothing to chart when the run has no line items.
+  if (!data || data.totalUsd === 0) return null;
+
+  return (
+    <div className="rounded-fn-sm border-fn-border bg-fn-bg-panel overflow-hidden border">
+      <div className="border-fn-divider px-fn-5 py-fn-3_5 gap-fn-2 flex flex-wrap items-center border-b">
+        <h2 className="text-fn-fg font-fn-semibold text-[14px]">Insights</h2>
+        <span className="text-fn-fg-faint ml-auto text-[11.5px]">
+          {formatUsd(data.totalUsd)} across {data.recipientCount}{' '}
+          {data.recipientCount === 1 ? 'recipient' : 'recipients'} · {data.projectCount} projects
+        </span>
+      </div>
+      <div className="gap-fn-5 p-fn-5 grid grid-cols-1 lg:grid-cols-2">
+        {/* Leaderboard */}
+        <div className="gap-fn-3 flex flex-col">
+          <h3 className="text-fn-fg-faint font-fn-semibold tracking-fn-uppercase-tight text-[10.5px] uppercase">
+            Top earners
+          </h3>
+          <div className="gap-fn-2 flex flex-col">
+            {data.topEarners.map((row, idx) => (
+              <LeaderboardRow key={row.employeeId} rank={idx + 1} row={row} />
+            ))}
+          </div>
+        </div>
+
+        {/* Rollups */}
+        <div className="gap-fn-4 flex flex-col">
+          <RollupList title="By department" rows={data.byDepartment} />
+          <RollupList title="By category" rows={data.byCategory} />
+          <RollupList title="By role" rows={data.byRole} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LeaderboardRow({ rank, row }: { rank: number; row: CommissionLeaderboardRow }) {
+  return (
+    <div className="gap-fn-2_5 flex items-center">
+      <span className="text-fn-fg-faint font-fn-semibold w-fn-4 shrink-0 text-right text-[11px] tabular-nums">
+        {rank}
+      </span>
+      <span
+        aria-hidden
+        className="rounded-fn-xs bg-fn-icon-tile text-fn-icon-tile-fg font-fn-semibold h-fn-6 w-fn-6 inline-flex shrink-0 items-center justify-center text-[10.5px]"
+      >
+        {initialsOf(row.fullName)}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="text-fn-fg font-fn-medium truncate text-[12.5px]">{row.fullName}</div>
+        <div className="text-fn-fg-faint truncate text-[10.5px]">
+          {row.departmentName ?? 'Unassigned'}
+        </div>
+      </div>
+      <div className="flex shrink-0 flex-col items-end">
+        <span className="text-fn-fg font-fn-semibold text-[12.5px] tabular-nums">
+          {formatUsd(row.totalUsd)}
+        </span>
+        <span className="text-fn-fg-faint text-[10.5px] tabular-nums">
+          {Math.round(row.shareOfRun * 100)}% of run
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function RollupList({ title, rows }: { title: string; rows: CommissionRollupRow[] }) {
+  if (rows.length === 0) return null;
+  const max = Math.max(...rows.map((r) => r.totalUsd), 1);
+  return (
+    <div className="gap-fn-2 flex flex-col">
+      <h3 className="text-fn-fg-faint font-fn-semibold tracking-fn-uppercase-tight text-[10.5px] uppercase">
+        {title}
+      </h3>
+      <div className="gap-fn-2 flex flex-col">
+        {rows.map((r) => (
+          <div key={r.key} className="gap-fn-1 flex flex-col">
+            <div className="gap-fn-2 flex items-center justify-between">
+              <div className="gap-fn-1_5 flex min-w-0 items-center">
+                {r.color && (
+                  <span
+                    aria-hidden
+                    className="rounded-fn-full h-fn-2 w-fn-2 shrink-0"
+                    style={{ backgroundColor: r.color }}
+                  />
+                )}
+                <span className="text-fn-fg truncate text-[12px]">{r.label}</span>
+                <span className="text-fn-fg-faint shrink-0 text-[10.5px]">
+                  · {r.recipientCount}
+                </span>
+              </div>
+              <span className="text-fn-fg font-fn-medium shrink-0 text-[12px] tabular-nums">
+                {formatUsd(r.totalUsd)}
+              </span>
+            </div>
+            <div className="bg-fn-bg-inset rounded-fn-full h-fn-1_5 w-full overflow-hidden">
+              <div
+                className="bg-fn-accent rounded-fn-full h-full"
+                style={{ width: `${(r.totalUsd / max) * 100}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
