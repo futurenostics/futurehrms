@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import {
   commissionLineItemAdjustSchema,
+  commissionLineItemManualCreateSchema,
   commissionRunApproveSchema,
   commissionRunCreateSchema,
   commissionRunListQuerySchema,
@@ -76,6 +77,29 @@ export class CommissionRunsController {
   ) {
     const input = commissionLineItemAdjustSchema.parse(body);
     return this.runs.adjustLineItem(user, id, lineItemId, input);
+  }
+
+  /** Manually add a recipient the calc engine didn't generate (draft only). */
+  @Post(':id/line-items')
+  @RequirePermission('commissions:adjust_line_item')
+  async addLineItem(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const input = commissionLineItemManualCreateSchema.parse(body);
+    return this.runs.addManualLineItem(user, id, input);
+  }
+
+  /** Remove a line item from a draft run. */
+  @Delete(':id/line-items/:lineItemId')
+  @RequirePermission('commissions:adjust_line_item')
+  async removeLineItem(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('lineItemId') lineItemId: string,
+  ) {
+    return this.runs.removeLineItem(user, id, lineItemId);
   }
 
   @Post(':id/submit')

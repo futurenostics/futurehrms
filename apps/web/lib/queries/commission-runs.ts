@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type {
   CommissionLineItemAdjustInput,
+  CommissionLineItemManualCreateInput,
   CommissionRunApproveInput,
   CommissionRunCreateInput,
   CommissionRunDetail,
@@ -85,6 +86,29 @@ export function useAdjustLineItem(runId: string) {
           body: JSON.stringify(input.data),
         },
       ),
+    onSuccess: () => invalidateRunQueries(qc, runId),
+  });
+}
+
+export function useAddLineItem(runId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CommissionLineItemManualCreateInput) =>
+      apiFetch<CommissionRunDetail>(`/api/commission-runs/${runId}/line-items`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => invalidateRunQueries(qc, runId),
+  });
+}
+
+export function useRemoveLineItem(runId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (lineItemId: string) =>
+      apiFetch<CommissionRunDetail>(`/api/commission-runs/${runId}/line-items/${lineItemId}`, {
+        method: 'DELETE',
+      }),
     onSuccess: () => invalidateRunQueries(qc, runId),
   });
 }

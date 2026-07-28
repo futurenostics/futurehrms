@@ -14,6 +14,8 @@ import {
   PauseCircle,
   PlayCircle,
   Send,
+  Trash2,
+  UserPlus,
   XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -26,6 +28,7 @@ import { AppShell } from '@/components/shell/app-shell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Combobox } from '@/components/ui/combobox';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
@@ -38,12 +41,16 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { ApproveLockDialog } from '@/components/commissions/approve-lock-dialog';
 import {
+  useAddLineItem,
   useAdjustLineItem,
   useCommissionRun,
   useRecalculateCommissionRun,
   useRejectCommissionRun,
+  useRemoveLineItem,
   useSubmitCommissionRun,
 } from '@/lib/queries/commission-runs';
+import { useProjectsList } from '@/lib/queries/projects';
+import { useEmployeesList } from '@/lib/queries/employees';
 import { usePermissions } from '@/hooks/use-permissions';
 import { cn } from '@/lib/utils';
 
@@ -374,6 +381,7 @@ function KpiCard({
 /* ───────────────────────── Line items table ───────────────────────── */
 
 function LineItemsTable({ run, canAdjust }: { run: CommissionRunDetail; canAdjust: boolean }) {
+  const [addOpen, setAddOpen] = React.useState(false);
   // Group line items by employee for the per-employee subtotal rendering.
   const grouped = React.useMemo(() => {
     const byEmployee = new Map<
@@ -405,14 +413,21 @@ function LineItemsTable({ run, canAdjust }: { run: CommissionRunDetail; canAdjus
         <span className="text-fn-fg-faint ml-auto text-[11.5px]">
           Grouped by person · sorted by total share desc
         </span>
+        {canAdjust && (
+          <Button variant="secondary" size="sm" onClick={() => setAddOpen(true)}>
+            <UserPlus className="h-fn-4 w-fn-4" /> Add recipient
+          </Button>
+        )}
       </div>
+
+      <AddLineItemDialog open={addOpen} onOpenChange={setAddOpen} run={run} />
 
       {run.lineItems.length === 0 ? (
         <div className="gap-fn-2 py-fn-16 flex flex-col items-center text-center">
           <p className="text-fn-fg font-fn-semibold text-[14px]">No line items</p>
           <p className="text-fn-fg-muted max-w-[420px] text-[12.5px]">
             No projects qualified for this month. Recalculate after the project status changes land,
-            or pick a different month.
+            {canAdjust ? ' add a recipient manually,' : ''} or pick a different month.
           </p>
         </div>
       ) : (
@@ -498,6 +513,20 @@ function LineItemRow({
   canAdjust: boolean;
 }) {
   const adjustMutation = useAdjustLineItem(runId);
+  const removeMutation = useRemoveLineItem(runId);
+
+  // A manually-added line has no proration math (numerator 0); calc and
+  // carry-forward rows always overlap at least one day.
+  const isManual = lineItem.monthFractionNumerator === 0;
+
+  async function remove() {
+    try {
+      await removeMutation.mutateAsync(lineItem.id);
+      toast.success('Recipient removed.');
+    } catch (err) {
+      toast.error((err as Error).message);
+    }
+  }
 
   async function toggleHold() {
     try {
@@ -578,6 +607,27 @@ function LineItemRow({
             <Badge tone="info" className="self-start">
               Carry-forward from previous run
             </Badge>
+          )}
+          {isManual && (
+            <div className="gap-fn-2 flex items-center">
+              <Badge tone="accent" className="self-start">
+                Manually added
+              </Badge>
+              {canAdjust && (
+                <button
+                  type="button"
+                  onClick={remove}
+                  disabled={removeMutation.isPending}
+                  aria-label="Remove recipient"
+                  className="text-fn-fg-faint hover:text-fn-danger gap-fn-0_5 inline-flex cursor-pointer items-center text-[10.5px] transition-colors disabled:cursor-not-allowed"
+                >
+                  <Trash2 className="h-fn-3 w-fn-3" /> Remove
+                </button>
+              )}
+            </div>
+          )}
+          {lineItem.manualAdjustmentNote && isManual && (
+            <span className="text-fn-fg-faint text-[10.5px]">{lineItem.manualAdjustmentNote}</span>
           )}
           {lineItem.isHeld && (
             <span className="text-fn-warning-soft-fg text-[10.5px]">
@@ -839,6 +889,156 @@ function RejectDialog({
             }}
           >
             <XCircle className="h-fn-4 w-fn-4" /> Reject
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AddLineItemDialog({
+  open,
+  onOpenChange,
+  run,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  run: CommissionRunDetail;
+}) {
+  const add = useAddLineItem(run.id);
+  const projectsQuery = useProjectsList({ limit: 500 });
+  const employeesQuery = useEmployeesList({ limit: 500 });
+
+  const [projectId, setProjectId] = React.useState('');
+  const [employeeId, setEmployeeId] = React.useState('');
+  const [roleName, setRoleName] = React.useState('');
+  const [amount, setAmount] = React.useState('');
+  const [note, setNote] = React.useState('');
+
+  React.useEffect(() => {
+    if (!open) {
+      setProjectId('');
+      setEmployeeId('');
+      setRoleName('');
+      setAmount('');
+      setNote('');
+    }
+  }, [open]);
+
+  const projectOptions = React.useMemo(
+    () =>
+      (projectsQuery.data?.items ?? []).map((p) => ({
+        value: p.id,
+        label: p.name,
+        description: p.clientName,
+      })),
+    [projectsQuery.data],
+  );
+  const employeeOptions = React.useMemo(
+    () =>
+      (employeesQuery.data?.items ?? []).map((e) => ({
+        value: e.id,
+        label: e.fullName,
+        description: e.eid,
+      })),
+    [employeesQuery.data],
+  );
+
+  const amountNum = Number(amount);
+  const amountValid = amount.trim() !== '' && Number.isFinite(amountNum) && amountNum !== 0;
+  const canSave = Boolean(projectId && employeeId && roleName.trim() && amountValid && note.trim());
+
+  async function save() {
+    if (!canSave) return;
+    try {
+      await add.mutateAsync({
+        projectId,
+        employeeId,
+        roleName: roleName.trim(),
+        amountUsd: amountNum,
+        note: note.trim(),
+      });
+      toast.success('Recipient added.');
+      onOpenChange(false);
+    } catch (err) {
+      toast.error((err as Error).message);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add a recipient</DialogTitle>
+          <DialogDescription>
+            Manually credit someone the calc engine didn&rsquo;t generate. The full amount is
+            recorded as a manual adjustment with a required reason. A recalculate will remove it.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="gap-fn-3 py-fn-2 flex flex-col">
+          <div className="gap-fn-1_5 flex flex-col">
+            <label className="text-fn-fg font-fn-medium text-[12.5px]">Project</label>
+            <Combobox
+              options={projectOptions}
+              value={projectId}
+              onValueChange={setProjectId}
+              loading={projectsQuery.isPending}
+              placeholder="Pick a project"
+              emptyLabel="projects"
+            />
+          </div>
+          <div className="gap-fn-1_5 flex flex-col">
+            <label className="text-fn-fg font-fn-medium text-[12.5px]">Employee</label>
+            <Combobox
+              options={employeeOptions}
+              value={employeeId}
+              onValueChange={setEmployeeId}
+              loading={employeesQuery.isPending}
+              placeholder="Pick an employee"
+              emptyLabel="employees"
+            />
+          </div>
+          <div className="gap-fn-3 grid grid-cols-2">
+            <div className="gap-fn-1_5 flex flex-col">
+              <label className="text-fn-fg font-fn-medium text-[12.5px]">Role</label>
+              <Input
+                value={roleName}
+                onChange={(e) => setRoleName(e.target.value)}
+                placeholder="e.g. winner"
+                maxLength={40}
+              />
+            </div>
+            <div className="gap-fn-1_5 flex flex-col">
+              <label className="text-fn-fg font-fn-medium text-[12.5px]">Amount (USD)</label>
+              <Input
+                type="number"
+                step="0.01"
+                inputMode="decimal"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="0.00"
+                className="text-right tabular-nums"
+              />
+            </div>
+          </div>
+          <div className="gap-fn-1_5 flex flex-col">
+            <label className="text-fn-fg font-fn-medium text-[12.5px]">
+              Reason <span className="text-fn-danger">*</span>
+            </label>
+            <Textarea
+              rows={2}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Why is this recipient being added manually?"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button disabled={!canSave || add.isPending} onClick={save}>
+            <UserPlus className="h-fn-4 w-fn-4" /> Add recipient
           </Button>
         </DialogFooter>
       </DialogContent>

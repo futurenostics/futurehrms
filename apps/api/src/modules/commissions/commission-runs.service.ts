@@ -31,6 +31,7 @@ import { Prisma } from '@prisma/client';
 import {
   COMMISSION_RUN_TRANSITIONS,
   type CommissionLineItemAdjustInput,
+  type CommissionLineItemManualCreateInput,
   type CommissionRunApproveInput,
   type CommissionRunCreateInput,
   type CommissionRunDetail,
@@ -435,6 +436,122 @@ export class CommissionRunsService {
         projectId: existing.projectId,
         priorFinalUsd: Number(existing.finalAmountUsd),
         newFinalUsd: finalAmountUsd,
+      },
+      { actorId: viewer.id },
+    );
+
+    return this.findOne(viewer, runId);
+  }
+
+  /**
+   * Manually add a recipient the calc engine didn't generate (draft
+   * runs only). The amount goes entirely into `manualAdjustmentUsd`
+   * with a required note; `calculatedAmountUsd` is 0 and the month
+   * fraction reads 0/days-in-month since there's no proration math.
+   *
+   * A recalculate wipes manual lines along with everything else — the
+   * caller is warned about that on the recalc button, same as manual
+   * adjustments.
+   */
+  async addManualLineItem(
+    viewer: AuthenticatedUser,
+    runId: string,
+    input: CommissionLineItemManualCreateInput,
+  ): Promise<CommissionRunDetail> {
+    this.require('commissions:adjust_line_item', viewer);
+    const run = await prisma.commissionRun.findUnique({ where: { id: runId } });
+    if (!run) throw new NotFoundException('Commission run not found');
+    this.assertDraft(run.status);
+
+    const project = await prisma.project.findUnique({ where: { id: input.projectId } });
+    if (!project) throw new BadRequestException('Unknown project');
+    const employee = await prisma.employee.findUnique({ where: { id: input.employeeId } });
+    if (!employee) throw new BadRequestException('Unknown employee');
+
+    const duplicate = await prisma.commissionLineItem.findUnique({
+      where: {
+        runId_projectId_employeeId_roleName: {
+          runId,
+          projectId: input.projectId,
+          employeeId: input.employeeId,
+          roleName: input.roleName,
+        },
+      },
+    });
+    if (duplicate) {
+      throw new BadRequestException(
+        `A line item already exists for this employee, project, and role on this run. ` +
+          `Adjust the existing line instead of adding a duplicate.`,
+      );
+    }
+
+    const amount = roundUsd(input.amountUsd);
+    await prisma.commissionLineItem.create({
+      data: {
+        runId,
+        projectId: input.projectId,
+        employeeId: input.employeeId,
+        roleName: input.roleName,
+        snapshotPercentage: new Prisma.Decimal(0),
+        baseRevenueUsd: project.revenueUsd,
+        monthFractionNumerator: 0,
+        monthFractionDenominator: daysInMonth(run.monthKey),
+        calculatedAmountUsd: new Prisma.Decimal(0),
+        leaveAdjustmentUsd: new Prisma.Decimal(0),
+        manualAdjustmentUsd: new Prisma.Decimal(amount),
+        manualAdjustmentNote: input.note,
+        isHeld: false,
+        finalAmountUsd: new Prisma.Decimal(amount),
+      },
+    });
+
+    this.events.emit(
+      'commission.line_item.added',
+      {
+        runId,
+        projectId: input.projectId,
+        employeeId: input.employeeId,
+        roleName: input.roleName,
+        amountUsd: amount,
+        note: input.note,
+      },
+      { actorId: viewer.id },
+    );
+
+    return this.findOne(viewer, runId);
+  }
+
+  /**
+   * Remove a line item from a draft run. Intended for manually-added
+   * lines, but any draft line can be removed — a recalculate would
+   * regenerate the calc-driven ones anyway.
+   */
+  async removeLineItem(
+    viewer: AuthenticatedUser,
+    runId: string,
+    lineItemId: string,
+  ): Promise<CommissionRunDetail> {
+    this.require('commissions:adjust_line_item', viewer);
+    const run = await prisma.commissionRun.findUnique({ where: { id: runId } });
+    if (!run) throw new NotFoundException('Commission run not found');
+    this.assertDraft(run.status);
+
+    const existing = await prisma.commissionLineItem.findUnique({ where: { id: lineItemId } });
+    if (!existing || existing.runId !== runId) {
+      throw new NotFoundException('Line item not found on this run');
+    }
+
+    await prisma.commissionLineItem.delete({ where: { id: lineItemId } });
+
+    this.events.emit(
+      'commission.line_item.removed',
+      {
+        runId,
+        lineItemId,
+        employeeId: existing.employeeId,
+        projectId: existing.projectId,
+        roleName: existing.roleName,
+        finalUsd: Number(existing.finalAmountUsd),
       },
       { actorId: viewer.id },
     );
@@ -890,6 +1007,13 @@ function formatAmount(value: number): string {
 /** Percentage as a plain decimal string ("50" / "33.33"). */
 function formatPercentage(value: number): string {
   return Number.isInteger(value) ? value.toString() : value.toFixed(2);
+}
+
+/** Number of days in the month a 'YYYY-MM' key refers to. */
+function daysInMonth(monthKey: string): number {
+  const [year, month] = monthKey.split('-').map(Number);
+  if (!year || !month) throw new Error(`Invalid monthKey: ${monthKey}`);
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
 /** 'YYYY-MM' → previous month 'YYYY-MM'. */

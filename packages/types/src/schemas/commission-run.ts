@@ -154,6 +154,23 @@ export const commissionLineItemAdjustSchema = z.object({
 });
 export type CommissionLineItemAdjustInput = z.infer<typeof commissionLineItemAdjustSchema>;
 
+/**
+ * Manually add a recipient the calc engine didn't generate (draft
+ * runs only). The whole amount lands in `manualAdjustmentUsd` with a
+ * required note; the calculated portion is 0. A reason is mandatory
+ * because a manual line has no rule/project math backing it.
+ */
+export const commissionLineItemManualCreateSchema = z.object({
+  projectId: z.string().min(1),
+  employeeId: z.string().min(1),
+  roleName: z.string().trim().min(1).max(40),
+  amountUsd: z.coerce.number().refine((n) => n !== 0, 'Amount must be non-zero'),
+  note: z.string().trim().min(1).max(500),
+});
+export type CommissionLineItemManualCreateInput = z.infer<
+  typeof commissionLineItemManualCreateSchema
+>;
+
 /* ---------- Lifecycle inputs ---------- */
 
 export const commissionRunSubmitSchema = z.object({
