@@ -941,6 +941,15 @@ model Approval {
   requiredPermission String
   decisionPolicy     String   @default("single")  // single | multi | threshold
   thresholdCount     Int?
+  /// Snapshot of the approver chain at submit time (immutable for the
+  /// life of this approval). JSON array of { requiredPermission, label }.
+  /// null / single-element = single-stage (legacy behaviour). The
+  /// denormalised `requiredPermission` above always points at the
+  /// stage currently awaiting a decision.
+  stages             Json?
+  /// Index of the stage awaiting a decision. Advances on each approve;
+  /// when it passes the last stage the approval resolves to 'approved'.
+  currentStage       Int      @default(0)
   /// Display metadata captured at submit time — frees the inbox row
   /// from a per-render lookup against the source entity. The frontend
   /// reads { title, sub, meta, requesterName, requesterRole,
@@ -972,6 +981,9 @@ model ApprovalDecision {
   decidedById      String
   decidedBy        User     @relation(fields: [decidedById], references: [id])
   decision         String   // approve | reject
+  /// Which stage (index into Approval.stages) this decision resolved.
+  /// null for legacy single-stage rows.
+  stageIndex       Int?
   confirmationData Json?
   decidedAt        DateTime @default(now())
 

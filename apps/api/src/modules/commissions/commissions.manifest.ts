@@ -47,7 +47,11 @@ export const commissionsManifest: ModuleManifest = {
     {
       action: 'approve_run',
       description:
-        'Approve a pending commission run (separation of duties — different role than create_run)',
+        'First-level (finance) approval of a pending commission run (separation of duties — different role than create_run)',
+    },
+    {
+      action: 'final_approve_run',
+      description: 'Second-level (final) sign-off on a commission run approval chain',
     },
     {
       action: 'lock_run',
@@ -142,6 +146,7 @@ export const commissionsManifest: ModuleManifest = {
         'view_rules',
         'view_runs',
         'approve_run',
+        'final_approve_run',
         'lock_run',
         'export_run',
         'raise_dispute',

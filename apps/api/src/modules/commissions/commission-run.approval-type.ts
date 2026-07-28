@@ -47,6 +47,13 @@ export function buildCommissionRunApprovalType(
     module: 'commissions',
     decisionPolicy: 'single',
     requiredPermission: 'commissions:approve_run',
+    // Two-level sign-off: a finance reviewer approves first, then a
+    // second-level (director) approver gives final sign-off. The typed
+    // phrase (PNG 10) is enforced on the final stage only.
+    stages: [
+      { requiredPermission: 'commissions:approve_run', label: 'Finance review' },
+      { requiredPermission: 'commissions:final_approve_run', label: 'Final sign-off' },
+    ],
     // Phase 2 decision: approver may be the submitter. We surface the
     // flag downstream rather than blocking. See DECISIONS.md L401-412.
     softSoD: true,

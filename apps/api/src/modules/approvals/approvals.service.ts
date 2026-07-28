@@ -37,7 +37,10 @@ import { AuditService } from '../../core/audit/audit.service';
 import { EventBusService } from '../../core/events/event-bus.service';
 import {
   ApprovalTypeRegistry,
+  resolveStages,
   type ApprovalMetadata,
+  type ApprovalStage,
+  type ApprovalTypeDefinition,
 } from './approval-type.registry';
 
 export interface ApprovalPublic {
@@ -52,6 +55,10 @@ export interface ApprovalPublic {
   submittedAt: string;
   requiredPermission: string;
   decisionPolicy: string;
+  /** Full approver chain (snapshot). Length 1 = single-stage. */
+  stages: ApprovalStage[];
+  /** Index of the stage awaiting a decision (0-based). */
+  currentStage: number;
   metadata: ApprovalMetadata;
   resolvedAt: string | null;
   resolvedById: string | null;
@@ -62,6 +69,7 @@ export interface ApprovalPublic {
     decidedByEmail: string;
     decidedByName: string | null;
     decision: 'approve' | 'reject';
+    stageIndex: number | null;
     decidedAt: string;
     confirmationData: unknown;
   }>;
@@ -131,6 +139,11 @@ export class ApprovalsService {
       ...(input.metadataOverrides ?? {}),
     };
 
+    // Snapshot the approver chain so a later edit to the type's stages
+    // never re-routes an in-flight approval. requiredPermission points
+    // at the first stage (the inbox `for=me` filter reads it).
+    const stages = resolveStages(def);
+
     const created = await prisma.approval.create({
       data: {
         type: input.type,
@@ -139,9 +152,11 @@ export class ApprovalsService {
         status: 'pending',
         submittedById: input.submittedById,
         submittedAt: new Date(),
-        requiredPermission: def.requiredPermission,
+        requiredPermission: stages[0]!.requiredPermission,
         decisionPolicy: def.decisionPolicy,
         thresholdCount: def.thresholdCount ?? null,
+        stages: stages as never,
+        currentStage: 0,
         metadata: metadata as never,
       },
     });
@@ -170,16 +185,19 @@ export class ApprovalsService {
 
   /* ---------- Approve ---------- */
 
-  async approve(
-    viewer: AuthenticatedUser,
-    id: string,
-    input: DecisionInput,
-  ): Promise<Approval> {
+  async approve(viewer: AuthenticatedUser, id: string, input: DecisionInput): Promise<Approval> {
     const approval = await this.requirePendingApproval(id);
     const def = this.types.require(approval.type);
 
-    if (!viewer.permissions.includes(def.requiredPermission)) {
-      throw new ForbiddenException(`${def.requiredPermission} required to approve this`);
+    const stages = this.readStages(approval, def);
+    const stageIndex = approval.currentStage;
+    const stage = stages[stageIndex] ?? stages[stages.length - 1]!;
+    const isFinalStage = stageIndex >= stages.length - 1;
+
+    // Permission is checked against the CURRENT stage, not the type's
+    // default — that's what makes a chain sequential.
+    if (!viewer.permissions.includes(stage.requiredPermission)) {
+      throw new ForbiddenException(`${stage.requiredPermission} required to approve this stage`);
     }
 
     // SoD enforcement — hard block if the type opted out of soft SoD.
@@ -195,8 +213,9 @@ export class ApprovalsService {
       throw new NotFoundException('Source entity not found — cancel this approval instead');
     }
 
-    // Type-specific validation (typed phrase, notes-required, etc.)
-    if (def.validateConfirmation) {
+    // Typed-phrase / type-specific validation runs only on the FINAL
+    // stage — intermediate approvals are a single confirming click.
+    if (isFinalStage && def.validateConfirmation) {
       def.validateConfirmation({ source, confirmationData: input.confirmationData });
     }
 
@@ -204,6 +223,7 @@ export class ApprovalsService {
       ...(input.confirmationData as Record<string, unknown> | undefined),
       notes: input.notes ?? null,
       approverIsSubmitter,
+      stageIndex,
     };
 
     const decision = await prisma.approvalDecision.create({
@@ -211,11 +231,48 @@ export class ApprovalsService {
         approvalId: approval.id,
         decidedById: viewer.id,
         decision: 'approve',
+        stageIndex,
         confirmationData: decisionPayload as never,
       },
     });
 
-    // Single policy: first approve resolves.
+    // Not the last stage yet → advance the pointer + re-point the
+    // denormalised requiredPermission at the next stage's approver, and
+    // leave the approval pending. No side effects fire until the final
+    // stage resolves.
+    if (!isFinalStage) {
+      const nextStage = stageIndex + 1;
+      const advanced = await prisma.approval.update({
+        where: { id: approval.id },
+        data: {
+          currentStage: nextStage,
+          requiredPermission: stages[nextStage]!.requiredPermission,
+        },
+      });
+      this.events.emit(
+        'approval.stage_approved',
+        {
+          approvalId: advanced.id,
+          type: advanced.type,
+          sourceId: advanced.sourceId,
+          stageIndex,
+          nextStage,
+          decidedById: viewer.id,
+        },
+        { actorId: viewer.id },
+      );
+      await this.audit.record({
+        module: 'approvals',
+        entity: 'Approval',
+        entityId: advanced.id,
+        action: 'stage_approved',
+        after: { stageIndex, nextStage },
+        actorId: viewer.id,
+      });
+      return advanced;
+    }
+
+    // Final stage → resolve.
     const updated = await prisma.approval.update({
       where: { id: approval.id },
       data: {
@@ -230,8 +287,8 @@ export class ApprovalsService {
       try {
         await def.onApproved({ approval: updated, source, decision });
       } catch (err) {
-        // Roll back the approval row so the source + approval don't
-        // drift. The thrown error bubbles up to the caller.
+        // Roll back to the (final) pending stage so the source + approval
+        // don't drift. The thrown error bubbles up to the caller.
         await prisma.approval.update({
           where: { id: approval.id },
           data: { status: 'pending', resolvedAt: null, resolvedById: null },
@@ -267,6 +324,28 @@ export class ApprovalsService {
     return updated;
   }
 
+  /**
+   * Read the stage chain for an approval — the snapshot persisted at
+   * submit time, falling back to the type's current chain for legacy
+   * rows created before staging existed.
+   */
+  private readStages(
+    approval: Approval & { stages?: unknown },
+    def: ApprovalTypeDefinition,
+  ): ApprovalStage[] {
+    const raw = (approval as { stages?: unknown }).stages;
+    if (Array.isArray(raw) && raw.length > 0) {
+      return raw.map((r) => {
+        const row = (r ?? {}) as { requiredPermission?: unknown; label?: unknown };
+        return {
+          requiredPermission: String(row.requiredPermission ?? def.requiredPermission),
+          label: String(row.label ?? 'Approval'),
+        };
+      });
+    }
+    return resolveStages(def);
+  }
+
   /* ---------- Reject ---------- */
 
   async reject(
@@ -276,8 +355,12 @@ export class ApprovalsService {
   ): Promise<Approval> {
     const approval = await this.requirePendingApproval(id);
     const def = this.types.require(approval.type);
-    if (!viewer.permissions.includes(def.requiredPermission)) {
-      throw new ForbiddenException(`${def.requiredPermission} required to reject this`);
+    const stages = this.readStages(approval, def);
+    const stage = stages[approval.currentStage] ?? stages[stages.length - 1]!;
+    // Any approver on the current stage can reject — a rejection at any
+    // stage sends the whole approval back (no partial rejects).
+    if (!viewer.permissions.includes(stage.requiredPermission)) {
+      throw new ForbiddenException(`${stage.requiredPermission} required to reject this stage`);
     }
     if (!input.reason || input.reason.trim().length === 0) {
       throw new BadRequestException('A rejection reason is required');
@@ -293,6 +376,7 @@ export class ApprovalsService {
         approvalId: approval.id,
         decidedById: viewer.id,
         decision: 'reject',
+        stageIndex: approval.currentStage,
         confirmationData: { reason: input.reason } as never,
       },
     });
@@ -349,11 +433,7 @@ export class ApprovalsService {
 
   /* ---------- Cancel ---------- */
 
-  async cancel(
-    viewer: AuthenticatedUser,
-    id: string,
-    reason: string,
-  ): Promise<Approval> {
+  async cancel(viewer: AuthenticatedUser, id: string, reason: string): Promise<Approval> {
     const approval = await this.requirePendingApproval(id);
     const def = this.types.require(approval.type);
 
@@ -549,6 +629,8 @@ function toPublic(
     submittedAt: row.submittedAt.toISOString(),
     requiredPermission: row.requiredPermission,
     decisionPolicy: row.decisionPolicy,
+    stages: normalizeStages(row.stages, row.requiredPermission),
+    currentStage: row.currentStage,
     metadata: (row.metadata ?? {}) as ApprovalMetadata,
     resolvedAt: row.resolvedAt?.toISOString() ?? null,
     resolvedById: row.resolvedById,
@@ -559,8 +641,24 @@ function toPublic(
       decidedByEmail: d.decidedBy.email,
       decidedByName: d.decidedBy.employee?.fullName ?? null,
       decision: d.decision as 'approve' | 'reject',
+      stageIndex: d.stageIndex ?? null,
       decidedAt: d.decidedAt.toISOString(),
       confirmationData: d.confirmationData,
     })),
   };
+}
+
+/** Coerce the stored `stages` JSON into a concrete list (legacy rows
+ *  with no snapshot collapse to a single stage). */
+function normalizeStages(raw: unknown, fallbackPermission: string): ApprovalStage[] {
+  if (Array.isArray(raw) && raw.length > 0) {
+    return raw.map((r) => {
+      const row = (r ?? {}) as { requiredPermission?: unknown; label?: unknown };
+      return {
+        requiredPermission: String(row.requiredPermission ?? fallbackPermission),
+        label: String(row.label ?? 'Approval'),
+      };
+    });
+  }
+  return [{ requiredPermission: fallbackPermission, label: 'Approval' }];
 }

@@ -33,6 +33,13 @@ export interface ApproveLockDialogProps {
   run: CommissionRunSummary;
   recipientCount: number;
   heldProjectsCount: number;
+  /**
+   * Current stage of a multi-stage approval chain, or null for a
+   * single-stage approval. The typed phrase + lock summary only show
+   * on the final stage; intermediate stages are a confirming click
+   * that advances to the next approver.
+   */
+  stage?: { index: number; total: number; label: string } | null;
 }
 
 export function ApproveLockDialog({
@@ -41,6 +48,7 @@ export function ApproveLockDialog({
   run,
   recipientCount,
   heldProjectsCount,
+  stage = null,
 }: ApproveLockDialogProps) {
   const expectedPhrase = `APPROVE ${run.monthLabel.toUpperCase()}`;
   const [phrase, setPhrase] = React.useState('');
@@ -50,13 +58,25 @@ export function ApproveLockDialog({
     if (!open) setPhrase('');
   }, [open]);
 
+  // Final stage when there's no chain, or we're on the last step.
+  const isFinalStage = !stage || stage.index >= stage.total - 1;
   const phraseMatches = phrase.trim() === expectedPhrase;
+  const canApprove = isFinalStage ? phraseMatches : true;
 
   async function onApprove() {
-    if (!phraseMatches) return;
+    if (!canApprove) return;
     try {
-      await approveMutation.mutateAsync({ confirmationPhrase: phrase.trim() });
-      toast.success(`${run.monthLabel} run approved and locked.`);
+      // The backend only validates the phrase on the final stage; for
+      // intermediate stages we still send it (schema requires non-empty)
+      // but it is ignored.
+      await approveMutation.mutateAsync({
+        confirmationPhrase: isFinalStage ? phrase.trim() : expectedPhrase,
+      });
+      toast.success(
+        isFinalStage
+          ? `${run.monthLabel} run approved.`
+          : `Step approved — routed to the next approver.`,
+      );
       onOpenChange(false);
     } catch (err) {
       toast.error((err as Error).message);
@@ -74,14 +94,33 @@ export function ApproveLockDialog({
             >
               <Lock className="h-fn-3_5 w-fn-3_5" />
             </span>
-            <Badge tone="danger">Irreversible</Badge>
+            {stage && stage.total > 1 && (
+              <Badge tone="info">
+                Step {stage.index + 1} of {stage.total} · {stage.label}
+              </Badge>
+            )}
+            {isFinalStage && <Badge tone="danger">Irreversible</Badge>}
           </div>
-          <DialogTitle className="mt-fn-2">Approve &amp; lock {run.monthLabel} run?</DialogTitle>
+          <DialogTitle className="mt-fn-2">
+            {isFinalStage
+              ? `Approve & lock ${run.monthLabel} run?`
+              : `Approve ${run.monthLabel} run — ${stage?.label}?`}
+          </DialogTitle>
           <DialogDescription>
-            Approving will <strong className="text-fn-fg font-fn-semibold">permanently lock</strong>{' '}
-            all {run.projectCount} project entries. After this, corrections require a new
-            compensating run. Downstream payout actions are deferred to Phase 7 — see the queued
-            list below.
+            {isFinalStage ? (
+              <>
+                Approving will{' '}
+                <strong className="text-fn-fg font-fn-semibold">permanently lock</strong> all{' '}
+                {run.projectCount} project entries. After this, corrections require a new
+                compensating run. Downstream payout actions are deferred to Phase 7 — see the queued
+                list below.
+              </>
+            ) : (
+              <>
+                Your approval advances this run to the next approver in the chain. The final
+                approver locks it in with the typed confirmation phrase.
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -91,56 +130,68 @@ export function ApproveLockDialog({
           <SummaryCell label="Recipients" value={`${recipientCount} people`} />
         </div>
 
-        {/* Phase-7-deferred queued list */}
-        <ul className="gap-fn-1_5 flex flex-col text-[12.5px]">
-          <QueuedRow
-            icon={<Receipt className="h-fn-3_5 w-fn-3_5" />}
-            label={`Payslip PDFs generated for ${recipientCount} employees`}
-            tone="phase7"
-          />
-          <QueuedRow
-            icon={<Mail className="h-fn-3_5 w-fn-3_5" />}
-            label="Disbursement emails (React Email templates)"
-            tone="phase7"
-          />
-          <QueuedRow
-            icon={<Wallet className="h-fn-3_5 w-fn-3_5" />}
-            label="Payoneer CSV export"
-            tone="phase7"
-          />
-          {heldProjectsCount > 0 && (
+        {/* Phase-7-deferred queued list — final stage only. */}
+        {isFinalStage && (
+          <ul className="gap-fn-1_5 flex flex-col text-[12.5px]">
             <QueuedRow
-              icon={<ShieldAlert className="h-fn-3_5 w-fn-3_5" />}
-              label={`${heldProjectsCount} held ${heldProjectsCount === 1 ? 'project' : 'projects'} → carry-forward`}
-              tone="logged"
+              icon={<Receipt className="h-fn-3_5 w-fn-3_5" />}
+              label={`Payslip PDFs generated for ${recipientCount} employees`}
+              tone="phase7"
             />
-          )}
-        </ul>
+            <QueuedRow
+              icon={<Mail className="h-fn-3_5 w-fn-3_5" />}
+              label="Disbursement emails (React Email templates)"
+              tone="phase7"
+            />
+            <QueuedRow
+              icon={<Wallet className="h-fn-3_5 w-fn-3_5" />}
+              label="Payoneer CSV export"
+              tone="phase7"
+            />
+            {heldProjectsCount > 0 && (
+              <QueuedRow
+                icon={<ShieldAlert className="h-fn-3_5 w-fn-3_5" />}
+                label={`${heldProjectsCount} held ${heldProjectsCount === 1 ? 'project' : 'projects'} → carry-forward`}
+                tone="logged"
+              />
+            )}
+          </ul>
+        )}
 
-        {/* Typed-phrase confirmation */}
-        <div className="gap-fn-1_5 py-fn-2 flex flex-col">
-          <label className="text-fn-fg text-[12.5px]">
-            Type{' '}
-            <code className="bg-fn-bg-inset rounded-fn-xs px-fn-1_5 py-fn-0_25 font-fn-semibold font-mono text-[11.5px]">
-              {expectedPhrase}
-            </code>{' '}
-            to confirm
-          </label>
-          <Input
-            value={phrase}
-            onChange={(e) => setPhrase(e.target.value)}
-            placeholder={expectedPhrase}
-            autoFocus
-            className={cn(phraseMatches && 'border-fn-success focus-visible:border-fn-success')}
-          />
-        </div>
+        {/* Typed-phrase confirmation — final stage only. */}
+        {isFinalStage && (
+          <div className="gap-fn-1_5 py-fn-2 flex flex-col">
+            <label className="text-fn-fg text-[12.5px]">
+              Type{' '}
+              <code className="bg-fn-bg-inset rounded-fn-xs px-fn-1_5 py-fn-0_25 font-fn-semibold font-mono text-[11.5px]">
+                {expectedPhrase}
+              </code>{' '}
+              to confirm
+            </label>
+            <Input
+              value={phrase}
+              onChange={(e) => setPhrase(e.target.value)}
+              placeholder={expectedPhrase}
+              autoFocus
+              className={cn(phraseMatches && 'border-fn-success focus-visible:border-fn-success')}
+            />
+          </div>
+        )}
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={onApprove} disabled={!phraseMatches || approveMutation.isPending}>
-            <Lock className="h-fn-4 w-fn-4" /> Approve &amp; lock
+          <Button onClick={onApprove} disabled={!canApprove || approveMutation.isPending}>
+            {isFinalStage ? (
+              <>
+                <Lock className="h-fn-4 w-fn-4" /> Approve &amp; lock
+              </>
+            ) : (
+              <>
+                <Check className="h-fn-4 w-fn-4" /> Approve step
+              </>
+            )}
           </Button>
         </DialogFooter>
 
