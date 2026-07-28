@@ -58,6 +58,14 @@ export const commissionsManifest: ModuleManifest = {
       description: 'Send a pending commission run back to draft with a reason',
     },
     { action: 'export_run', description: 'Export a commission run to CSV' },
+    {
+      action: 'raise_dispute',
+      description: 'Flag one of your own commission line items as disputed',
+    },
+    {
+      action: 'manage_disputes',
+      description: 'View all commission disputes and resolve or reject them',
+    },
   ],
   navItems: [
     {
@@ -104,11 +112,11 @@ export const commissionsManifest: ModuleManifest = {
       requires: 'commissions:approve_run',
     },
   ],
-  auditedEntities: ['CommissionRule', 'CommissionRun', 'CommissionLineItem'],
+  auditedEntities: ['CommissionRule', 'CommissionRun', 'CommissionLineItem', 'CommissionDispute'],
   defaultRolePermissions: [
-    { roleSlug: 'employee', actions: ['view_own_breakdown'] },
-    { roleSlug: 'team_lead', actions: ['view_own_breakdown'] },
-    { roleSlug: 'department_manager', actions: ['view_own_breakdown'] },
+    { roleSlug: 'employee', actions: ['view_own_breakdown', 'raise_dispute'] },
+    { roleSlug: 'team_lead', actions: ['view_own_breakdown', 'raise_dispute'] },
+    { roleSlug: 'department_manager', actions: ['view_own_breakdown', 'raise_dispute'] },
     {
       roleSlug: 'hr_admin',
       actions: [
@@ -122,6 +130,8 @@ export const commissionsManifest: ModuleManifest = {
         'submit_run',
         'reject_run',
         'export_run',
+        'raise_dispute',
+        'manage_disputes',
       ],
     },
     {
@@ -134,6 +144,8 @@ export const commissionsManifest: ModuleManifest = {
         'approve_run',
         'lock_run',
         'export_run',
+        'raise_dispute',
+        'manage_disputes',
       ],
     },
   ],

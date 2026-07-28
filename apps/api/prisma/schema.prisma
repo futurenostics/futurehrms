@@ -247,6 +247,7 @@ model Employee {
   timeline              TimelineEntry[]
   projectAssignments    ProjectAssignment[]
   commissionLineItems   CommissionLineItem[]
+  commissionDisputes    CommissionDispute[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -619,12 +620,62 @@ model CommissionLineItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  disputes CommissionDispute[]
+
   @@index([runId])
   @@index([projectId])
   @@index([employeeId])
   @@index([carryForwardToRunId])
   @@index([carryForwardFromRunId])
   @@unique([runId, projectId, employeeId, roleName])
+}
+
+// ---------- Phase 2+: Commission dispute / query flow ----------
+//
+// An employee who can see their commission breakdown may flag a
+// specific line item as "this looks wrong" and route it to HR. The
+// dispute is a tracking/communication artifact — resolving it records
+// a status + note only; any actual dollar fix is a separate draft
+// line-item adjustment.
+//
+// The line-item FK is SetNull (a recalculate wipes + regenerates line
+// items); the run/employee/project/role/amount are denormalised so a
+// dispute stays readable even after its line item is regenerated.
+
+model CommissionDispute {
+  id String @id @default(cuid())
+
+  // Optional link to the disputed line item. SetNull on delete so the
+  // dispute survives a recalculate.
+  lineItemId String?
+  lineItem   CommissionLineItem? @relation(fields: [lineItemId], references: [id], onDelete: SetNull)
+
+  // Denormalised context (snapshotted at raise time).
+  runId           String
+  employeeId      String
+  employee        Employee @relation(fields: [employeeId], references: [id])
+  projectId       String?
+  roleName        String?
+  disputedAmountUsd Decimal? @db.Decimal(12, 2)
+
+  // Who raised it (the employee's user id) + their message.
+  raisedById String
+  reason     String
+
+  // Lifecycle: open → resolved | rejected. resolutionNote + actor
+  // captured on close.
+  status         String    @default("open") // open | resolved | rejected
+  resolutionNote String?
+  resolvedById   String?
+  resolvedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([runId])
+  @@index([employeeId])
+  @@index([status])
+  @@index([lineItemId])
 }
 
 // ---------- Audit ----------

@@ -10,3 +10,4 @@ export * from './employee';
 export * from './project';
 export * from './commission-rule';
 export * from './commission-run';
+export * from './commission-dispute';

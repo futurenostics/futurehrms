@@ -6,6 +6,8 @@ import { CommissionsController } from './commissions.controller';
 import { CommissionRulesService } from './commission-rules.service';
 import { CommissionRunsService } from './commission-runs.service';
 import { CommissionRunsController } from './commission-runs.controller';
+import { CommissionDisputesService } from './commission-disputes.service';
+import { CommissionDisputesController } from './commission-disputes.controller';
 import { EmployeeCommissionsController } from './employee-commissions.controller';
 import { CommissionTimelineSubscriber } from './commission-timeline.subscriber';
 import { CommissionSchedulerService } from './commission-scheduler.service';
@@ -16,11 +18,13 @@ import { buildCommissionRunApprovalType } from './commission-run.approval-type';
   controllers: [
     CommissionsController, // rules
     CommissionRunsController, // runs
+    CommissionDisputesController, // disputes
     EmployeeCommissionsController, // per-employee breakdowns
   ],
   providers: [
     CommissionRulesService,
     CommissionRunsService,
+    CommissionDisputesService,
     CommissionTimelineSubscriber,
     CommissionSchedulerService,
   ],
