@@ -44,6 +44,11 @@ import {
 import type { AuthenticatedUser } from '../../core/auth/types';
 import { EventBusService } from '../../core/events/event-bus.service';
 import {
+  coerceRevenueBrackets,
+  computeTotalPool,
+  resolveTieredPoolPct,
+} from '../commissions/commission-calc';
+import {
   assertProjectReadable,
   buildProjectScopeWhere,
   computeProjectReadScope,
@@ -669,13 +674,22 @@ export class ProjectsService {
 
     const rule = project.commissionRule;
     const revenue = Number(project.revenueUsd);
-    const poolMode = rule.poolMode as 'percentage' | 'fixed';
+    const poolMode = rule.poolMode as 'percentage' | 'fixed' | 'tiered';
     const poolValue = Number(rule.poolValue);
-    const commissionPoolUsd = poolMode === 'percentage' ? (revenue * poolValue) / 100 : poolValue;
-    const poolValueDisplay =
-      poolMode === 'percentage'
-        ? `${poolValue}%`
-        : `$${poolValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+    const brackets = coerceRevenueBrackets(rule.revenueBrackets);
+    const commissionPoolUsd = computeTotalPool(
+      { poolMode, poolValue, minProjectRevenueUsd: 0, revenueBrackets: brackets },
+      revenue,
+    );
+    let poolValueDisplay: string;
+    if (poolMode === 'percentage') {
+      poolValueDisplay = `${poolValue}%`;
+    } else if (poolMode === 'tiered') {
+      const pct = resolveTieredPoolPct(brackets, revenue);
+      poolValueDisplay = pct === null ? 'Tiered (no bracket)' : `${pct}% (tier)`;
+    } else {
+      poolValueDisplay = `$${poolValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+    }
 
     const splits = project.assignments
       .filter((a) => a.removedAt === null)

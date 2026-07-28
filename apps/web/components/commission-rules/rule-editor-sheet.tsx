@@ -15,6 +15,7 @@ import {
   Megaphone,
   Plus,
   Sparkles,
+  Trash2,
   Trophy,
   Users,
 } from 'lucide-react';
@@ -71,7 +72,19 @@ const SAMPLE_REVENUE = 10_000;
 
 type EditorMode = 'create' | 'edit';
 
-type PoolMode = 'percentage' | 'fixed';
+type PoolMode = 'percentage' | 'fixed' | 'tiered';
+
+interface BracketRow {
+  minUsd: number;
+  maxUsd: number | null;
+  poolPct: number;
+}
+
+const DEFAULT_BRACKETS: BracketRow[] = [
+  { minUsd: 0, maxUsd: 10_000, poolPct: 5 },
+  { minUsd: 10_000, maxUsd: 50_000, poolPct: 8 },
+  { minUsd: 50_000, maxUsd: null, poolPct: 12 },
+];
 
 interface RoleSlot {
   key: string;
@@ -127,6 +140,7 @@ export function CommissionRuleEditorSheet({
   // Per-person payout guardrails. Empty string = no bound (null).
   const [perPersonFloor, setPerPersonFloor] = React.useState<string>('');
   const [perPersonCap, setPerPersonCap] = React.useState<string>('');
+  const [brackets, setBrackets] = React.useState<BracketRow[]>(DEFAULT_BRACKETS);
   const [roles, setRoles] = React.useState<Array<{ key: string; pct: number }>>([
     { key: 'winner', pct: 50 },
     { key: 'communicator', pct: 30 },
@@ -146,6 +160,15 @@ export function CommissionRuleEditorSheet({
         existing.perPersonFloorUsd != null ? String(existing.perPersonFloorUsd) : '',
       );
       setPerPersonCap(existing.perPersonCapUsd != null ? String(existing.perPersonCapUsd) : '');
+      if (existing.revenueBrackets && existing.revenueBrackets.length > 0) {
+        setBrackets(
+          existing.revenueBrackets.map((b) => ({
+            minUsd: Number(b.minUsd),
+            maxUsd: b.maxUsd === null ? null : Number(b.maxUsd),
+            poolPct: Number(b.poolPct),
+          })),
+        );
+      }
       const next = Object.entries(existing.rolePercentages).map(([key, pct]) => ({
         key,
         pct: Number(pct),
@@ -160,7 +183,7 @@ export function CommissionRuleEditorSheet({
   }, [mode, existing]);
 
   /* ---------- Derived ---------- */
-  const samplePoolUsd = poolMode === 'percentage' ? (SAMPLE_REVENUE * poolValue) / 100 : poolValue;
+  const samplePoolUsd = poolForSample(poolMode, poolValue, brackets, SAMPLE_REVENUE);
   const splitsTotal = roles.reduce((s, r) => s + r.pct, 0);
   const splitsValid = Math.abs(splitsTotal - 100) <= 0.01;
   const selectedCategory = categories.find((c) => c.id === categoryId);
@@ -171,10 +194,24 @@ export function CommissionRuleEditorSheet({
   const guardrailsValid = floorNum == null || capNum == null || capNum >= floorNum;
   const guardPayload = { perPersonFloorUsd: floorNum, perPersonCapUsd: capNum };
 
+  // Tiered validity mirrors the server: contiguous, ascending, one
+  // open-ended tail. Only enforced when tiered mode is active.
+  const bracketsError = poolMode === 'tiered' ? validateBrackets(brackets) : null;
+  const bracketsValid = bracketsError === null;
+  // Pool-shape fields (poolMode / poolValue / revenueBrackets) for every payload.
+  const poolPayload =
+    poolMode === 'tiered'
+      ? { poolMode, poolValue: 0, revenueBrackets: brackets }
+      : { poolMode, poolValue, revenueBrackets: null };
+
   /* ---------- Mutations ---------- */
   async function saveAsDraft() {
     if (!guardrailsValid) {
       toast.error('Per-person cap must be greater than or equal to the floor.');
+      return;
+    }
+    if (poolMode === 'tiered' && !bracketsValid) {
+      toast.error(bracketsError ?? 'Fix the revenue brackets first.');
       return;
     }
     try {
@@ -185,8 +222,7 @@ export function CommissionRuleEditorSheet({
           return;
         }
         await updateMutation.mutateAsync({
-          poolMode,
-          poolValue,
+          ...poolPayload,
           ...guardPayload,
           rolePercentages: rolesToMap(roles),
           status: 'draft',
@@ -196,8 +232,7 @@ export function CommissionRuleEditorSheet({
         await createMutation.mutateAsync({
           department,
           categoryId,
-          poolMode,
-          poolValue,
+          ...poolPayload,
           minProjectRevenueUsd: 0,
           ...guardPayload,
           rolePercentages: rolesToMap(roles),
@@ -216,8 +251,7 @@ export function CommissionRuleEditorSheet({
     const created = await createMutation.mutateAsync({
       department: existing.department,
       categoryId: existing.category.id,
-      poolMode,
-      poolValue,
+      ...poolPayload,
       minProjectRevenueUsd: existing.minProjectRevenueUsd,
       ...guardPayload,
       rolePercentages: rolesToMap(roles),
@@ -236,13 +270,16 @@ export function CommissionRuleEditorSheet({
       toast.error('Per-person cap must be greater than or equal to the floor.');
       return;
     }
+    if (poolMode === 'tiered' && !bracketsValid) {
+      toast.error(bracketsError ?? 'Fix the revenue brackets first.');
+      return;
+    }
     try {
       let targetId: string;
       if (mode === 'edit' && existing && existing.status === 'draft') {
         targetId = existing.id;
         await updateMutation.mutateAsync({
-          poolMode,
-          poolValue,
+          ...poolPayload,
           ...guardPayload,
           rolePercentages: rolesToMap(roles),
         });
@@ -250,8 +287,7 @@ export function CommissionRuleEditorSheet({
         const created = await createMutation.mutateAsync({
           department: existing.department,
           categoryId: existing.category.id,
-          poolMode,
-          poolValue,
+          ...poolPayload,
           minProjectRevenueUsd: existing.minProjectRevenueUsd,
           ...guardPayload,
           rolePercentages: rolesToMap(roles),
@@ -262,8 +298,7 @@ export function CommissionRuleEditorSheet({
         const created = await createMutation.mutateAsync({
           department,
           categoryId,
-          poolMode,
-          poolValue,
+          ...poolPayload,
           minProjectRevenueUsd: 0,
           ...guardPayload,
           rolePercentages: rolesToMap(roles),
@@ -394,48 +429,58 @@ export function CommissionRuleEditorSheet({
                     options={[
                       { value: 'percentage', label: 'Percentage' },
                       { value: 'fixed', label: 'Fixed amount' },
+                      { value: 'tiered', label: 'Tiered' },
                     ]}
                   />
                 }
               >
-                <div className="gap-fn-3 flex flex-col">
-                  <div className="gap-fn-3 flex items-center">
-                    <span
-                      className="text-fn-fg font-fn-semibold leading-fn-unit text-[44px] tabular-nums"
-                      style={{ letterSpacing: '-0.03em' }}
-                    >
+                {poolMode === 'tiered' ? (
+                  <BracketEditor
+                    brackets={brackets}
+                    onChange={setBrackets}
+                    error={bracketsError}
+                    samplePoolUsd={samplePoolUsd}
+                  />
+                ) : (
+                  <div className="gap-fn-3 flex flex-col">
+                    <div className="gap-fn-3 flex items-center">
+                      <span
+                        className="text-fn-fg font-fn-semibold leading-fn-unit text-[44px] tabular-nums"
+                        style={{ letterSpacing: '-0.03em' }}
+                      >
+                        {poolMode === 'percentage'
+                          ? `${poolValue}%`
+                          : `$${Number(poolValue).toLocaleString()}`}
+                      </span>
+                      {poolMode === 'percentage' && (
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          step={1}
+                          value={poolValue}
+                          onChange={(e) => setPoolValue(Number(e.target.value))}
+                          className="accent-fn-accent flex-1"
+                        />
+                      )}
+                      {poolMode === 'fixed' && (
+                        <Input
+                          type="number"
+                          min={0}
+                          step={50}
+                          value={poolValue}
+                          onChange={(e) => setPoolValue(Number(e.target.value))}
+                          className="max-w-[200px]"
+                        />
+                      )}
+                    </div>
+                    <p className="text-fn-fg-faint text-[11.5px]">
                       {poolMode === 'percentage'
-                        ? `${poolValue}%`
-                        : `$${Number(poolValue).toLocaleString()}`}
-                    </span>
-                    {poolMode === 'percentage' && (
-                      <input
-                        type="range"
-                        min={0}
-                        max={100}
-                        step={1}
-                        value={poolValue}
-                        onChange={(e) => setPoolValue(Number(e.target.value))}
-                        className="accent-fn-accent flex-1"
-                      />
-                    )}
-                    {poolMode === 'fixed' && (
-                      <Input
-                        type="number"
-                        min={0}
-                        step={50}
-                        value={poolValue}
-                        onChange={(e) => setPoolValue(Number(e.target.value))}
-                        className="max-w-[200px]"
-                      />
-                    )}
+                        ? `On a $10,000 project that's ${formatUsd(samplePoolUsd)} flowing into the pool before role splits.`
+                        : `Each project under this rule pays out exactly ${formatUsd(samplePoolUsd)} into the commission pool.`}
+                    </p>
                   </div>
-                  <p className="text-fn-fg-faint text-[11.5px]">
-                    {poolMode === 'percentage'
-                      ? `On a $10,000 project that's ${formatUsd(samplePoolUsd)} flowing into the pool before role splits.`
-                      : `Each project under this rule pays out exactly ${formatUsd(samplePoolUsd)} into the commission pool.`}
-                  </p>
-                </div>
+                )}
               </Section>
 
               {/* Payout guardrails */}
@@ -619,13 +664,14 @@ export function CommissionRuleEditorSheet({
               <PreviewPanel
                 poolMode={poolMode}
                 poolValue={poolValue}
+                brackets={brackets}
                 sampleRevenue={SAMPLE_REVENUE}
                 roles={roles}
               />
               {existing && existing.status === 'active' && (
                 <CompareToCurrentPanel
                   current={existing}
-                  next={{ poolMode, poolValue, roles: rolesToMap(roles) }}
+                  next={{ poolMode, poolValue, brackets, roles: rolesToMap(roles) }}
                 />
               )}
             </aside>
@@ -641,7 +687,13 @@ export function CommissionRuleEditorSheet({
           </Button>
           <Button
             onClick={publish}
-            disabled={isSubmitting || !splitsValid || !department || !categoryId}
+            disabled={
+              isSubmitting ||
+              !splitsValid ||
+              !department ||
+              !categoryId ||
+              (poolMode === 'tiered' && !bracketsValid)
+            }
           >
             {isPublishedEdit
               ? `Publish as v${bumpVersion(existing!.version)}`
@@ -793,15 +845,19 @@ function RadioCard({
 function PreviewPanel({
   poolMode,
   poolValue,
+  brackets,
   sampleRevenue,
   roles,
 }: {
   poolMode: PoolMode;
   poolValue: number;
+  brackets: BracketRow[];
   sampleRevenue: number;
   roles: Array<{ key: string; pct: number }>;
 }) {
-  const pool = poolMode === 'percentage' ? (sampleRevenue * poolValue) / 100 : poolValue;
+  const pool = poolForSample(poolMode, poolValue, brackets, sampleRevenue);
+  const poolModeLabel =
+    poolMode === 'percentage' ? `${poolValue}%` : poolMode === 'tiered' ? 'Tiered' : 'Fixed';
   return (
     <div className="rounded-fn-sm border-fn-border bg-fn-bg-panel overflow-hidden border">
       <div className="border-fn-divider px-fn-4 py-fn-3 gap-fn-2 flex items-center justify-between border-b">
@@ -828,8 +884,8 @@ function PreviewPanel({
             {formatUsd(pool)}
           </span>
           <span className="text-fn-fg-faint text-[11px]">
-            {poolMode === 'percentage' ? `${poolValue}%` : 'Fixed'} · split across {roles.length}{' '}
-            role {roles.length === 1 ? 'group' : 'groups'} below
+            {poolModeLabel} · split across {roles.length} role{' '}
+            {roles.length === 1 ? 'group' : 'groups'} below
           </span>
         </div>
 
@@ -869,12 +925,25 @@ function CompareToCurrentPanel({
   next,
 }: {
   current: CommissionRulePublic;
-  next: { poolMode: PoolMode; poolValue: number; roles: Record<string, number> };
+  next: {
+    poolMode: PoolMode;
+    poolValue: number;
+    brackets: BracketRow[];
+    roles: Record<string, number>;
+  };
 }) {
-  const samplePool = (n: { poolMode: string; poolValue: number }) =>
-    n.poolMode === 'percentage' ? (SAMPLE_REVENUE * n.poolValue) / 100 : n.poolValue;
-  const curPool = samplePool(current);
-  const nextPool = samplePool(next);
+  const curBrackets = (current.revenueBrackets ?? []).map((b) => ({
+    minUsd: Number(b.minUsd),
+    maxUsd: b.maxUsd === null ? null : Number(b.maxUsd),
+    poolPct: Number(b.poolPct),
+  }));
+  const curPool = poolForSample(
+    current.poolMode as PoolMode,
+    Number(current.poolValue),
+    curBrackets,
+    SAMPLE_REVENUE,
+  );
+  const nextPool = poolForSample(next.poolMode, next.poolValue, next.brackets, SAMPLE_REVENUE);
 
   const allRoles = new Set([...Object.keys(current.rolePercentages), ...Object.keys(next.roles)]);
 
@@ -953,6 +1022,119 @@ function CompareRow({
   );
 }
 
+function BracketEditor({
+  brackets,
+  onChange,
+  error,
+  samplePoolUsd,
+}: {
+  brackets: BracketRow[];
+  onChange: (next: BracketRow[]) => void;
+  error: string | null;
+  samplePoolUsd: number;
+}) {
+  function commit(rows: BracketRow[]) {
+    onChange(normalizeBrackets(rows));
+  }
+  function setMax(idx: number, value: number) {
+    commit(brackets.map((b, i) => (i === idx ? { ...b, maxUsd: value } : b)));
+  }
+  function setPct(idx: number, value: number) {
+    commit(brackets.map((b, i) => (i === idx ? { ...b, poolPct: value } : b)));
+  }
+  function addBracket() {
+    const tail = brackets[brackets.length - 1]!;
+    // Turn the open tail into a bounded row and append a fresh open tail.
+    const boundary = tail.minUsd + 10_000;
+    const bounded: BracketRow = { minUsd: tail.minUsd, maxUsd: boundary, poolPct: tail.poolPct };
+    const newTail: BracketRow = { minUsd: boundary, maxUsd: null, poolPct: tail.poolPct };
+    commit([...brackets.slice(0, -1), bounded, newTail]);
+  }
+  function removeBracket(idx: number) {
+    if (brackets.length <= 1) return;
+    commit(brackets.filter((_, i) => i !== idx));
+  }
+
+  return (
+    <div className="gap-fn-3 flex flex-col">
+      <p className="text-fn-fg-muted text-[12px]">
+        The pool percentage scales with project revenue. Brackets are contiguous — each starts where
+        the previous ends; the last is open-ended.
+      </p>
+      <div className="gap-fn-2 flex flex-col">
+        {brackets.map((b, idx) => {
+          const isLast = idx === brackets.length - 1;
+          return (
+            <div
+              key={idx}
+              className="border-fn-border rounded-fn-xs px-fn-3 py-fn-2_5 gap-fn-2 flex items-center border"
+            >
+              <span className="text-fn-fg-faint w-[72px] shrink-0 text-[11.5px] tabular-nums">
+                {formatUsd(b.minUsd)}
+              </span>
+              <span className="text-fn-fg-faint text-[11px]">to</span>
+              {isLast ? (
+                <span className="text-fn-fg-muted font-fn-medium flex-1 text-[12px]">and up</span>
+              ) : (
+                <Input
+                  type="number"
+                  min={0}
+                  step={1000}
+                  value={b.maxUsd ?? 0}
+                  onChange={(e) => setMax(idx, Number(e.target.value))}
+                  className="h-fn-7 w-[110px] text-right tabular-nums"
+                />
+              )}
+              <div className="gap-fn-1 flex items-center">
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={b.poolPct}
+                  onChange={(e) => setPct(idx, Number(e.target.value))}
+                  className="h-fn-7 w-[64px] text-right tabular-nums"
+                />
+                <span className="text-fn-fg-faint text-[12px]">%</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => removeBracket(idx)}
+                disabled={brackets.length <= 1}
+                aria-label="Remove bracket"
+                className="text-fn-fg-faint hover:text-fn-danger ml-auto inline-flex cursor-pointer items-center disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Trash2 className="h-fn-3_5 w-fn-3_5" />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      <button
+        type="button"
+        onClick={addBracket}
+        className="border-fn-border-strong text-fn-fg-muted hover:bg-fn-bg-inset rounded-fn-xs px-fn-3 py-fn-2 gap-fn-1 inline-flex cursor-pointer items-center justify-center border border-dashed text-[12.5px]"
+      >
+        <Plus className="h-fn-3_5 w-fn-3_5" /> Add a bracket
+      </button>
+
+      {error ? (
+        <div className="rounded-fn-xs border-fn-warning/30 bg-fn-warning-soft/40 text-fn-warning-soft-fg px-fn-3 py-fn-2 gap-fn-2 flex items-center border text-[12px]">
+          <AlertCircle className="h-fn-3_5 w-fn-3_5" />
+          <span className="font-fn-medium">{error}</span>
+        </div>
+      ) : (
+        <p className="text-fn-fg-faint text-[11.5px]">
+          A $10,000 project lands in the{' '}
+          <span className="text-fn-fg font-fn-medium">{formatUsd(samplePoolUsd)}</span> pool before
+          role splits.
+        </p>
+      )}
+    </div>
+  );
+}
+
 /* ───────────────────────── Helpers ───────────────────────── */
 
 /** Parse a guardrail input: blank / non-finite / negative → null (no bound). */
@@ -961,6 +1143,51 @@ function parseGuard(raw: string): number | null {
   const n = Number(raw);
   if (!Number.isFinite(n) || n < 0) return null;
   return n;
+}
+
+/** Rebuild contiguous mins (0, then previous max) and force an open tail. */
+function normalizeBrackets(rows: BracketRow[]): BracketRow[] {
+  return rows.map((r, i) => ({
+    minUsd: i === 0 ? 0 : (rows[i - 1]!.maxUsd ?? 0),
+    maxUsd: i === rows.length - 1 ? null : r.maxUsd,
+    poolPct: r.poolPct,
+  }));
+}
+
+/** Mirror of the server bracket validation. Returns an error string or null. */
+function validateBrackets(rows: BracketRow[]): string | null {
+  if (rows.length === 0) return 'Add at least one bracket.';
+  for (let i = 0; i < rows.length; i += 1) {
+    const b = rows[i]!;
+    const isLast = i === rows.length - 1;
+    if (b.poolPct < 0 || b.poolPct > 100)
+      return 'Each bracket percentage must be between 0 and 100.';
+    if (isLast) {
+      if (b.maxUsd !== null) return 'The final bracket must be open-ended.';
+    } else {
+      if (b.maxUsd === null) return 'Only the final bracket may be open-ended.';
+      if (b.maxUsd <= b.minUsd) return 'Each bracket max must exceed its min.';
+    }
+  }
+  return null;
+}
+
+/** Sample-pool helper shared by the pool section, preview, and compare panels. */
+function poolForSample(
+  poolMode: PoolMode,
+  poolValue: number,
+  brackets: BracketRow[],
+  revenue: number,
+): number {
+  if (poolMode === 'fixed') return poolValue;
+  if (poolMode === 'tiered') {
+    for (const b of brackets) {
+      const underMax = b.maxUsd === null || revenue < b.maxUsd;
+      if (revenue >= b.minUsd && underMax) return (revenue * b.poolPct) / 100;
+    }
+    return 0;
+  }
+  return (revenue * poolValue) / 100;
 }
 
 function rolesToMap(roles: Array<{ key: string; pct: number }>): Record<string, number> {

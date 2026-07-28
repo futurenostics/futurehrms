@@ -20,8 +20,15 @@
  * (the PNG-09 "DATE 28/28" display).
  */
 
+export interface CalcRevenueBracket {
+  minUsd: number;
+  /** null = open-ended top bracket. */
+  maxUsd: number | null;
+  poolPct: number;
+}
+
 export interface CalcRuleSnapshot {
-  poolMode: 'percentage' | 'fixed';
+  poolMode: 'percentage' | 'fixed' | 'tiered';
   poolValue: number;
   minProjectRevenueUsd: number;
   /**
@@ -32,6 +39,12 @@ export interface CalcRuleSnapshot {
    */
   perPersonFloorUsd?: number | null;
   perPersonCapUsd?: number | null;
+  /**
+   * Bracket ladder for `poolMode='tiered'`. The engine picks the
+   * bracket where `minUsd <= revenue < maxUsd` (open-ended tail when
+   * maxUsd is null) and uses its `poolPct` as the pool percentage.
+   */
+  revenueBrackets?: CalcRevenueBracket[] | null;
 }
 
 export interface CalcAssignment {
@@ -125,10 +138,7 @@ export function calcProjectLineItems(project: CalcProject, options: CalcOptions)
   if (totalActiveDays <= 0) return [];
 
   // Total pool for the whole project.
-  const totalPool =
-    project.rule.poolMode === 'percentage'
-      ? (project.revenueUsd * project.rule.poolValue) / 100
-      : project.rule.poolValue;
+  const totalPool = computeTotalPool(project.rule, project.revenueUsd);
 
   // Month's slice of that pool.
   const monthShare = (totalPool * overlapDays) / totalActiveDays;
@@ -164,6 +174,60 @@ function applyGuardrails(amount: number, rule: CalcRuleSnapshot): number {
     out = rule.perPersonCapUsd;
   }
   return roundUsd(out);
+}
+
+/**
+ * Find the bracket a revenue falls into using the `minUsd <= revenue
+ * < maxUsd` convention (open-ended tail when maxUsd is null). Returns
+ * the bracket's `poolPct`, or null when no bracket matches (e.g.
+ * revenue below the lowest bracket's min).
+ */
+export function resolveTieredPoolPct(
+  brackets: CalcRevenueBracket[] | null | undefined,
+  revenueUsd: number,
+): number | null {
+  if (!brackets) return null;
+  for (const b of brackets) {
+    const underMax = b.maxUsd === null || revenueUsd < b.maxUsd;
+    if (revenueUsd >= b.minUsd && underMax) return b.poolPct;
+  }
+  return null;
+}
+
+/**
+ * Coerce an untyped stored value (Prisma JSON, API payload) into the
+ * calc engine's bracket array. Returns null when the value isn't a
+ * well-formed bracket list, so callers fall back to a zero pool
+ * safely rather than throwing.
+ */
+export function coerceRevenueBrackets(value: unknown): CalcRevenueBracket[] | null {
+  if (!Array.isArray(value)) return null;
+  const brackets: CalcRevenueBracket[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
+    const row = entry as Record<string, unknown>;
+    const minUsd = Number(row.minUsd);
+    const poolPct = Number(row.poolPct);
+    const maxUsd = row.maxUsd === null || row.maxUsd === undefined ? null : Number(row.maxUsd);
+    if (!Number.isFinite(minUsd) || !Number.isFinite(poolPct)) return null;
+    if (maxUsd !== null && !Number.isFinite(maxUsd)) return null;
+    brackets.push({ minUsd, maxUsd, poolPct });
+  }
+  return brackets;
+}
+
+/**
+ * The whole-project commission pool for a rule + revenue. `percentage`
+ * and `fixed` are the original modes; `tiered` selects a bracket's
+ * `poolPct` by revenue (0 when no bracket matches).
+ */
+export function computeTotalPool(rule: CalcRuleSnapshot, revenueUsd: number): number {
+  if (rule.poolMode === 'fixed') return rule.poolValue;
+  if (rule.poolMode === 'tiered') {
+    const pct = resolveTieredPoolPct(rule.revenueBrackets, revenueUsd);
+    return pct === null ? 0 : (revenueUsd * pct) / 100;
+  }
+  return (revenueUsd * rule.poolValue) / 100;
 }
 
 /**

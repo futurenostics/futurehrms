@@ -292,7 +292,7 @@ export const projectPublicSchema = z.object({
     id: z.string(),
     version: z.string(),
     department: z.string(),
-    poolMode: z.enum(['percentage', 'fixed']),
+    poolMode: z.enum(['percentage', 'fixed', 'tiered']),
     poolValue: z.number(),
   }),
   hasOverride: z.boolean(),
@@ -330,8 +330,8 @@ export type ProjectListResponse = z.infer<typeof projectListResponseSchema>;
 export const projectCommissionPreviewSchema = z.object({
   /** Total pool USD for the project under its current contract. */
   commissionPoolUsd: z.number(),
-  poolMode: z.enum(['percentage', 'fixed']),
-  poolValueDisplay: z.string(), // '24%' or '$2,400.00'
+  poolMode: z.enum(['percentage', 'fixed', 'tiered']),
+  poolValueDisplay: z.string(), // '24%' or '$2,400.00' or '8% (tier)'
   ruleVersion: z.string(),
   ruleStatus: z.string(),
   splits: z.array(
