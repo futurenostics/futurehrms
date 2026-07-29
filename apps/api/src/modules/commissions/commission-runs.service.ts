@@ -297,6 +297,9 @@ export class CommissionRunsService {
       carriedRowIds.push(prevLineId);
     }
 
+    // Clawbacks — reverse commissions already paid on refunded projects.
+    lineItemsToWrite.push(...(await this.buildClawbackLinesTx(tx, runId)));
+
     if (lineItemsToWrite.length > 0) {
       await tx.commissionLineItem.createMany({
         data: lineItemsToWrite,
@@ -310,6 +313,91 @@ export class CommissionRunsService {
         data: { carryForwardToRunId: runId },
       });
     }
+  }
+
+  /**
+   * Build reversing (negative) line items for projects that were
+   * refunded after their commission was already paid.
+   *
+   * Marker-free + idempotent by design: the amount owed back is
+   * derived fresh each run as the *net* still unreversed —
+   *
+   *   net = Σ finalAmountUsd over the project's committed (approved /
+   *         locked) line items, per (employee, role), where committed
+   *         clawback lines are themselves negative and net out.
+   *
+   * So a reversal appears in every draft run until one commits it,
+   * then the net reaches zero and no further clawback is generated.
+   * Held rows are excluded — their amount lives on the carry-forward
+   * child, which is counted instead (avoids double counting). This
+   * also self-heals if a draft carrying a clawback is deleted.
+   */
+  private async buildClawbackLinesTx(
+    tx: Prisma.TransactionClient,
+    runId: string,
+  ): Promise<Prisma.CommissionLineItemCreateManyInput[]> {
+    const refunded = await tx.project.findMany({
+      where: { status: 'refunded', deletedAt: null },
+      select: { id: true, revenueUsd: true },
+    });
+    if (refunded.length === 0) return [];
+
+    const lines: Prisma.CommissionLineItemCreateManyInput[] = [];
+    for (const project of refunded) {
+      const committed = await tx.commissionLineItem.findMany({
+        where: {
+          projectId: project.id,
+          isHeld: false,
+          run: { status: { in: ['approved', 'locked'] } },
+        },
+        select: {
+          employeeId: true,
+          roleName: true,
+          finalAmountUsd: true,
+          snapshotPercentage: true,
+        },
+      });
+
+      // Net paid, grouped by the (employee, role) we'd reverse against.
+      const groups = new Map<
+        string,
+        { employeeId: string; roleName: string; net: number; pct: Prisma.Decimal }
+      >();
+      for (const li of committed) {
+        const key = `${li.employeeId}::${li.roleName}`;
+        const g = groups.get(key) ?? {
+          employeeId: li.employeeId,
+          roleName: li.roleName,
+          net: 0,
+          pct: li.snapshotPercentage,
+        };
+        g.net += Number(li.finalAmountUsd);
+        groups.set(key, g);
+      }
+
+      for (const g of groups.values()) {
+        const reversal = Math.round(g.net * 100) / 100;
+        if (reversal <= 0.005) continue; // fully reversed or never paid
+        lines.push({
+          runId,
+          projectId: project.id,
+          employeeId: g.employeeId,
+          roleName: g.roleName,
+          snapshotPercentage: g.pct,
+          baseRevenueUsd: project.revenueUsd,
+          monthFractionNumerator: 0,
+          monthFractionDenominator: 1,
+          calculatedAmountUsd: new Prisma.Decimal(-reversal),
+          leaveAdjustmentUsd: new Prisma.Decimal(0),
+          manualAdjustmentUsd: new Prisma.Decimal(0),
+          manualAdjustmentNote: 'Clawback — project refunded',
+          isHeld: false,
+          isClawback: true,
+          finalAmountUsd: new Prisma.Decimal(-reversal),
+        });
+      }
+    }
+    return lines;
   }
 
   // Transaction-bound versions of the fetch helpers so calculateAndPopulate

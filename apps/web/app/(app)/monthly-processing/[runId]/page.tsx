@@ -549,8 +549,10 @@ function LineItemRow({
   const removeMutation = useRemoveLineItem(runId);
 
   // A manually-added line has no proration math (numerator 0); calc and
-  // carry-forward rows always overlap at least one day.
-  const isManual = lineItem.monthFractionNumerator === 0;
+  // carry-forward rows always overlap at least one day. Clawback lines
+  // also carry a zero fraction, so exclude them from the manual case.
+  const isClawback = lineItem.isClawback;
+  const isManual = !isClawback && lineItem.monthFractionNumerator === 0;
 
   async function remove() {
     try {
@@ -605,6 +607,7 @@ function LineItemRow({
         'border-fn-divider hover:bg-fn-bg-inset/30 border-t transition-colors',
         lineItem.isHeld && 'bg-fn-warning-soft/30 hover:bg-fn-warning-soft/40',
         lineItem.carryForwardFromRunId && 'bg-fn-info-soft/20',
+        isClawback && 'bg-fn-danger-soft/20',
       )}
     >
       <td className="px-fn-4 py-fn-2_5">
@@ -639,6 +642,11 @@ function LineItemRow({
           {lineItem.carryForwardFromRunId && (
             <Badge tone="info" className="self-start">
               Carry-forward from previous run
+            </Badge>
+          )}
+          {isClawback && (
+            <Badge tone="danger" className="self-start">
+              Clawback — project refunded
             </Badge>
           )}
           {isManual && (

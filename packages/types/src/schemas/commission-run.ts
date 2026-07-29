@@ -134,6 +134,8 @@ export const commissionLineItemPublicSchema = z.object({
   carryForwardToRunId: z.string().nullable(),
   carryForwardFromRunId: z.string().nullable(),
   finalAmountUsd: z.number(),
+  /** System-generated reversal line for a refunded project's commission. */
+  isClawback: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

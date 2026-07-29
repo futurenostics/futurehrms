@@ -626,6 +626,12 @@ model CommissionLineItem {
   // math.
   finalAmountUsd Decimal @db.Decimal(12, 2)
 
+  // System-generated reversal line. Set when a project is refunded:
+  // the next draft run emits a negative line clawing back commissions
+  // already paid on that project. Distinguishes reversals from the
+  // manually-added lines that also carry a zero month-fraction.
+  isClawback Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
