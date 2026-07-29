@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/data-table';
 import {
   useCancelScheduled,
+  useRetryReminder,
   useScheduledReminders,
   type ReminderPublic,
 } from '@/lib/queries/reminders';
@@ -28,11 +29,12 @@ import { cn } from '@/lib/utils';
  * this page filtered by status=scheduled, finds the row, sees the
  * scheduledFor + recipient + ruleKey, and can cancel if needed.
  */
-type StatusFilter = 'scheduled' | 'fired' | 'cancelled' | 'all';
+type StatusFilter = 'scheduled' | 'fired' | 'cancelled' | 'failed' | 'all';
 
 const FILTERS: Array<{ value: StatusFilter; label: string }> = [
   { value: 'scheduled', label: 'Scheduled' },
   { value: 'fired', label: 'Fired' },
+  { value: 'failed', label: 'Failed' },
   { value: 'cancelled', label: 'Cancelled' },
   { value: 'all', label: 'All' },
 ];
@@ -44,6 +46,7 @@ export default function ScheduledRemindersPage() {
   const [status, setStatus] = React.useState<StatusFilter>('scheduled');
   const list = useScheduledReminders(status);
   const cancel = useCancelScheduled();
+  const retry = useRetryReminder();
 
   // ?date=YYYY-MM-DD filters client-side to rows whose scheduledFor
   // falls on that day (Asia/Karachi). Set when the timeline strip
@@ -127,12 +130,55 @@ export default function ScheduledRemindersPage() {
           </span>
         ),
       },
+      {
+        id: 'delivery',
+        header: 'Delivery',
+        width: 220,
+        cell: (r) => {
+          if (r.attempts === 0 && !r.lastError) {
+            return <span className="text-fn-fg-faint text-[12px]">—</span>;
+          }
+          return (
+            <div className="gap-fn-0_5 flex min-w-0 flex-col">
+              <span
+                className={cn(
+                  'font-fn-medium text-[11.5px] tabular-nums',
+                  r.status === 'failed' ? 'text-fn-danger-soft-fg' : 'text-fn-warning-soft-fg',
+                )}
+              >
+                {r.status === 'failed' ? 'Dead-lettered' : 'Retrying'} · {r.attempts}{' '}
+                {r.attempts === 1 ? 'attempt' : 'attempts'}
+              </span>
+              {r.lastError && (
+                <span className="text-fn-fg-faint truncate text-[10.5px]" title={r.lastError}>
+                  {r.lastError}
+                </span>
+              )}
+            </div>
+          );
+        },
+      },
     ],
     [],
   );
 
   const rowActions = React.useCallback(
     (r: ReminderPublic): DataTableRowAction[] => {
+      if (r.status === 'failed') {
+        return [
+          {
+            label: 'Retry delivery',
+            onClick: async () => {
+              try {
+                await retry.mutateAsync(r.id);
+                toast.success('Reminder requeued for delivery');
+              } catch (e) {
+                toast.error((e as Error).message);
+              }
+            },
+          },
+        ];
+      }
       if (r.status !== 'scheduled') return [];
       return [
         {
@@ -151,7 +197,7 @@ export default function ScheduledRemindersPage() {
         },
       ];
     },
-    [cancel],
+    [cancel, retry],
   );
 
   return (
@@ -246,7 +292,14 @@ export default function ScheduledRemindersPage() {
 }
 
 function StatusPill({ status }: { status: ReminderPublic['status'] }) {
-  const tone = status === 'scheduled' ? 'info' : status === 'fired' ? 'success' : 'default';
+  const tone =
+    status === 'scheduled'
+      ? 'info'
+      : status === 'fired'
+        ? 'success'
+        : status === 'failed'
+          ? 'danger'
+          : 'default';
   const label = status[0]!.toUpperCase() + status.slice(1);
   return (
     <Badge tone={tone} dot>

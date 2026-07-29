@@ -77,7 +77,7 @@ const updateSchema = z.object({
 });
 
 const scheduledQuerySchema = z.object({
-  status: z.enum(['scheduled', 'fired', 'cancelled', 'all']).optional(),
+  status: z.enum(['scheduled', 'fired', 'cancelled', 'failed', 'all']).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });
@@ -286,6 +286,17 @@ export class RemindersController {
   ) {
     const input = cancelScheduledSchema.parse(body);
     return this.read.cancelScheduled(user, id, input.reason);
+  }
+
+  /**
+   * Requeue a dead-lettered reminder for another delivery attempt.
+   * Gated on view_scheduled (HR Admin).
+   */
+  @Post('reminders/:id/retry')
+  @RequirePermission('reminders:view_scheduled')
+  @HttpCode(HttpStatus.OK)
+  async retryReminder(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.read.retryReminder(user, id);
   }
 
   /**

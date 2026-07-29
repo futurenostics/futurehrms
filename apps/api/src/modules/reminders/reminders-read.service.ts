@@ -26,6 +26,9 @@ export interface ReminderPublic {
   notificationId: string | null;
   cancelledAt: string | null;
   cancelReason: string | null;
+  attempts: number;
+  lastError: string | null;
+  lastAttemptAt: string | null;
   createdAt: string;
 }
 
@@ -46,7 +49,7 @@ export class RemindersReadService {
   async listScheduled(
     viewer: AuthenticatedUser,
     query: {
-      status?: 'scheduled' | 'fired' | 'cancelled' | 'all';
+      status?: 'scheduled' | 'fired' | 'cancelled' | 'failed' | 'all';
       limit?: number;
       offset?: number;
     } = {},
@@ -99,6 +102,9 @@ export class RemindersReadService {
           notificationId: r.notificationId,
           cancelledAt: r.cancelledAt?.toISOString() ?? null,
           cancelReason: r.cancelReason,
+          attempts: r.attempts,
+          lastError: r.lastError,
+          lastAttemptAt: r.lastAttemptAt?.toISOString() ?? null,
           createdAt: r.createdAt.toISOString(),
         };
       }),
@@ -198,6 +204,37 @@ export class RemindersReadService {
         status: 'cancelled',
         cancelledAt: new Date(),
         cancelReason: reason,
+      },
+    });
+    return { id, status: updated.status };
+  }
+
+  /**
+   * Requeue a dead-lettered reminder: reset it to `scheduled` for the
+   * next tick and clear the attempt counter so it gets a fresh retry
+   * budget. Used from the ops view once the underlying delivery issue
+   * (SMTP down, bad address) has been fixed.
+   */
+  async retryReminder(
+    viewer: AuthenticatedUser,
+    id: string,
+  ): Promise<{ id: string; status: string }> {
+    if (!viewer.permissions.includes('reminders:view_scheduled')) {
+      throw new ForbiddenException('reminders:view_scheduled required');
+    }
+    const row = await prisma.reminder.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException('Reminder not found');
+    if (row.status !== 'failed') {
+      // Only dead-lettered rows are requeueable; anything else is a no-op.
+      return { id, status: row.status };
+    }
+    const updated = await prisma.reminder.update({
+      where: { id },
+      data: {
+        status: 'scheduled',
+        scheduledFor: new Date(),
+        attempts: 0,
+        lastError: null,
       },
     });
     return { id, status: updated.status };

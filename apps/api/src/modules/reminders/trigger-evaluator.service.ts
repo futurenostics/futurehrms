@@ -27,6 +27,7 @@ import {
 import type { EventTriggerSpec, TriggerSpec } from './reminder-trigger.types';
 import { evaluateConditions } from './reminder-conditions.evaluator';
 import { buildConditionContext } from './reminder-condition-context';
+import { sourceKindForEvent } from './event-type-catalog';
 
 @Injectable()
 export class TriggerEvaluatorService implements OnApplicationBootstrap {
@@ -108,11 +109,12 @@ export class TriggerEvaluatorService implements OnApplicationBootstrap {
     // anniversary_in_exactly_days operators on date fields.
     const scheduledFor = new Date();
 
-    // Resolve the source — every event-based rule we ship today
-    // wraps an Employee. If the payload has an explicit employeeId,
-    // use it; otherwise fall back to source-shaped fields the
-    // events normally carry.
-    const source: ResolverSource = resolveSource(payload);
+    // Resolve the source from the event's declared entity in the
+    // catalog (employee / project / commissionRun / approval / …),
+    // reading the matching id field out of the payload. This is what
+    // lets project/commission/approval event rules reach a real
+    // source instead of silently resolving to null.
+    const source: ResolverSource = resolveSourceForEvent(spec.eventType, payload);
 
     // Condition tree: hydrate the source entity once (cheap; one
     // Prisma findUnique) and run the evaluator. Absent tree =
@@ -175,7 +177,56 @@ export class TriggerEvaluatorService implements OnApplicationBootstrap {
   }
 }
 
-function resolveSource(payload: Record<string, unknown>): ResolverSource {
+/**
+ * Map an event's payload to a concrete `(kind, id)` source using the
+ * catalog's declared `sourceKind` for that event type. Each entity
+ * kind reads its own id field out of the payload:
+ *
+ *   employee         → employeeId
+ *   employeeDocument → documentId
+ *   project          → projectId
+ *   commissionRun    → runId
+ *   approval         → approvalId (or id)
+ *
+ * Unknown / freeform events fall back to the legacy field heuristic so
+ * employee-shaped payloads keep resolving. Exported for unit testing.
+ */
+export function resolveSourceForEvent(
+  eventType: string,
+  payload: Record<string, unknown>,
+): ResolverSource {
+  const str = (key: string): string | null =>
+    typeof payload[key] === 'string' && (payload[key] as string).length > 0
+      ? (payload[key] as string)
+      : null;
+
+  switch (sourceKindForEvent(eventType)) {
+    case 'employee': {
+      const id = str('employeeId');
+      return id ? { kind: 'employee', id } : null;
+    }
+    case 'employeeDocument': {
+      const id = str('documentId');
+      return id ? { kind: 'employeeDocument', id } : null;
+    }
+    case 'project': {
+      const id = str('projectId');
+      return id ? { kind: 'project', id } : null;
+    }
+    case 'commissionRun': {
+      const id = str('runId');
+      return id ? { kind: 'commissionRun', id } : null;
+    }
+    case 'approval': {
+      const id = str('approvalId') ?? str('id');
+      return id ? { kind: 'approval', id } : null;
+    }
+    default:
+      return legacyHeuristicSource(payload);
+  }
+}
+
+function legacyHeuristicSource(payload: Record<string, unknown>): ResolverSource {
   if (typeof payload['employeeId'] === 'string') {
     return { kind: 'employee', id: payload['employeeId'] };
   }

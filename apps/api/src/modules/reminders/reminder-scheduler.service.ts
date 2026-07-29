@@ -63,6 +63,20 @@ const JOB_NAME = 'quarter-hour-tick';
 const CRON = '*/15 * * * *';
 const TZ = 'Asia/Karachi';
 
+// Delivery retry policy. A send that throws is retried on a growing
+// backoff; after MAX_ATTEMPTS failures the reminder is dead-lettered
+// (status='failed') so it stops looping and becomes visible in the
+// ops view. Backoff steps are indexed by the attempt just completed
+// (attempt 1 → wait 15m, attempt 2 → 1h, …); the final step is
+// reused if attempts somehow exceed the table length.
+const MAX_ATTEMPTS = 5;
+const RETRY_BACKOFF_MS = [
+  15 * 60 * 1000, // 15 minutes
+  60 * 60 * 1000, // 1 hour
+  4 * 60 * 60 * 1000, // 4 hours
+  12 * 60 * 60 * 1000, // 12 hours
+];
+
 /** What the scheduler-status endpoint returns. */
 export interface SchedulerStatus {
   cron: string;
@@ -72,6 +86,7 @@ export interface SchedulerStatus {
   emailsSent30d: number;
   retriesPending: number;
   scheduledNext30d: number;
+  deadLetterCount: number;
 }
 
 @Injectable()
@@ -147,12 +162,53 @@ export class ReminderSchedulerService implements OnApplicationBootstrap, OnModul
         await this.fireOne(r as Reminder & { rule: ReminderRule });
         fired += 1;
       } catch (err) {
-        this.logger.error(
-          `failed to fire reminder ${r.id} for rule ${r.ruleId}: ${(err as Error).message}`,
-        );
+        await this.recordFailure(r as Reminder, err as Error);
       }
     }
     return fired;
+  }
+
+  /**
+   * A send that threw: bump the attempt counter and either push the
+   * reminder out on a backoff step (still `scheduled`) or, once the
+   * cap is reached, dead-letter it (`status='failed'`) so it stops
+   * retrying forever and surfaces in the scheduled/ops view.
+   */
+  private async recordFailure(reminder: Reminder, err: Error): Promise<void> {
+    const attempts = reminder.attempts + 1;
+    const now = new Date();
+    const deadLettered = attempts >= MAX_ATTEMPTS;
+
+    if (deadLettered) {
+      this.logger.error(
+        `reminder ${reminder.id} (rule ${reminder.ruleId}) dead-lettered after ${attempts} attempts: ${err.message}`,
+      );
+      await prisma.reminder.update({
+        where: { id: reminder.id },
+        data: { status: 'failed', attempts, lastError: err.message, lastAttemptAt: now },
+      });
+      this.events.emit(
+        'reminder.failed',
+        { reminderId: reminder.id, ruleId: reminder.ruleId, attempts, error: err.message },
+        { actorId: 'system:reminders' },
+      );
+      return;
+    }
+
+    const backoff = RETRY_BACKOFF_MS[Math.min(attempts - 1, RETRY_BACKOFF_MS.length - 1)]!;
+    const nextAttemptAt = new Date(now.getTime() + backoff);
+    this.logger.warn(
+      `reminder ${reminder.id} send failed (attempt ${attempts}/${MAX_ATTEMPTS}), retrying at ${nextAttemptAt.toISOString()}: ${err.message}`,
+    );
+    await prisma.reminder.update({
+      where: { id: reminder.id },
+      data: {
+        attempts,
+        lastError: err.message,
+        lastAttemptAt: now,
+        scheduledFor: nextAttemptAt,
+      },
+    });
   }
 
   private async fireOne(reminder: Reminder & { rule: ReminderRule }): Promise<void> {
@@ -444,15 +500,16 @@ export class ReminderSchedulerService implements OnApplicationBootstrap, OnModul
     const next = nextHourBoundary(now);
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-    const [emailsSent30d, retriesPending, scheduledNext30d] = await Promise.all([
+    const [emailsSent30d, retriesPending, scheduledNext30d, deadLetterCount] = await Promise.all([
       prisma.notification.count({
         where: {
           channel: { in: ['email', 'both'] },
           createdAt: { gte: thirtyDaysAgo },
         },
       }),
+      // Reminders awaiting a retry after at least one failed send.
       prisma.reminder.count({
-        where: { status: 'scheduled', scheduledFor: { lt: now } },
+        where: { status: 'scheduled', attempts: { gt: 0 } },
       }),
       prisma.reminder.count({
         where: {
@@ -460,6 +517,7 @@ export class ReminderSchedulerService implements OnApplicationBootstrap, OnModul
           scheduledFor: { gte: now, lte: thirtyDaysFromNow },
         },
       }),
+      prisma.reminder.count({ where: { status: 'failed' } }),
     ]);
     return {
       cron: CRON,
@@ -469,6 +527,7 @@ export class ReminderSchedulerService implements OnApplicationBootstrap, OnModul
       emailsSent30d,
       retriesPending,
       scheduledNext30d,
+      deadLetterCount,
     };
   }
 }
