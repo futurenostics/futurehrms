@@ -6,8 +6,10 @@ import {
   AlertCircle,
   Bell,
   BellOff,
+  Check,
   CheckCircle2,
   CheckCheck,
+  Clock,
   Info,
   type LucideIcon,
 } from 'lucide-react';
@@ -16,9 +18,11 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import {
+  useAcknowledgeNotification,
   useMarkAllNotificationsRead,
   useMarkNotificationRead,
   useNotifications,
+  useSnoozeNotification,
   useUnreadNotificationCount,
   type NotificationPublic,
 } from '@/lib/queries/notifications';
@@ -163,9 +167,13 @@ function NotificationRow({
 }) {
   const router = useRouter();
   const markRead = useMarkNotificationRead();
+  const acknowledge = useAcknowledgeNotification();
+  const snooze = useSnoozeNotification();
+  const [snoozeOpen, setSnoozeOpen] = React.useState(false);
   const Icon = SEVERITY_ICON[notification.severity] ?? Info;
   const tone = SEVERITY_TONE[notification.severity] ?? SEVERITY_TONE.info!;
   const unread = notification.status === 'unread';
+  const acknowledged = notification.acknowledgedAt !== null;
 
   function handleClick() {
     if (unread) markRead.mutate(notification.id);
@@ -176,51 +184,117 @@ function NotificationRow({
   }
 
   return (
-    <li className="border-fn-divider border-b last:border-b-0">
-      <button
-        type="button"
-        onClick={handleClick}
-        className={cn(
-          'gap-fn-2_5 px-fn-3 py-fn-2_5 hover:bg-fn-bg-inset/60 flex w-full cursor-pointer items-start text-left transition-colors',
-          unread && 'bg-fn-accent-soft/15',
-        )}
-      >
-        <span
-          aria-hidden
-          className={cn(
-            'rounded-fn-xs h-fn-7 w-fn-7 inline-flex shrink-0 items-center justify-center',
-            tone,
-          )}
+    <li className="border-fn-divider group relative border-b last:border-b-0">
+      <div className={cn('flex items-start', unread && 'bg-fn-accent-soft/15')}>
+        <button
+          type="button"
+          onClick={handleClick}
+          className="gap-fn-2_5 px-fn-3 py-fn-2_5 hover:bg-fn-bg-inset/60 flex min-w-0 flex-1 cursor-pointer items-start text-left transition-colors"
         >
-          <Icon className="h-fn-3_5 w-fn-3_5" />
-        </span>
-        <div className="gap-fn-0_5 flex min-w-0 flex-1 flex-col">
-          <div className="gap-fn-1_5 flex items-center">
-            <span
-              className={cn(
-                'flex-1 truncate text-[12.5px]',
-                unread ? 'text-fn-fg font-fn-semibold' : 'text-fn-fg-muted font-fn-medium',
-              )}
-            >
-              {notification.title}
-            </span>
-            {unread && (
-              <span
-                aria-hidden
-                className="bg-fn-accent h-fn-1_5 w-fn-1_5 rounded-fn-full shrink-0"
-              />
+          <span
+            aria-hidden
+            className={cn(
+              'rounded-fn-xs h-fn-7 w-fn-7 inline-flex shrink-0 items-center justify-center',
+              tone,
             )}
+          >
+            <Icon className="h-fn-3_5 w-fn-3_5" />
+          </span>
+          <div className="gap-fn-0_5 flex min-w-0 flex-1 flex-col">
+            <div className="gap-fn-1_5 flex items-center">
+              <span
+                className={cn(
+                  'flex-1 truncate text-[12.5px]',
+                  unread ? 'text-fn-fg font-fn-semibold' : 'text-fn-fg-muted font-fn-medium',
+                )}
+              >
+                {notification.title}
+              </span>
+              {acknowledged ? (
+                <Check
+                  aria-label="Acknowledged"
+                  className="text-fn-success-soft-fg h-fn-3 w-fn-3 shrink-0"
+                />
+              ) : (
+                unread && (
+                  <span
+                    aria-hidden
+                    className="bg-fn-accent h-fn-1_5 w-fn-1_5 rounded-fn-full shrink-0"
+                  />
+                )
+              )}
+            </div>
+            <span className="text-fn-fg-faint leading-fn-tight line-clamp-2 text-[11.5px]">
+              {notification.body}
+            </span>
+            <span className="text-fn-fg-faint mt-fn-0_5 text-[10.5px]">
+              {formatRelative(notification.createdAt)}
+            </span>
           </div>
-          <span className="text-fn-fg-faint leading-fn-tight line-clamp-2 text-[11.5px]">
-            {notification.body}
-          </span>
-          <span className="text-fn-fg-faint mt-fn-0_5 text-[10.5px]">
-            {formatRelative(notification.createdAt)}
-          </span>
+        </button>
+
+        {/* Row actions — acknowledge + snooze (siblings, not nested in the button) */}
+        <div className="gap-fn-1 px-fn-2 py-fn-2_5 flex shrink-0 items-center">
+          {!acknowledged && (
+            <button
+              type="button"
+              aria-label="Acknowledge"
+              title="Acknowledge"
+              disabled={acknowledge.isPending}
+              onClick={() => acknowledge.mutate(notification.id)}
+              className="rounded-fn-xs text-fn-fg-faint hover:text-fn-success-soft-fg hover:bg-fn-bg-inset h-fn-6 w-fn-6 inline-flex cursor-pointer items-center justify-center"
+            >
+              <Check className="h-fn-3_5 w-fn-3_5" />
+            </button>
+          )}
+          <button
+            type="button"
+            aria-label="Snooze"
+            title="Snooze"
+            onClick={() => setSnoozeOpen((v) => !v)}
+            className="rounded-fn-xs text-fn-fg-faint hover:text-fn-fg hover:bg-fn-bg-inset h-fn-6 w-fn-6 inline-flex cursor-pointer items-center justify-center"
+          >
+            <Clock className="h-fn-3_5 w-fn-3_5" />
+          </button>
         </div>
-      </button>
+      </div>
+
+      {snoozeOpen && (
+        <div className="border-fn-divider bg-fn-bg-panel px-fn-3 py-fn-2 gap-fn-1_5 flex items-center border-t">
+          <span className="text-fn-fg-faint tracking-fn-uppercase-tight text-[10.5px] uppercase">
+            Snooze
+          </span>
+          {snoozeTargets().map((t) => (
+            <button
+              key={t.label}
+              type="button"
+              disabled={snooze.isPending}
+              onClick={() => {
+                snooze.mutate({ id: notification.id, until: t.until });
+                setSnoozeOpen(false);
+              }}
+              className="rounded-fn-xs border-fn-border bg-fn-bg-inset text-fn-fg-muted hover:text-fn-fg px-fn-2 py-fn-0_5 cursor-pointer border text-[10.5px]"
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
     </li>
   );
+}
+
+/** Preset snooze targets as absolute ISO timestamps. */
+function snoozeTargets(): Array<{ label: string; until: string }> {
+  const now = Date.now();
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(9, 0, 0, 0);
+  return [
+    { label: '1 hour', until: new Date(now + 60 * 60 * 1000).toISOString() },
+    { label: 'Tomorrow', until: tomorrow.toISOString() },
+    { label: 'Next week', until: new Date(now + 7 * 24 * 60 * 60 * 1000).toISOString() },
+  ];
 }
 
 function SkeletonList() {

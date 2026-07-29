@@ -737,6 +737,12 @@ model Notification {
   sourceId        String?
   createdAt       DateTime  @default(now())
   readAt          DateTime?
+  /// Explicit "I've handled this" marker — stronger than `read` (which
+  /// auto-fires on click). Independent of dismissal.
+  acknowledgedAt  DateTime?
+  /// When set and in the future, the notification is hidden from the
+  /// bell + unread count until this time passes, then it resurfaces.
+  snoozedUntil    DateTime?
   sentAt          DateTime?
   /// Email-channel idempotency — populated when the email transport
   /// reports a provider message id (Resend) or a queued indicator (SMTP).

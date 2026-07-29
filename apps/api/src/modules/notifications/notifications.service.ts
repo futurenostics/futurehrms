@@ -67,6 +67,8 @@ export interface NotificationPublic {
   sourceId: string | null;
   createdAt: string;
   readAt: string | null;
+  acknowledgedAt: string | null;
+  snoozedUntil: string | null;
 }
 
 export interface ListNotificationsQuery {
@@ -195,6 +197,7 @@ export class NotificationsService {
     if (!viewer.permissions.includes('notifications:view_own')) {
       throw new ForbiddenException('notifications:view_own required');
     }
+    const now = new Date();
     const where: Prisma.NotificationWhereInput = { recipientUserId: viewer.id };
     if (query.status && query.status !== 'active') {
       where.status = query.status;
@@ -202,6 +205,11 @@ export class NotificationsService {
       where.status = { in: ['unread', 'read'] };
     }
     if (query.type) where.type = query.type;
+    // Hide currently-snoozed items from the active + unread surfaces;
+    // they resurface once snoozedUntil passes.
+    if (!query.status || query.status === 'active' || query.status === 'unread') {
+      where.AND = [{ OR: [{ snoozedUntil: null }, { snoozedUntil: { lte: now } }] }];
+    }
 
     const [rows, total, unreadCount] = await Promise.all([
       prisma.notification.findMany({
@@ -212,7 +220,11 @@ export class NotificationsService {
       }),
       prisma.notification.count({ where }),
       prisma.notification.count({
-        where: { recipientUserId: viewer.id, status: 'unread' },
+        where: {
+          recipientUserId: viewer.id,
+          status: 'unread',
+          OR: [{ snoozedUntil: null }, { snoozedUntil: { lte: now } }],
+        },
       }),
     ]);
 
@@ -227,8 +239,13 @@ export class NotificationsService {
     if (!viewer.permissions.includes('notifications:view_own')) {
       throw new ForbiddenException('notifications:view_own required');
     }
+    const now = new Date();
     const count = await prisma.notification.count({
-      where: { recipientUserId: viewer.id, status: 'unread' },
+      where: {
+        recipientUserId: viewer.id,
+        status: 'unread',
+        OR: [{ snoozedUntil: null }, { snoozedUntil: { lte: now } }],
+      },
     });
     return { count };
   }
@@ -291,6 +308,80 @@ export class NotificationsService {
     );
     return toPublic(updated);
   }
+
+  /**
+   * Explicitly acknowledge ("I've handled this") — a stronger signal
+   * than `read`. Also marks it read so it leaves the unread count, but
+   * keeps it in the list (not dismissed).
+   */
+  async acknowledge(viewer: AuthenticatedUser, id: string): Promise<NotificationPublic> {
+    const existing = await prisma.notification.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Notification not found');
+    if (existing.recipientUserId !== viewer.id) {
+      throw new ForbiddenException('Cannot acknowledge someone else’s notification');
+    }
+    if (existing.status === 'dismissed') {
+      throw new BadRequestException('Cannot acknowledge a dismissed notification');
+    }
+    const updated = await prisma.notification.update({
+      where: { id },
+      data: {
+        status: 'read',
+        readAt: existing.readAt ?? new Date(),
+        acknowledgedAt: existing.acknowledgedAt ?? new Date(),
+      },
+    });
+    this.events.emit(
+      'notification.acknowledged',
+      { notificationId: id, recipientUserId: viewer.id },
+      { actorId: viewer.id },
+    );
+    return toPublic(updated);
+  }
+
+  /**
+   * Snooze until `until` (must be in the future). While snoozed the
+   * notification is hidden from the bell + unread count, then resurfaces
+   * as unread once the time passes.
+   */
+  async snooze(viewer: AuthenticatedUser, id: string, until: Date): Promise<NotificationPublic> {
+    const existing = await prisma.notification.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Notification not found');
+    if (existing.recipientUserId !== viewer.id) {
+      throw new ForbiddenException('Cannot snooze someone else’s notification');
+    }
+    if (existing.status === 'dismissed') {
+      throw new BadRequestException('Cannot snooze a dismissed notification');
+    }
+    if (until.getTime() <= Date.now()) {
+      throw new BadRequestException('Snooze time must be in the future');
+    }
+    const updated = await prisma.notification.update({
+      where: { id },
+      // Resurface as unread so it draws attention when it comes back.
+      data: { snoozedUntil: until, status: 'unread', readAt: null },
+    });
+    this.events.emit(
+      'notification.snoozed',
+      { notificationId: id, recipientUserId: viewer.id, until: until.toISOString() },
+      { actorId: viewer.id },
+    );
+    return toPublic(updated);
+  }
+
+  /** Clear a snooze so the notification returns to the bell immediately. */
+  async unsnooze(viewer: AuthenticatedUser, id: string): Promise<NotificationPublic> {
+    const existing = await prisma.notification.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Notification not found');
+    if (existing.recipientUserId !== viewer.id) {
+      throw new ForbiddenException('Cannot unsnooze someone else’s notification');
+    }
+    const updated = await prisma.notification.update({
+      where: { id },
+      data: { snoozedUntil: null },
+    });
+    return toPublic(updated);
+  }
 }
 
 function toPublic(row: {
@@ -307,6 +398,8 @@ function toPublic(row: {
   sourceId: string | null;
   createdAt: Date;
   readAt: Date | null;
+  acknowledgedAt: Date | null;
+  snoozedUntil: Date | null;
 }): NotificationPublic {
   return {
     id: row.id,
@@ -322,5 +415,7 @@ function toPublic(row: {
     sourceId: row.sourceId,
     createdAt: row.createdAt.toISOString(),
     readAt: row.readAt?.toISOString() ?? null,
+    acknowledgedAt: row.acknowledgedAt?.toISOString() ?? null,
+    snoozedUntil: row.snoozedUntil?.toISOString() ?? null,
   };
 }
