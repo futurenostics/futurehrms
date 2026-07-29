@@ -455,6 +455,16 @@ model CommissionRule {
   // items in the monthly run. 0 = no threshold (the default).
   minProjectRevenueUsd Decimal @default(0) @db.Decimal(12, 2)
 
+  // Per-person, per-project payout guardrails applied by the calc
+  // engine to each line item's calculatedAmountUsd (before manual /
+  // leave adjustments). null = no bound.
+  //   - perPersonFloorUsd: raise an eligible (non-zero) share up to
+  //     this minimum.
+  //   - perPersonCapUsd: clamp a share down to this ceiling.
+  // Validated cap >= floor at the API layer.
+  perPersonFloorUsd Decimal? @db.Decimal(12, 2)
+  perPersonCapUsd   Decimal? @db.Decimal(12, 2)
+
   // Roles + splits as JSON. Shape: { winner: 58, communicator: 30, eligible_team: 12 }.
   // Sum should equal 100 in any non-pending row.
   rolePercentages Json
