@@ -222,4 +222,9 @@ export function useEmployeeCommissionTrend(employeeId: string | null | undefined
 function invalidateRunQueries(qc: QueryClient, id?: string): void {
   qc.invalidateQueries({ queryKey: ['commission-runs', 'list'] });
   if (id) qc.invalidateQueries({ queryKey: KEY.one(id) });
+  // Submitting / approving / rejecting a run creates or resolves its
+  // Approval, so the inbox + bell must refresh too — otherwise the row
+  // only updates on a hard page refresh.
+  qc.invalidateQueries({ queryKey: ['approvals'] });
+  qc.invalidateQueries({ queryKey: ['notifications'] });
 }
