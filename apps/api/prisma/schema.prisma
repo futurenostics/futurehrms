@@ -861,13 +861,21 @@ model Reminder {
   /// Local-time-anchored fire-at. Stored UTC; the evaluator converts
   /// before scheduling so "9 AM Asia/Karachi" lands at the right epoch.
   scheduledFor    DateTime
-  status          String   @default("scheduled")  // scheduled | fired | cancelled
+  status          String   @default("scheduled")  // scheduled | fired | cancelled | failed
   /// Optional context the notification renderer can read.
   payload         Json?
   firedAt         DateTime?
   notificationId  String?
   cancelledAt     DateTime?
   cancelReason    String?
+  /// Delivery retry bookkeeping. Each failed send increments
+  /// `attempts` and pushes `scheduledFor` out by a backoff step; once
+  /// `attempts` hits the cap the row moves to `status='failed'`
+  /// (dead-letter) instead of looping forever. `lastError` keeps the
+  /// most recent failure message for the ops view.
+  attempts        Int      @default(0)
+  lastError       String?
+  lastAttemptAt   DateTime?
   createdAt       DateTime @default(now())
   /// Idempotency key. Computed at schedule time as
   ///   `${ruleId}|${recipientUserId}|${sourceType ?? '_'}|${sourceId ?? '_'}|${scheduledFor.toISOString().slice(0,13)}`

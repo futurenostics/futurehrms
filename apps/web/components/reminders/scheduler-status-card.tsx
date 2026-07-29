@@ -81,6 +81,11 @@ export function SchedulerStatusCard() {
           primary={data ? String(data.retriesPending) : '—'}
           secondary={null}
         />
+        <Stat
+          label="Dead-lettered"
+          primary={data ? String(data.deadLetterCount) : '—'}
+          secondary={null}
+        />
       </div>
 
       <Button

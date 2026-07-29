@@ -142,6 +142,7 @@ export interface SchedulerStatus {
   emailsSent30d: number;
   retriesPending: number;
   scheduledNext30d: number;
+  deadLetterCount: number;
 }
 
 export interface TimelineBucket {
@@ -187,11 +188,14 @@ export interface ReminderPublic {
   sourceType: string | null;
   sourceId: string | null;
   scheduledFor: string;
-  status: 'scheduled' | 'fired' | 'cancelled';
+  status: 'scheduled' | 'fired' | 'cancelled' | 'failed';
   firedAt: string | null;
   notificationId: string | null;
   cancelledAt: string | null;
   cancelReason: string | null;
+  attempts: number;
+  lastError: string | null;
+  lastAttemptAt: string | null;
   createdAt: string;
 }
 
@@ -525,6 +529,17 @@ export function useCancelScheduled() {
       apiFetch<{ id: string; status: string }>(`/api/reminders/${id}/cancel`, {
         method: 'POST',
         body: JSON.stringify({ reason }),
+      }),
+    onSuccess: () => invalidateAll(qc),
+  });
+}
+
+export function useRetryReminder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<{ id: string; status: string }>(`/api/reminders/${id}/retry`, {
+        method: 'POST',
       }),
     onSuccess: () => invalidateAll(qc),
   });
