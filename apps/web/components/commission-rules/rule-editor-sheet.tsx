@@ -44,6 +44,7 @@ import {
   useUpdateCommissionRule,
 } from '@/lib/queries/commission-rules';
 import { useReferences } from '@/lib/queries/employees';
+import { apiFetch } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 
 /**
@@ -274,18 +275,16 @@ export function CommissionRuleEditorSheet({
         applyMode === 'specific-date' && specificDate
           ? new Date(specificDate).toISOString()
           : undefined;
-      // Use a fresh mutation since publishMutation closure is bound to ruleId.
-      const published = await fetch(`/api/commission-rules/${targetId}/publish`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(effectiveFrom ? { effectiveFrom } : {}),
-      });
-      if (!published.ok) {
-        const body = await published.json().catch(() => ({}));
-        throw new Error(body.message ?? 'Failed to publish');
-      }
-      const payload = (await published.json()) as CommissionRulePublic;
+      // Publish via apiFetch (not the pre-bound publish hook, whose
+      // ruleId closure is empty for a freshly-created draft, and not a
+      // raw fetch, which would omit the in-memory bearer token → 401).
+      const payload = await apiFetch<CommissionRulePublic>(
+        `/api/commission-rules/${targetId}/publish`,
+        {
+          method: 'POST',
+          body: JSON.stringify(effectiveFrom ? { effectiveFrom } : {}),
+        },
+      );
       toast.success(`Published v${payload.version}.`);
       onOpenChange(false);
     } catch (err) {
