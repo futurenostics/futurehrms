@@ -153,6 +153,29 @@ export class NotificationsController {
     return this.notifications.dismiss(user, id);
   }
 
+  @Patch(':id/acknowledge')
+  @RequirePermission('notifications:view_own')
+  async acknowledge(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.notifications.acknowledge(user, id);
+  }
+
+  @Patch(':id/snooze')
+  @RequirePermission('notifications:view_own')
+  async snooze(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const { until } = z.object({ until: z.string().datetime() }).parse(body);
+    return this.notifications.snooze(user, id, new Date(until));
+  }
+
+  @Patch(':id/unsnooze')
+  @RequirePermission('notifications:view_own')
+  async unsnooze(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.notifications.unsnooze(user, id);
+  }
+
   /* ---------- Custom notification types (admin) ---------- */
 
   @Get('custom-types')

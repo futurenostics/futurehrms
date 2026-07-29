@@ -17,6 +17,8 @@ export interface NotificationPublic {
   sourceId: string | null;
   createdAt: string;
   readAt: string | null;
+  acknowledgedAt: string | null;
+  snoozedUntil: string | null;
 }
 
 export interface NotificationListResponse {
@@ -223,6 +225,36 @@ export function useDismissNotification() {
   return useMutation({
     mutationFn: (id: string) =>
       apiFetch<NotificationPublic>(`/api/notifications/${id}/dismiss`, { method: 'PATCH' }),
+    onSuccess: () => invalidate(qc),
+  });
+}
+
+export function useAcknowledgeNotification() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<NotificationPublic>(`/api/notifications/${id}/acknowledge`, { method: 'PATCH' }),
+    onSuccess: () => invalidate(qc),
+  });
+}
+
+export function useSnoozeNotification() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, until }: { id: string; until: string }) =>
+      apiFetch<NotificationPublic>(`/api/notifications/${id}/snooze`, {
+        method: 'PATCH',
+        body: JSON.stringify({ until }),
+      }),
+    onSuccess: () => invalidate(qc),
+  });
+}
+
+export function useUnsnoozeNotification() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<NotificationPublic>(`/api/notifications/${id}/unsnooze`, { method: 'PATCH' }),
     onSuccess: () => invalidate(qc),
   });
 }
