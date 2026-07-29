@@ -31,12 +31,17 @@ import { Prisma } from '@prisma/client';
 import {
   COMMISSION_RUN_TRANSITIONS,
   type CommissionLineItemAdjustInput,
+  type CommissionLineItemManualCreateInput,
   type CommissionRunApproveInput,
   type CommissionRunCreateInput,
   type CommissionRunDetail,
+  type CommissionRunAnalytics,
+  type CommissionRunAnalyticsQuery,
   type CommissionRunListQuery,
   type CommissionRunListResponse,
   type CommissionRunRejectInput,
+  type CommissionRunsTrend,
+  type CommissionRunsTrendQuery,
   type CommissionRunStatus,
   type CommissionRunSubmitInput,
   type CommissionRunSummary,
@@ -435,6 +440,122 @@ export class CommissionRunsService {
         projectId: existing.projectId,
         priorFinalUsd: Number(existing.finalAmountUsd),
         newFinalUsd: finalAmountUsd,
+      },
+      { actorId: viewer.id },
+    );
+
+    return this.findOne(viewer, runId);
+  }
+
+  /**
+   * Manually add a recipient the calc engine didn't generate (draft
+   * runs only). The amount goes entirely into `manualAdjustmentUsd`
+   * with a required note; `calculatedAmountUsd` is 0 and the month
+   * fraction reads 0/days-in-month since there's no proration math.
+   *
+   * A recalculate wipes manual lines along with everything else — the
+   * caller is warned about that on the recalc button, same as manual
+   * adjustments.
+   */
+  async addManualLineItem(
+    viewer: AuthenticatedUser,
+    runId: string,
+    input: CommissionLineItemManualCreateInput,
+  ): Promise<CommissionRunDetail> {
+    this.require('commissions:adjust_line_item', viewer);
+    const run = await prisma.commissionRun.findUnique({ where: { id: runId } });
+    if (!run) throw new NotFoundException('Commission run not found');
+    this.assertDraft(run.status);
+
+    const project = await prisma.project.findUnique({ where: { id: input.projectId } });
+    if (!project) throw new BadRequestException('Unknown project');
+    const employee = await prisma.employee.findUnique({ where: { id: input.employeeId } });
+    if (!employee) throw new BadRequestException('Unknown employee');
+
+    const duplicate = await prisma.commissionLineItem.findUnique({
+      where: {
+        runId_projectId_employeeId_roleName: {
+          runId,
+          projectId: input.projectId,
+          employeeId: input.employeeId,
+          roleName: input.roleName,
+        },
+      },
+    });
+    if (duplicate) {
+      throw new BadRequestException(
+        `A line item already exists for this employee, project, and role on this run. ` +
+          `Adjust the existing line instead of adding a duplicate.`,
+      );
+    }
+
+    const amount = roundUsd(input.amountUsd);
+    await prisma.commissionLineItem.create({
+      data: {
+        runId,
+        projectId: input.projectId,
+        employeeId: input.employeeId,
+        roleName: input.roleName,
+        snapshotPercentage: new Prisma.Decimal(0),
+        baseRevenueUsd: project.revenueUsd,
+        monthFractionNumerator: 0,
+        monthFractionDenominator: daysInMonth(run.monthKey),
+        calculatedAmountUsd: new Prisma.Decimal(0),
+        leaveAdjustmentUsd: new Prisma.Decimal(0),
+        manualAdjustmentUsd: new Prisma.Decimal(amount),
+        manualAdjustmentNote: input.note,
+        isHeld: false,
+        finalAmountUsd: new Prisma.Decimal(amount),
+      },
+    });
+
+    this.events.emit(
+      'commission.line_item.added',
+      {
+        runId,
+        projectId: input.projectId,
+        employeeId: input.employeeId,
+        roleName: input.roleName,
+        amountUsd: amount,
+        note: input.note,
+      },
+      { actorId: viewer.id },
+    );
+
+    return this.findOne(viewer, runId);
+  }
+
+  /**
+   * Remove a line item from a draft run. Intended for manually-added
+   * lines, but any draft line can be removed — a recalculate would
+   * regenerate the calc-driven ones anyway.
+   */
+  async removeLineItem(
+    viewer: AuthenticatedUser,
+    runId: string,
+    lineItemId: string,
+  ): Promise<CommissionRunDetail> {
+    this.require('commissions:adjust_line_item', viewer);
+    const run = await prisma.commissionRun.findUnique({ where: { id: runId } });
+    if (!run) throw new NotFoundException('Commission run not found');
+    this.assertDraft(run.status);
+
+    const existing = await prisma.commissionLineItem.findUnique({ where: { id: lineItemId } });
+    if (!existing || existing.runId !== runId) {
+      throw new NotFoundException('Line item not found on this run');
+    }
+
+    await prisma.commissionLineItem.delete({ where: { id: lineItemId } });
+
+    this.events.emit(
+      'commission.line_item.removed',
+      {
+        runId,
+        lineItemId,
+        employeeId: existing.employeeId,
+        projectId: existing.projectId,
+        roleName: existing.roleName,
+        finalUsd: Number(existing.finalAmountUsd),
       },
       { actorId: viewer.id },
     );
@@ -866,6 +987,185 @@ export class CommissionRunsService {
     };
   }
 
+  /* ---------- Analytics / rollups ---------- */
+
+  /**
+   * Per-run rollups: top-earner leaderboard plus totals grouped by
+   * department, project category, and role. Read-only; gated on
+   * `view_runs` like the rest of the run detail surface. Amounts use
+   * `finalAmountUsd` so adjustments and manual lines are reflected.
+   */
+  async runAnalytics(
+    viewer: AuthenticatedUser,
+    id: string,
+    query: CommissionRunAnalyticsQuery,
+  ): Promise<CommissionRunAnalytics> {
+    this.requireRunsView(viewer);
+    const run = await prisma.commissionRun.findUnique({
+      where: { id },
+      include: COMMISSION_RUN_INCLUDE,
+    });
+    if (!run) throw new NotFoundException('Commission run not found');
+
+    const total = roundUsd(run.lineItems.reduce((s, li) => s + Number(li.finalAmountUsd), 0));
+
+    // Per-employee leaderboard.
+    type EmpAgg = { fullName: string; eid: string; departmentName: string | null; total: number };
+    const byEmployee = new Map<string, EmpAgg>();
+    // Grouped rollups keyed by dept / category / role.
+    const deptAgg = new Map<string, { label: string; total: number; employees: Set<string> }>();
+    const catAgg = new Map<
+      string,
+      { label: string; color: string | null; total: number; employees: Set<string> }
+    >();
+    const roleAgg = new Map<string, { total: number; employees: Set<string> }>();
+
+    for (const li of run.lineItems) {
+      const amount = Number(li.finalAmountUsd);
+
+      const emp = byEmployee.get(li.employeeId) ?? {
+        fullName: li.employee.fullName,
+        eid: li.employee.eid,
+        departmentName: li.employee.department?.name ?? null,
+        total: 0,
+      };
+      emp.total += amount;
+      byEmployee.set(li.employeeId, emp);
+
+      const deptName = li.employee.department?.name ?? 'Unassigned';
+      const dept = deptAgg.get(deptName) ?? { label: deptName, total: 0, employees: new Set() };
+      dept.total += amount;
+      dept.employees.add(li.employeeId);
+      deptAgg.set(deptName, dept);
+
+      const cat = catAgg.get(li.project.category.id) ?? {
+        label: li.project.category.name,
+        color: li.project.category.color,
+        total: 0,
+        employees: new Set(),
+      };
+      cat.total += amount;
+      cat.employees.add(li.employeeId);
+      catAgg.set(li.project.category.id, cat);
+
+      const role = roleAgg.get(li.roleName) ?? { total: 0, employees: new Set() };
+      role.total += amount;
+      role.employees.add(li.employeeId);
+      roleAgg.set(li.roleName, role);
+    }
+
+    const topEarners = Array.from(byEmployee.entries())
+      .map(([employeeId, e]) => ({
+        employeeId,
+        fullName: e.fullName,
+        eid: e.eid,
+        departmentName: e.departmentName,
+        totalUsd: roundUsd(e.total),
+        shareOfRun: total > 0 ? roundUsd((e.total / total) * 100) / 100 : 0,
+      }))
+      .sort((a, b) => b.totalUsd - a.totalUsd)
+      .slice(0, query.topN);
+
+    const byDepartment = Array.from(deptAgg.entries())
+      .map(([key, d]) => ({
+        key,
+        label: d.label,
+        color: null,
+        totalUsd: roundUsd(d.total),
+        recipientCount: d.employees.size,
+      }))
+      .sort((a, b) => b.totalUsd - a.totalUsd);
+
+    const byCategory = Array.from(catAgg.entries())
+      .map(([key, c]) => ({
+        key,
+        label: c.label,
+        color: c.color,
+        totalUsd: roundUsd(c.total),
+        recipientCount: c.employees.size,
+      }))
+      .sort((a, b) => b.totalUsd - a.totalUsd);
+
+    const byRole = Array.from(roleAgg.entries())
+      .map(([key, r]) => ({
+        key,
+        label: key,
+        color: null,
+        totalUsd: roundUsd(r.total),
+        recipientCount: r.employees.size,
+      }))
+      .sort((a, b) => b.totalUsd - a.totalUsd);
+
+    return {
+      runId: run.id,
+      monthKey: run.monthKey,
+      monthLabel: monthLabel(run.monthKey),
+      status: run.status as CommissionRunStatus,
+      totalUsd: total,
+      recipientCount: byEmployee.size,
+      projectCount: new Set(run.lineItems.map((li) => li.projectId)).size,
+      topEarners,
+      byDepartment,
+      byCategory,
+      byRole,
+    };
+  }
+
+  /**
+   * Cross-run trend for period-over-period analysis: one point per
+   * month over the trailing `monthsBack` window, whether or not a run
+   * exists. Read-only; gated on `view_runs`.
+   */
+  async runsTrend(
+    viewer: AuthenticatedUser,
+    query: CommissionRunsTrendQuery,
+  ): Promise<CommissionRunsTrend> {
+    this.requireRunsView(viewer);
+
+    const months: string[] = [];
+    const now = new Date();
+    for (let i = 0; i < query.monthsBack; i += 1) {
+      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+      months.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`);
+    }
+    months.reverse();
+
+    const runs = await prisma.commissionRun.findMany({
+      where: { monthKey: { in: months } },
+      select: {
+        monthKey: true,
+        status: true,
+        lineItems: { select: { finalAmountUsd: true, employeeId: true } },
+      },
+    });
+
+    const byMonth = new Map(runs.map((r) => [r.monthKey, r]));
+
+    return {
+      points: months.map((m) => {
+        const r = byMonth.get(m);
+        if (!r) {
+          return {
+            monthKey: m,
+            monthLabel: monthLabel(m),
+            status: null,
+            totalUsd: 0,
+            recipientCount: 0,
+          };
+        }
+        const totalUsd = roundUsd(r.lineItems.reduce((s, li) => s + Number(li.finalAmountUsd), 0));
+        const recipientCount = new Set(r.lineItems.map((li) => li.employeeId)).size;
+        return {
+          monthKey: m,
+          monthLabel: monthLabel(m),
+          status: r.status as CommissionRunStatus,
+          totalUsd,
+          recipientCount,
+        };
+      }),
+    };
+  }
+
   /* ---------- Internal helpers ---------- */
 
   private async summary(id: string): Promise<CommissionRunSummary> {
@@ -890,6 +1190,13 @@ function formatAmount(value: number): string {
 /** Percentage as a plain decimal string ("50" / "33.33"). */
 function formatPercentage(value: number): string {
   return Number.isInteger(value) ? value.toString() : value.toFixed(2);
+}
+
+/** Number of days in the month a 'YYYY-MM' key refers to. */
+function daysInMonth(monthKey: string): number {
+  const [year, month] = monthKey.split('-').map(Number);
+  if (!year || !month) throw new Error(`Invalid monthKey: ${monthKey}`);
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
 /** 'YYYY-MM' → previous month 'YYYY-MM'. */

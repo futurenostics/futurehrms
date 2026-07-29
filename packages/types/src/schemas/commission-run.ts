@@ -154,6 +154,23 @@ export const commissionLineItemAdjustSchema = z.object({
 });
 export type CommissionLineItemAdjustInput = z.infer<typeof commissionLineItemAdjustSchema>;
 
+/**
+ * Manually add a recipient the calc engine didn't generate (draft
+ * runs only). The whole amount lands in `manualAdjustmentUsd` with a
+ * required note; the calculated portion is 0. A reason is mandatory
+ * because a manual line has no rule/project math backing it.
+ */
+export const commissionLineItemManualCreateSchema = z.object({
+  projectId: z.string().min(1),
+  employeeId: z.string().min(1),
+  roleName: z.string().trim().min(1).max(40),
+  amountUsd: z.coerce.number().refine((n) => n !== 0, 'Amount must be non-zero'),
+  note: z.string().trim().min(1).max(500),
+});
+export type CommissionLineItemManualCreateInput = z.infer<
+  typeof commissionLineItemManualCreateSchema
+>;
+
 /* ---------- Lifecycle inputs ---------- */
 
 export const commissionRunSubmitSchema = z.object({
@@ -199,3 +216,69 @@ export const employeeCommissionTrendSchema = z.object({
   points: z.array(employeeCommissionTrendPointSchema),
 });
 export type EmployeeCommissionTrend = z.infer<typeof employeeCommissionTrendSchema>;
+
+/* ---------- Run analytics (rollups + leaderboard) ---------- */
+
+export const commissionRunAnalyticsQuerySchema = z.object({
+  /** How many rows to return in the top-earners leaderboard. */
+  topN: z.coerce.number().int().min(1).max(100).default(10),
+});
+export type CommissionRunAnalyticsQuery = z.infer<typeof commissionRunAnalyticsQuerySchema>;
+
+export const commissionLeaderboardRowSchema = z.object({
+  employeeId: z.string(),
+  fullName: z.string(),
+  eid: z.string(),
+  departmentName: z.string().nullable(),
+  totalUsd: z.number(),
+  /** Fraction (0–1) of the run's total this person accounts for. */
+  shareOfRun: z.number(),
+});
+export type CommissionLeaderboardRow = z.infer<typeof commissionLeaderboardRowSchema>;
+
+export const commissionRollupRowSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  /** Optional swatch (category color); null for dept/role rows. */
+  color: z.string().nullable(),
+  totalUsd: z.number(),
+  recipientCount: z.number().int().nonnegative(),
+});
+export type CommissionRollupRow = z.infer<typeof commissionRollupRowSchema>;
+
+export const commissionRunAnalyticsSchema = z.object({
+  runId: z.string(),
+  monthKey: z.string(),
+  monthLabel: z.string(),
+  status: commissionRunStatusSchema,
+  totalUsd: z.number(),
+  recipientCount: z.number().int().nonnegative(),
+  projectCount: z.number().int().nonnegative(),
+  topEarners: z.array(commissionLeaderboardRowSchema),
+  byDepartment: z.array(commissionRollupRowSchema),
+  byCategory: z.array(commissionRollupRowSchema),
+  byRole: z.array(commissionRollupRowSchema),
+});
+export type CommissionRunAnalytics = z.infer<typeof commissionRunAnalyticsSchema>;
+
+/* ---------- Cross-run trend (period-over-period) ---------- */
+
+export const commissionRunsTrendQuerySchema = z.object({
+  monthsBack: z.coerce.number().int().min(1).max(36).default(12),
+});
+export type CommissionRunsTrendQuery = z.infer<typeof commissionRunsTrendQuerySchema>;
+
+export const commissionRunsTrendPointSchema = z.object({
+  monthKey: z.string(),
+  monthLabel: z.string(),
+  /** null when no run exists for that month. */
+  status: commissionRunStatusSchema.nullable(),
+  totalUsd: z.number(),
+  recipientCount: z.number().int().nonnegative(),
+});
+export type CommissionRunsTrendPoint = z.infer<typeof commissionRunsTrendPointSchema>;
+
+export const commissionRunsTrendSchema = z.object({
+  points: z.array(commissionRunsTrendPointSchema),
+});
+export type CommissionRunsTrend = z.infer<typeof commissionRunsTrendSchema>;

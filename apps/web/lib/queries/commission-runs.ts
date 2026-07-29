@@ -3,12 +3,15 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type {
   CommissionLineItemAdjustInput,
+  CommissionLineItemManualCreateInput,
+  CommissionRunAnalytics,
   CommissionRunApproveInput,
   CommissionRunCreateInput,
   CommissionRunDetail,
   CommissionRunListQuery,
   CommissionRunListResponse,
   CommissionRunRejectInput,
+  CommissionRunsTrend,
   CommissionRunSubmitInput,
   CommissionRunSummary,
   EmployeeCommissionBreakdown,
@@ -23,6 +26,8 @@ const KEY = {
     ['employees', employeeId, 'commission-breakdown', month] as const,
   employeeTrend: (employeeId: string, monthsBack: number) =>
     ['employees', employeeId, 'commission-trend', monthsBack] as const,
+  analytics: (id: string, topN: number) => ['commission-runs', 'analytics', id, topN] as const,
+  trend: (monthsBack: number) => ['commission-runs', 'trend', monthsBack] as const,
 };
 
 function buildQs(query: Partial<CommissionRunListQuery>): string {
@@ -89,6 +94,29 @@ export function useAdjustLineItem(runId: string) {
   });
 }
 
+export function useAddLineItem(runId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CommissionLineItemManualCreateInput) =>
+      apiFetch<CommissionRunDetail>(`/api/commission-runs/${runId}/line-items`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => invalidateRunQueries(qc, runId),
+  });
+}
+
+export function useRemoveLineItem(runId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (lineItemId: string) =>
+      apiFetch<CommissionRunDetail>(`/api/commission-runs/${runId}/line-items/${lineItemId}`, {
+        method: 'DELETE',
+      }),
+    onSuccess: () => invalidateRunQueries(qc, runId),
+  });
+}
+
 export function useSubmitCommissionRun(id: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -140,6 +168,27 @@ export function useReopenCommissionRun(id: string) {
     mutationFn: () =>
       apiFetch<CommissionRunSummary>(`/api/commission-runs/${id}/reopen`, { method: 'POST' }),
     onSuccess: () => invalidateRunQueries(qc, id),
+  });
+}
+
+/* ---------- Analytics ---------- */
+
+export function useCommissionRunAnalytics(id: string | null | undefined, topN = 10) {
+  return useQuery<CommissionRunAnalytics>({
+    queryKey: KEY.analytics(id ?? '', topN),
+    queryFn: () =>
+      apiFetch<CommissionRunAnalytics>(`/api/commission-runs/${id}/analytics?topN=${topN}`),
+    enabled: Boolean(id),
+  });
+}
+
+export function useCommissionRunsTrend(monthsBack = 12) {
+  return useQuery<CommissionRunsTrend>({
+    queryKey: KEY.trend(monthsBack),
+    queryFn: () =>
+      apiFetch<CommissionRunsTrend>(
+        `/api/commission-runs/analytics/trend?monthsBack=${monthsBack}`,
+      ),
   });
 }
 

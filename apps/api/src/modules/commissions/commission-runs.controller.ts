@@ -1,11 +1,14 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import {
   commissionLineItemAdjustSchema,
+  commissionLineItemManualCreateSchema,
+  commissionRunAnalyticsQuerySchema,
   commissionRunApproveSchema,
   commissionRunCreateSchema,
   commissionRunListQuerySchema,
   commissionRunRejectSchema,
+  commissionRunsTrendQuerySchema,
   commissionRunSubmitSchema,
 } from '@futurenostics/types';
 import { CurrentUser } from '../../core/auth/decorators/current-user.decorator';
@@ -24,10 +27,34 @@ export class CommissionRunsController {
     return this.runs.list(user, query);
   }
 
+  /**
+   * Cross-run trend (period-over-period). Declared before the `:id`
+   * routes so the static `analytics/trend` path isn't shadowed by the
+   * `:id` param matcher.
+   */
+  @Get('analytics/trend')
+  @RequirePermission('commissions:view_runs')
+  async trend(@CurrentUser() user: AuthenticatedUser, @Query() rawQuery: Record<string, unknown>) {
+    const query = commissionRunsTrendQuerySchema.parse(rawQuery);
+    return this.runs.runsTrend(user, query);
+  }
+
   @Get(':id')
   @RequirePermission('commissions:view_runs')
   async findOne(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.runs.findOne(user, id);
+  }
+
+  /** Per-run rollups + top-earner leaderboard. */
+  @Get(':id/analytics')
+  @RequirePermission('commissions:view_runs')
+  async analytics(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Query() rawQuery: Record<string, unknown>,
+  ) {
+    const query = commissionRunAnalyticsQuerySchema.parse(rawQuery);
+    return this.runs.runAnalytics(user, id, query);
   }
 
   /**
@@ -76,6 +103,29 @@ export class CommissionRunsController {
   ) {
     const input = commissionLineItemAdjustSchema.parse(body);
     return this.runs.adjustLineItem(user, id, lineItemId, input);
+  }
+
+  /** Manually add a recipient the calc engine didn't generate (draft only). */
+  @Post(':id/line-items')
+  @RequirePermission('commissions:adjust_line_item')
+  async addLineItem(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const input = commissionLineItemManualCreateSchema.parse(body);
+    return this.runs.addManualLineItem(user, id, input);
+  }
+
+  /** Remove a line item from a draft run. */
+  @Delete(':id/line-items/:lineItemId')
+  @RequirePermission('commissions:adjust_line_item')
+  async removeLineItem(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('lineItemId') lineItemId: string,
+  ) {
+    return this.runs.removeLineItem(user, id, lineItemId);
   }
 
   @Post(':id/submit')
