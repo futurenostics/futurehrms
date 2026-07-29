@@ -32,12 +32,14 @@ import { z } from 'zod';
 
 /**
  * The entity kinds the trigger evaluator + cron scanner can hydrate
- * and pass to resolvers. Recipient resolvers today only know how to
- * traverse from `employee` / `employeeDocument` sources to user IDs;
- * the rest exist so the condition tree can filter rows of those
- * entities at cron tick. For non-employee sources, recipient lists
- * must rely on non-source resolvers (specific-employees, role-members,
- * hr-admins, etc.).
+ * and pass to resolvers. Employee-shaped sources (`employee` /
+ * `employeeDocument`) traverse to users via manager/self/dept lookups;
+ * `project`, `commissionRun`, and `approval` sources traverse via the
+ * dedicated project-assignees / commission-run-recipients /
+ * approval-submitter resolvers. The remaining kinds exist so the
+ * condition tree can filter rows of those entities at cron tick;
+ * source-independent resolvers (specific-employees, role-members,
+ * hr-admins) work for any source.
  */
 export type ResolverSource =
   | { kind: 'employee'; id: string }
@@ -49,6 +51,7 @@ export type ResolverSource =
   | { kind: 'projectAssignment'; id: string }
   | { kind: 'commissionRule'; id: string }
   | { kind: 'commissionRun'; id: string }
+  | { kind: 'approval'; id: string }
   | null;
 
 /** Per-entry configuration carried inside the rule's recipientResolvers array. */
@@ -252,6 +255,32 @@ export class RecipientResolverRegistry {
       label: 'BD managers',
       description: 'Managers in the Business Development department',
       resolve: async () => resolveDeptManagersBySlug('business-development'),
+    });
+
+    /* ---------- Non-employee source resolvers ---------- */
+    // Traverse from a project / commission-run / approval source to the
+    // relevant users, so event rules on those entities reach a real
+    // recipient list instead of silently resolving to zero.
+
+    this.register({
+      key: 'project-assignees',
+      label: 'Project assignees',
+      description: 'Every employee currently assigned to the source project',
+      resolve: async (_rule, source) => resolveProjectAssigneeUserIds(source),
+    });
+
+    this.register({
+      key: 'commission-run-recipients',
+      label: 'Commission run recipients',
+      description: 'Every employee with a line item in the source run',
+      resolve: async (_rule, source) => resolveCommissionRunRecipientUserIds(source),
+    });
+
+    this.register({
+      key: 'approval-submitter',
+      label: 'Approval submitter',
+      description: 'The user who submitted the source approval',
+      resolve: async (_rule, source) => resolveApprovalSubmitterUserIds(source),
     });
 
     /* ---------- New parameterised resolvers ---------- */
@@ -484,6 +513,47 @@ async function resolveDirectReportUserIds(source: ResolverSource): Promise<strin
     .map((e) => e.user)
     .filter((u): u is { id: string; isActive: boolean } => !!u && u.isActive)
     .map((u) => u.id);
+}
+
+async function resolveProjectAssigneeUserIds(source: ResolverSource): Promise<string[]> {
+  if (!source || source.kind !== 'project') return [];
+  const assignments = await prisma.projectAssignment.findMany({
+    where: { projectId: source.id, removedAt: null },
+    select: { employeeId: true },
+  });
+  return usersForEmployeeIds(assignments.map((a) => a.employeeId));
+}
+
+async function resolveCommissionRunRecipientUserIds(source: ResolverSource): Promise<string[]> {
+  if (!source || source.kind !== 'commissionRun') return [];
+  const lines = await prisma.commissionLineItem.findMany({
+    where: { runId: source.id },
+    select: { employeeId: true },
+    distinct: ['employeeId'],
+  });
+  return usersForEmployeeIds(lines.map((l) => l.employeeId));
+}
+
+async function resolveApprovalSubmitterUserIds(source: ResolverSource): Promise<string[]> {
+  if (!source || source.kind !== 'approval') return [];
+  // Approval.submittedById is already a User id. The fire path
+  // re-validates isActive before sending, so we don't re-check here.
+  const approval = await prisma.approval.findUnique({
+    where: { id: source.id },
+    select: { submittedById: true },
+  });
+  return approval?.submittedById ? [approval.submittedById] : [];
+}
+
+/** Active users linked to the given employee ids (deduped by the caller path). */
+async function usersForEmployeeIds(employeeIds: string[]): Promise<string[]> {
+  const ids = employeeIds.filter((id): id is string => Boolean(id));
+  if (ids.length === 0) return [];
+  const rows = await prisma.user.findMany({
+    where: { isActive: true, employeeId: { in: ids } },
+    select: { id: true },
+  });
+  return rows.map((r) => r.id);
 }
 
 async function resolveManagerUserIds(source: ResolverSource): Promise<string[]> {

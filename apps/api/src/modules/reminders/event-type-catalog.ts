@@ -250,3 +250,18 @@ export function buildEventCatalogResponse(): EventCatalogResponse {
 
 /** O(1) lookup table — used by the rules service to validate eventType. */
 export const KNOWN_EVENT_TYPES: ReadonlySet<string> = new Set(EVENT_TYPES.map((e) => e.type));
+
+/** O(1) event-type → definition lookup. */
+const EVENT_TYPE_BY_NAME: ReadonlyMap<string, EventTypeDef> = new Map(
+  EVENT_TYPES.map((e) => [e.type, e]),
+);
+
+/**
+ * The source entity an event's payload carries, per the catalog.
+ * Returns `null` for freeform / non-entity events and for unknown
+ * types. The trigger evaluator uses this to map the payload to a
+ * concrete `(kind, id)` source instead of guessing from field names.
+ */
+export function sourceKindForEvent(type: string): EventSourceKind {
+  return EVENT_TYPE_BY_NAME.get(type)?.sourceKind ?? null;
+}
