@@ -54,8 +54,8 @@ export const remindersManifest: ModuleManifest = {
   ],
   scheduledJobs: [
     {
-      name: 'reminders.hourly-tick',
-      cron: '0 * * * *',
+      name: 'reminders.tick',
+      cron: '*/15 * * * *',
       handler: 'tick',
     },
   ],

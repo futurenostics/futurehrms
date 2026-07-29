@@ -49,14 +49,18 @@ import type { CronTriggerSpec } from './reminder-trigger.types';
 import { deriveScanTargets, evaluateConditions } from './reminder-conditions.evaluator';
 import { buildConditionContexts } from './reminder-condition-context';
 import { cronMatches } from './cron-matcher';
+import { DEFAULT_TZ, isWithinQuietHours, nextQuietEnd } from './tz-utils';
 import {
   fetchSourcesForKind as scanForKind,
   isScannableKind as isKnownScanKind,
 } from './reminder-entity-scans';
 
 const QUEUE_NAME = 'reminders';
-const JOB_NAME = 'hourly-tick';
-const CRON = '0 * * * *'; // top of every hour
+const JOB_NAME = 'quarter-hour-tick';
+// Every 15 minutes (was hourly) — due reminders now fire within ≤15m
+// of their scheduled time, and quiet-hours deferral resurfaces at a
+// finer granularity.
+const CRON = '*/15 * * * *';
 const TZ = 'Asia/Karachi';
 
 /** What the scheduler-status endpoint returns. */
@@ -100,7 +104,7 @@ export class ReminderSchedulerService implements OnApplicationBootstrap, OnModul
       {},
       {
         repeat: { pattern: CRON, tz: TZ },
-        jobId: 'reminders-hourly-tick',
+        jobId: 'reminders-tick',
       },
     );
     this.logger.log(`Scheduled reminder tick: '${CRON}' ${TZ} (queue=${QUEUE_NAME})`);
@@ -175,7 +179,12 @@ export class ReminderSchedulerService implements OnApplicationBootstrap, OnModul
     // hit and the wasted notification would be worse.
     const user = await prisma.user.findUnique({
       where: { id: reminder.recipientUserId },
-      select: { id: true, isActive: true, deletedAt: true },
+      select: {
+        id: true,
+        isActive: true,
+        deletedAt: true,
+        employee: { select: { timezone: true, quietHoursStart: true, quietHoursEnd: true } },
+      },
     });
     if (!user || !user.isActive || user.deletedAt) {
       await prisma.reminder.update({
@@ -186,6 +195,25 @@ export class ReminderSchedulerService implements OnApplicationBootstrap, OnModul
           cancelReason: 'recipient deactivated or deleted',
         },
       });
+      return;
+    }
+
+    // Quiet hours — if it's currently within the recipient's quiet
+    // window, defer this reminder to the end of the window (in their
+    // timezone) instead of firing. It stays `scheduled` and goes out on
+    // a later tick once the window closes.
+    const tz = user.employee?.timezone ?? DEFAULT_TZ;
+    const qStart = user.employee?.quietHoursStart ?? null;
+    const qEnd = user.employee?.quietHoursEnd ?? null;
+    if (qEnd && isWithinQuietHours(new Date(), tz, qStart, qEnd)) {
+      const deferTo = nextQuietEnd(new Date(), tz, qEnd);
+      await prisma.reminder.update({
+        where: { id: reminder.id },
+        data: { scheduledFor: deferTo },
+      });
+      this.logger.log(
+        `reminder ${reminder.id} deferred to ${deferTo.toISOString()} (recipient quiet hours ${qStart}-${qEnd} ${tz})`,
+      );
       return;
     }
 

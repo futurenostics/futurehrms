@@ -110,6 +110,21 @@ const COMMISSION_RATE_OPTIONS = [
   { value: 'flat_10', label: 'Flat 10%' },
 ];
 
+// Curated IANA zones for the reminder-delivery timezone picker. Empty
+// value = fall back to the org default (Asia/Karachi).
+const TIMEZONE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: '', label: 'Org default (Asia/Karachi)' },
+  { value: 'Asia/Karachi', label: 'Asia/Karachi (PKT)' },
+  { value: 'Asia/Dubai', label: 'Asia/Dubai (GST)' },
+  { value: 'Asia/Kolkata', label: 'Asia/Kolkata (IST)' },
+  { value: 'Europe/London', label: 'Europe/London' },
+  { value: 'Europe/Berlin', label: 'Europe/Berlin (CET)' },
+  { value: 'America/New_York', label: 'America/New York (ET)' },
+  { value: 'America/Chicago', label: 'America/Chicago (CT)' },
+  { value: 'America/Los_Angeles', label: 'America/Los Angeles (PT)' },
+  { value: 'UTC', label: 'UTC' },
+];
+
 const EMPLOYMENT_RECORD_LABELS: Record<EmploymentRecord, string> = {
   on_roll: 'On-roll (statutory benefits)',
   off_roll: 'Off-roll',
@@ -721,6 +736,37 @@ export function EmployeeFormSheet({
                     })
                   }
                   placeholder="Select record type"
+                />
+              </Field>
+
+              <Field label="Timezone" hint="Reminders + quiet hours use this" fieldKey="timezone">
+                <Combobox
+                  options={TIMEZONE_OPTIONS}
+                  value={watch.timezone ?? ''}
+                  onValueChange={(v) => form.setValue('timezone', v || null, { shouldDirty: true })}
+                  placeholder="Org default (Asia/Karachi)"
+                />
+              </Field>
+              <Field
+                label="Quiet hours start"
+                hint="Reminders in this window defer"
+                fieldKey="quietHoursStart"
+              >
+                <Input
+                  type="time"
+                  value={watch.quietHoursStart ?? ''}
+                  onChange={(e) =>
+                    form.setValue('quietHoursStart', e.target.value || null, { shouldDirty: true })
+                  }
+                />
+              </Field>
+              <Field label="Quiet hours end" fieldKey="quietHoursEnd">
+                <Input
+                  type="time"
+                  value={watch.quietHoursEnd ?? ''}
+                  onChange={(e) =>
+                    form.setValue('quietHoursEnd', e.target.value || null, { shouldDirty: true })
+                  }
                 />
               </Field>
             </Section>
@@ -1539,6 +1585,9 @@ function emptyDefaults(): EmployeeCreateInput {
     probationEndDate: null,
     biannualReviewEnabled: false,
     annualReviewEnabled: true,
+    timezone: null,
+    quietHoursStart: null,
+    quietHoursEnd: null,
     emergencyContact: null,
     systemRole: 'employee',
   };
@@ -1582,6 +1631,9 @@ function toDefaults(employee: EmployeePublic): EmployeeCreateInput {
     probationEndDate: employee.probationEndDate ? new Date(employee.probationEndDate) : null,
     biannualReviewEnabled: false,
     annualReviewEnabled: true,
+    timezone: employee.timezone ?? null,
+    quietHoursStart: employee.quietHoursStart ?? null,
+    quietHoursEnd: employee.quietHoursEnd ?? null,
     emergencyContact: employee.emergencyContact ?? null,
     systemRole: employee.systemRole ?? 'employee',
   };

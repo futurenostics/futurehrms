@@ -54,6 +54,9 @@ export interface EmployeeRowForMapping {
   internshipEndDate: Date | null;
   probationEndDate: Date | null;
   lastIncrementDate: Date | null;
+  timezone: string | null;
+  quietHoursStart: string | null;
+  quietHoursEnd: string | null;
   emergencyContact: unknown;
   noticePeriodStart: Date | null;
   terminatedAt: Date | null;
@@ -161,6 +164,9 @@ export function toEmployeePublic(
     terminatedAt: toIsoOrNull(row.terminatedAt),
     lastWorkingDay: toIsoOrNull(row.lastWorkingDay),
     terminationReason: row.terminationReason,
+    timezone: row.timezone,
+    quietHoursStart: row.quietHoursStart,
+    quietHoursEnd: row.quietHoursEnd,
     isArchived: row.deletedAt !== null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
