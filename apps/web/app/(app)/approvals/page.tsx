@@ -286,6 +286,18 @@ function InboxRow({
           )}
         </div>
         {m.meta && <div className="text-fn-fg-faint mt-[3px] text-[11.5px]">{m.meta}</div>}
+        {item.stages.length > 1 && (
+          <div className="gap-fn-1_5 mt-fn-1 flex flex-wrap items-center">
+            <Badge tone="info">
+              Step {Math.min(item.currentStage + 1, item.stages.length)} of {item.stages.length}
+            </Badge>
+            <span className="text-fn-fg-faint text-[11px]">
+              {item.status === 'pending'
+                ? `Awaiting ${item.stages[item.currentStage]?.label ?? 'approval'}`
+                : item.stages.map((s) => s.label).join(' → ')}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Submitted time */}

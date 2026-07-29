@@ -34,8 +34,14 @@ export interface ApprovalDecisionPublic {
   decidedByEmail: string;
   decidedByName: string | null;
   decision: 'approve' | 'reject';
+  stageIndex: number | null;
   decidedAt: string;
   confirmationData: unknown;
+}
+
+export interface ApprovalStage {
+  requiredPermission: string;
+  label: string;
 }
 
 export interface ApprovalPublic {
@@ -50,6 +56,8 @@ export interface ApprovalPublic {
   submittedAt: string;
   requiredPermission: string;
   decisionPolicy: string;
+  stages: ApprovalStage[];
+  currentStage: number;
   metadata: ApprovalMetadata;
   resolvedAt: string | null;
   resolvedById: string | null;
@@ -100,7 +108,7 @@ const KEY = {
 
 /* ---------- Hooks ---------- */
 
-export function useApprovals(query: ApprovalListQuery = {}) {
+export function useApprovals(query: ApprovalListQuery = {}, options: { enabled?: boolean } = {}) {
   const params = new URLSearchParams();
   if (query.status) params.set('status', query.status);
   if (query.type) params.set('type', query.type);
@@ -112,6 +120,7 @@ export function useApprovals(query: ApprovalListQuery = {}) {
     queryKey: KEY.list(query),
     queryFn: () => apiFetch<ApprovalListResponse>(`/api/approvals${qs ? `?${qs}` : ''}`),
     refetchOnWindowFocus: true,
+    enabled: options.enabled ?? true,
   });
 }
 

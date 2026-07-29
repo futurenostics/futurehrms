@@ -30,6 +30,13 @@ const TYPE_SOFT = `test-approval-soft-${TEST_RUN_ID}`;
 const TYPE_HARD = `test-approval-hard-${TEST_RUN_ID}`;
 const TYPE_PHRASE = `test-approval-phrase-${TEST_RUN_ID}`;
 const TYPE_FAILS = `test-approval-fails-${TEST_RUN_ID}`;
+const TYPE_STAGED = `test-approval-staged-${TEST_RUN_ID}`;
+const TYPE_STAGED_PHRASE = `test-approval-staged-phrase-${TEST_RUN_ID}`;
+
+const TWO_STAGES = [
+  { requiredPermission: TEST_PERMISSION, label: 'Stage 1' },
+  { requiredPermission: TEST_PERMISSION, label: 'Stage 2' },
+];
 
 let service: ApprovalsService;
 let registry: ApprovalTypeRegistry;
@@ -279,6 +286,86 @@ describe('ApprovalsService.approve', () => {
       where: { approvalId: created.id },
     });
     expect(decisions).toHaveLength(0);
+  });
+});
+
+/* ----------------------- multi-stage ----------------------- */
+
+describe('ApprovalsService multi-stage chains', () => {
+  it('intermediate approve advances the stage without resolving', async () => {
+    const def = makeType({ kind: TYPE_STAGED, label: 'Staged', stages: TWO_STAGES });
+    registry.register(def);
+    const created = await service.submit({
+      type: TYPE_STAGED,
+      sourceId: randomUUID(),
+      submittedById: submitter.id,
+    });
+    expect(created.currentStage).toBe(0);
+
+    const afterStage1 = await service.approve(approver, created.id, {});
+    expect(afterStage1.status).toBe('pending');
+    expect(afterStage1.currentStage).toBe(1);
+
+    const afterStage2 = await service.approve(approver, created.id, {});
+    expect(afterStage2.status).toBe('approved');
+
+    const decisions = await prisma.approvalDecision.findMany({
+      where: { approvalId: created.id },
+      orderBy: { decidedAt: 'asc' },
+    });
+    expect(decisions).toHaveLength(2);
+    expect(decisions.map((d) => d.stageIndex)).toEqual([0, 1]);
+  });
+
+  it('typed phrase is enforced on the final stage only', async () => {
+    const def = makeType({
+      kind: TYPE_STAGED_PHRASE,
+      label: 'Staged phrase',
+      stages: TWO_STAGES,
+      validateConfirmation({ confirmationData }) {
+        const phrase = (confirmationData as { confirmationPhrase?: string } | undefined)
+          ?.confirmationPhrase;
+        if (phrase !== 'GO') throw new Error('mismatch');
+      },
+    });
+    registry.register(def);
+    const created = await service.submit({
+      type: TYPE_STAGED_PHRASE,
+      sourceId: randomUUID(),
+      submittedById: submitter.id,
+    });
+
+    // Stage 0: a wrong phrase is ignored (validation runs on final only).
+    const s1 = await service.approve(approver, created.id, {
+      confirmationData: { confirmationPhrase: 'WRONG' },
+    });
+    expect(s1.currentStage).toBe(1);
+    expect(s1.status).toBe('pending');
+
+    // Stage 1 (final): wrong phrase now rejects.
+    await expect(
+      service.approve(approver, created.id, { confirmationData: { confirmationPhrase: 'WRONG' } }),
+    ).rejects.toThrow(/mismatch/);
+
+    // Stage 1 with the right phrase resolves.
+    const s2 = await service.approve(approver, created.id, {
+      confirmationData: { confirmationPhrase: 'GO' },
+    });
+    expect(s2.status).toBe('approved');
+  });
+
+  it('a reject at the first stage resolves the whole approval to rejected', async () => {
+    const def = makeType({ kind: TYPE_STAGED, label: 'Staged', stages: TWO_STAGES });
+    registry.register(def);
+    const created = await service.submit({
+      type: TYPE_STAGED,
+      sourceId: randomUUID(),
+      submittedById: submitter.id,
+    });
+
+    const resolved = await service.reject(approver, created.id, { reason: 'no good' });
+    expect(resolved.status).toBe('rejected');
+    expect(resolved.currentStage).toBe(0);
   });
 });
 

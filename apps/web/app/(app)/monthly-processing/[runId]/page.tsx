@@ -57,6 +57,7 @@ import {
 import { useProjectsList } from '@/lib/queries/projects';
 import { useEmployeesList } from '@/lib/queries/employees';
 import { useCommissionDisputes, useResolveDispute } from '@/lib/queries/commission-disputes';
+import { useApprovals } from '@/lib/queries/approvals';
 import { usePermissions } from '@/hooks/use-permissions';
 import { cn } from '@/lib/utils';
 
@@ -90,7 +91,10 @@ export default function CommissionRunDetailPage() {
 
   const canRecalc = perms.has('commissions:create_run');
   const canSubmit = perms.has('commissions:submit_run');
-  const canApprove = perms.has('commissions:approve_run');
+  // Either stage's approver sees the approve button; the dialog + backend
+  // gate the actual stage by permission.
+  const canApprove =
+    perms.has('commissions:approve_run') || perms.has('commissions:final_approve_run');
   const canReject = perms.has('commissions:reject_run');
   const canLock = perms.has('commissions:lock_run');
   const canAdjust = perms.has('commissions:adjust_line_item');
@@ -98,6 +102,22 @@ export default function CommissionRunDetailPage() {
 
   const runQuery = useCommissionRun(runId);
   const run = runQuery.data;
+
+  // Fetch the active approval (if any) to drive multi-stage UI. Scoped
+  // to approvals the viewer can act on; harmless no-op otherwise.
+  const activeApprovalQuery = useApprovals(
+    { type: 'commission-run', status: 'pending', for: 'me' },
+    { enabled: run?.status === 'pending_approval' && canApprove },
+  );
+  const activeApproval = activeApprovalQuery.data?.items.find((a) => a.sourceId === runId);
+  const approvalStage =
+    activeApproval && activeApproval.stages.length > 1
+      ? {
+          index: activeApproval.currentStage,
+          total: activeApproval.stages.length,
+          label: activeApproval.stages[activeApproval.currentStage]?.label ?? 'Approval',
+        }
+      : null;
 
   const [submitOpen, setSubmitOpen] = React.useState(false);
   const [recalcOpen, setRecalcOpen] = React.useState(false);
@@ -174,6 +194,7 @@ export default function CommissionRunDetailPage() {
         run={run}
         recipientCount={run.recipientCount}
         heldProjectsCount={run.carryForwardCount}
+        stage={approvalStage}
       />
     </AppShell>
   );

@@ -33,6 +33,16 @@ import type { Approval, ApprovalDecision } from '@prisma/client';
 
 export type DecisionPolicy = 'single' | 'multi' | 'threshold';
 
+/**
+ * One stage in a sequential approver chain. Approvers are matched by
+ * permission (anyone holding `requiredPermission` can act on the
+ * stage). `label` is shown in the inbox progress indicator.
+ */
+export interface ApprovalStage {
+  requiredPermission: string;
+  label: string;
+}
+
 export interface ApprovalRequester {
   userId: string;
   /** Display name — falls back to email if no Employee profile linked. */
@@ -91,8 +101,19 @@ export interface ApprovalTypeDefinition {
   decisionPolicy: DecisionPolicy;
   /** For threshold: how many approve decisions resolve the approval. */
   thresholdCount?: number;
-  /** Permission key required to act on this approval. */
+  /**
+   * Permission key required to act on a single-stage approval. When
+   * `stages` is set with more than one entry this is ignored in favour
+   * of the per-stage permissions (kept for back-compat + as the
+   * implicit single stage when `stages` is omitted).
+   */
   requiredPermission: string;
+  /**
+   * Sequential approver chain. Omit (or a single entry) for the legacy
+   * single-approver behaviour. With 2+ entries the approval advances
+   * one stage per approve and only resolves after the final stage.
+   */
+  stages?: ApprovalStage[];
   /** True = same user may submit + approve. False = hard SoD block. */
   softSoD: boolean;
 
@@ -114,6 +135,16 @@ export interface ApprovalTypeDefinition {
   onApproved?(ctx: ApprovalTypeContext): Promise<void>;
   onRejected?(ctx: ApprovalTypeContext & { reason: string }): Promise<void>;
   onCancelled?(ctx: ApprovalTypeContext): Promise<void>;
+}
+
+/**
+ * Normalise a type's chain to a concrete stage list. A type with no
+ * (or a single) `stages` entry becomes one stage keyed by its
+ * `requiredPermission` — i.e. identical to the legacy behaviour.
+ */
+export function resolveStages(def: ApprovalTypeDefinition): ApprovalStage[] {
+  if (def.stages && def.stages.length > 0) return def.stages;
+  return [{ requiredPermission: def.requiredPermission, label: 'Approval' }];
 }
 
 @Injectable()
