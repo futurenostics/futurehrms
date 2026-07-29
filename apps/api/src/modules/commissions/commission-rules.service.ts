@@ -237,6 +237,10 @@ export class CommissionRulesService {
           input.perPersonFloorUsd != null ? new Prisma.Decimal(input.perPersonFloorUsd) : null,
         perPersonCapUsd:
           input.perPersonCapUsd != null ? new Prisma.Decimal(input.perPersonCapUsd) : null,
+        revenueBrackets:
+          input.poolMode === 'tiered' && input.revenueBrackets
+            ? (input.revenueBrackets as unknown as Prisma.InputJsonValue)
+            : Prisma.DbNull,
         rolePercentages: input.rolePercentages as unknown as Prisma.InputJsonValue,
         disbursementSchedule:
           (input.disbursementSchedule as Prisma.InputJsonValue | undefined) ?? Prisma.DbNull,
@@ -283,6 +287,14 @@ export class CommissionRulesService {
     if (input.perPersonCapUsd !== undefined) {
       data.perPersonCapUsd =
         input.perPersonCapUsd != null ? new Prisma.Decimal(input.perPersonCapUsd) : null;
+    }
+    if (input.revenueBrackets !== undefined) {
+      data.revenueBrackets = input.revenueBrackets
+        ? (input.revenueBrackets as unknown as Prisma.InputJsonValue)
+        : Prisma.DbNull;
+    } else if (input.poolMode !== undefined && input.poolMode !== 'tiered') {
+      // Switching away from tiered clears any stale bracket ladder.
+      data.revenueBrackets = Prisma.DbNull;
     }
     if (input.rolePercentages !== undefined) {
       this.validateRolePercentages(input.rolePercentages, input.status ?? existing.status);

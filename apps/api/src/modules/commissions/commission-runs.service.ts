@@ -49,6 +49,7 @@ import { EventBusService } from '../../core/events/event-bus.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import {
   calcProjectLineItems,
+  coerceRevenueBrackets,
   computeFinal,
   monthLabel,
   roundUsd,
@@ -329,7 +330,7 @@ export class CommissionRunsService {
       startDate: p.startDate,
       expectedCompletionDate: p.expectedCompletionDate,
       rule: {
-        poolMode: p.commissionRule.poolMode as 'percentage' | 'fixed',
+        poolMode: p.commissionRule.poolMode as 'percentage' | 'fixed' | 'tiered',
         poolValue: Number(p.commissionRule.poolValue),
         minProjectRevenueUsd: Number(p.commissionRule.minProjectRevenueUsd),
         perPersonFloorUsd:
@@ -340,6 +341,7 @@ export class CommissionRunsService {
           p.commissionRule.perPersonCapUsd != null
             ? Number(p.commissionRule.perPersonCapUsd)
             : null,
+        revenueBrackets: coerceRevenueBrackets(p.commissionRule.revenueBrackets),
       },
       assignments: p.assignments.map((a) => ({
         employeeId: a.employeeId,

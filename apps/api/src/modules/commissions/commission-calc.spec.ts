@@ -19,12 +19,21 @@
 import { describe, expect, it } from 'vitest';
 import {
   calcProjectLineItems,
+  coerceRevenueBrackets,
+  computeTotalPool,
   computeFinal,
   monthLabel,
+  resolveTieredPoolPct,
   roundUsd,
   sumCalculated,
   type CalcProject,
 } from './commission-calc';
+
+const TIERS = [
+  { minUsd: 0, maxUsd: 10_000, poolPct: 5 },
+  { minUsd: 10_000, maxUsd: 50_000, poolPct: 8 },
+  { minUsd: 50_000, maxUsd: null, poolPct: 12 },
+];
 
 function makeProject(overrides: Partial<CalcProject> = {}): CalcProject {
   return {
@@ -331,6 +340,76 @@ describe('per-person guardrails (cap / floor)', () => {
       { monthKey: '2026-05' },
     );
     expect(items[0].calculatedAmountUsd).toBe(2_400);
+  });
+});
+
+describe('tiered pool (revenue brackets)', () => {
+  it('resolveTieredPoolPct picks the bracket by minUsd <= revenue < maxUsd', () => {
+    expect(resolveTieredPoolPct(TIERS, 8_000)).toBe(5);
+    expect(resolveTieredPoolPct(TIERS, 25_000)).toBe(8);
+    expect(resolveTieredPoolPct(TIERS, 60_000)).toBe(12);
+  });
+
+  it('boundary revenue falls into the upper bracket (max is exclusive)', () => {
+    // Exactly 10,000 is NOT in [0,10000); it belongs to [10000,50000).
+    expect(resolveTieredPoolPct(TIERS, 10_000)).toBe(8);
+    expect(resolveTieredPoolPct(TIERS, 50_000)).toBe(12);
+  });
+
+  it('open-ended top bracket covers arbitrarily large revenue', () => {
+    expect(resolveTieredPoolPct(TIERS, 5_000_000)).toBe(12);
+  });
+
+  it('returns null when no bracket matches (revenue below the lowest min)', () => {
+    const above = [{ minUsd: 5_000, maxUsd: null, poolPct: 10 }];
+    expect(resolveTieredPoolPct(above, 1_000)).toBeNull();
+  });
+
+  it('computeTotalPool applies the matched bracket percentage to revenue', () => {
+    expect(
+      computeTotalPool(
+        { poolMode: 'tiered', poolValue: 0, minProjectRevenueUsd: 0, revenueBrackets: TIERS },
+        25_000,
+      ),
+    ).toBe(2_000); // 25,000 × 8%
+  });
+
+  it('computeTotalPool yields 0 when no bracket matches', () => {
+    expect(
+      computeTotalPool(
+        {
+          poolMode: 'tiered',
+          poolValue: 0,
+          minProjectRevenueUsd: 0,
+          revenueBrackets: [{ minUsd: 5_000, maxUsd: null, poolPct: 10 }],
+        },
+        1_000,
+      ),
+    ).toBe(0);
+  });
+
+  it('calcProjectLineItems uses the tiered pool end-to-end', () => {
+    // $25k single-shot project, tier = 8% → $2,000 pool, sole winner gets it all.
+    const items = calcProjectLineItems(
+      makeProject({
+        revenueUsd: 25_000,
+        rule: {
+          poolMode: 'tiered',
+          poolValue: 0,
+          minProjectRevenueUsd: 0,
+          revenueBrackets: TIERS,
+        },
+      }),
+      { monthKey: '2026-05' },
+    );
+    expect(items[0].calculatedAmountUsd).toBe(2_000);
+  });
+
+  it('coerceRevenueBrackets parses valid JSON and rejects malformed data', () => {
+    expect(coerceRevenueBrackets(TIERS)).toEqual(TIERS);
+    expect(coerceRevenueBrackets(null)).toBeNull();
+    expect(coerceRevenueBrackets('nope')).toBeNull();
+    expect(coerceRevenueBrackets([{ minUsd: 'x', maxUsd: 1, poolPct: 5 }])).toBeNull();
   });
 });
 

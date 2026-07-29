@@ -12,8 +12,60 @@
  */
 import { z } from 'zod';
 
-export const poolModeSchema = z.enum(['percentage', 'fixed']);
+export const poolModeSchema = z.enum(['percentage', 'fixed', 'tiered']);
 export type PoolMode = z.infer<typeof poolModeSchema>;
+
+/**
+ * A single revenue bracket for `poolMode='tiered'`. `maxUsd=null`
+ * marks the open-ended top bracket ("$50k and up"). `poolPct` is the
+ * pool percentage applied to a project whose revenue falls in this
+ * bracket.
+ */
+export const revenueBracketSchema = z.object({
+  minUsd: z.coerce.number().min(0).max(99_999_999.99),
+  maxUsd: z.coerce.number().min(0).max(99_999_999.99).nullable(),
+  poolPct: z.coerce.number().min(0).max(100),
+});
+export type RevenueBracket = z.infer<typeof revenueBracketSchema>;
+
+/**
+ * The bracket ladder. Must be ascending, contiguous (each bracket
+ * starts where the previous ended), and end with exactly one
+ * open-ended (`maxUsd=null`) tail. Boundary convention is
+ * `minUsd <= revenue < maxUsd`.
+ */
+export const revenueBracketsSchema = z
+  .array(revenueBracketSchema)
+  .min(1, 'At least one bracket required')
+  .superRefine((brackets, ctx) => {
+    for (let i = 0; i < brackets.length; i += 1) {
+      const b = brackets[i]!;
+      const isLast = i === brackets.length - 1;
+      if (isLast) {
+        if (b.maxUsd !== null) {
+          ctx.addIssue({
+            code: 'custom',
+            message: 'The final bracket must be open-ended (no max)',
+          });
+        }
+      } else {
+        if (b.maxUsd === null) {
+          ctx.addIssue({ code: 'custom', message: 'Only the final bracket may be open-ended' });
+          return;
+        }
+        if (b.maxUsd <= b.minUsd) {
+          ctx.addIssue({ code: 'custom', message: 'Each bracket max must exceed its min' });
+        }
+        if (brackets[i + 1]!.minUsd !== b.maxUsd) {
+          ctx.addIssue({
+            code: 'custom',
+            message: 'Brackets must be contiguous — each starts where the previous ends',
+          });
+        }
+      }
+    }
+  });
+export type RevenueBrackets = z.infer<typeof revenueBracketsSchema>;
 
 export const commissionRuleStatusSchema = z.enum([
   /** Saved but not yet published. Not eligible to back new projects. */
@@ -40,47 +92,85 @@ export type RolePercentages = z.infer<typeof rolePercentagesSchema>;
 
 /* ---------- Create + Update ---------- */
 
-export const commissionRuleCreateSchema = z
-  .object({
-    department: z.string().min(1).max(60),
-    categoryId: z.string().min(1),
-    poolMode: poolModeSchema,
-    poolValue: z.coerce.number().min(0).max(99_999_999.99),
-    /** Projects below this revenue threshold generate no line items. 0 = no threshold. */
-    minProjectRevenueUsd: z.coerce.number().min(0).max(99_999_999.99).default(0),
-    /**
-     * Per-person payout guardrails applied to each line item's
-     * calculated amount. null / omitted = no bound. Cap must be
-     * >= floor when both are set.
-     */
-    perPersonFloorUsd: z.coerce.number().min(0).max(99_999_999.99).nullable().optional(),
-    perPersonCapUsd: z.coerce.number().min(0).max(99_999_999.99).nullable().optional(),
-    rolePercentages: rolePercentagesSchema,
-    disbursementSchedule: z.record(z.string(), z.unknown()).nullable().optional(),
-    effectiveFrom: z.string().min(1).optional(),
-    status: commissionRuleStatusSchema.default('draft'),
-    pendingReason: z.string().trim().max(500).optional(),
-  })
-  .refine(
-    (r) =>
-      r.perPersonCapUsd == null ||
-      r.perPersonFloorUsd == null ||
-      r.perPersonCapUsd >= r.perPersonFloorUsd,
-    { message: 'perPersonCapUsd must be >= perPersonFloorUsd', path: ['perPersonCapUsd'] },
-  );
+const commissionRuleBaseSchema = z.object({
+  department: z.string().min(1).max(60),
+  categoryId: z.string().min(1),
+  poolMode: poolModeSchema,
+  poolValue: z.coerce.number().min(0).max(99_999_999.99),
+  /** Projects below this revenue threshold generate no line items. 0 = no threshold. */
+  minProjectRevenueUsd: z.coerce.number().min(0).max(99_999_999.99).default(0),
+  /**
+   * Per-person payout guardrails applied to each line item's calculated
+   * amount. null / omitted = no bound. Cap must be >= floor when both set.
+   */
+  perPersonFloorUsd: z.coerce.number().min(0).max(99_999_999.99).nullable().optional(),
+  perPersonCapUsd: z.coerce.number().min(0).max(99_999_999.99).nullable().optional(),
+  /** Bracket ladder for `poolMode='tiered'`; null/omitted otherwise. */
+  revenueBrackets: revenueBracketsSchema.nullable().optional(),
+  rolePercentages: rolePercentagesSchema,
+  disbursementSchedule: z.record(z.string(), z.unknown()).nullable().optional(),
+  effectiveFrom: z.string().min(1).optional(),
+  status: commissionRuleStatusSchema.default('draft'),
+  pendingReason: z.string().trim().max(500).optional(),
+});
+
+/**
+ * Cross-field validation shared by create + update:
+ *   - per-person cap must be >= floor when both are set;
+ *   - a tiered rule needs a bracket ladder (except while `pending`),
+ *     and non-tiered rules must not carry brackets (so a mode switch
+ *     can't leave stale data behind).
+ */
+function commissionRuleRefine(
+  input: {
+    poolMode?: PoolMode;
+    revenueBrackets?: RevenueBrackets | null;
+    status?: CommissionRuleStatus;
+    perPersonFloorUsd?: number | null;
+    perPersonCapUsd?: number | null;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  if (
+    input.perPersonCapUsd != null &&
+    input.perPersonFloorUsd != null &&
+    input.perPersonCapUsd < input.perPersonFloorUsd
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'perPersonCapUsd must be >= perPersonFloorUsd',
+      path: ['perPersonCapUsd'],
+    });
+  }
+
+  if (input.poolMode === 'tiered') {
+    if (
+      input.status !== 'pending' &&
+      (!input.revenueBrackets || input.revenueBrackets.length === 0)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Tiered rules require at least one revenue bracket',
+        path: ['revenueBrackets'],
+      });
+    }
+  } else if (input.poolMode !== undefined && input.revenueBrackets) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'Revenue brackets only apply to tiered rules',
+      path: ['revenueBrackets'],
+    });
+  }
+}
+
+export const commissionRuleCreateSchema =
+  commissionRuleBaseSchema.superRefine(commissionRuleRefine);
 export type CommissionRuleCreateInput = z.infer<typeof commissionRuleCreateSchema>;
 
 /** Update a draft rule. Cannot edit a published rule — publish a new version instead. */
-export const commissionRuleUpdateSchema = commissionRuleCreateSchema
-  .innerType()
+export const commissionRuleUpdateSchema = commissionRuleBaseSchema
   .partial()
-  .refine(
-    (r) =>
-      r.perPersonCapUsd == null ||
-      r.perPersonFloorUsd == null ||
-      r.perPersonCapUsd >= r.perPersonFloorUsd,
-    { message: 'perPersonCapUsd must be >= perPersonFloorUsd', path: ['perPersonCapUsd'] },
-  );
+  .superRefine(commissionRuleRefine);
 export type CommissionRuleUpdateInput = z.infer<typeof commissionRuleUpdateSchema>;
 
 export const commissionRulePublishSchema = z.object({
@@ -105,6 +195,7 @@ export const commissionRulePublicSchema = z.object({
   minProjectRevenueUsd: z.number(),
   perPersonFloorUsd: z.number().nullable(),
   perPersonCapUsd: z.number().nullable(),
+  revenueBrackets: revenueBracketsSchema.nullable(),
   rolePercentages: rolePercentagesSchema,
   disbursementSchedule: z.record(z.string(), z.unknown()).nullable(),
   effectiveFrom: z.string(),

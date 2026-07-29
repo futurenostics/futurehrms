@@ -78,7 +78,7 @@ export function toProjectPublic(row: ProjectRowForMapping): ProjectPublic {
       id: row.commissionRule.id,
       version: row.commissionRule.version,
       department: row.commissionRule.department,
-      poolMode: row.commissionRule.poolMode as 'percentage' | 'fixed',
+      poolMode: row.commissionRule.poolMode as 'percentage' | 'fixed' | 'tiered',
       poolValue: Number(row.commissionRule.poolValue),
     },
     hasOverride: row.hasOverride,
