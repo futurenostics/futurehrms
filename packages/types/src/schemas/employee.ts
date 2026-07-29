@@ -125,6 +125,18 @@ const baseInputShape = {
   probationEndDate: z.coerce.date().nullish(),
   biannualReviewEnabled: z.boolean().optional().default(false),
   annualReviewEnabled: z.boolean().optional().default(true),
+
+  /** Reminder delivery: IANA timezone + quiet-hours window ("HH:MM"). */
+  timezone: z.string().max(64).nullish(),
+  quietHoursStart: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM (24h)')
+    .nullish(),
+  quietHoursEnd: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM (24h)')
+    .nullish(),
+
   emergencyContact: emergencyContactSchema.nullish(),
 
   /** In-app permission role. Defaults to 'employee' on create. */
@@ -404,6 +416,9 @@ export const employeePublicSchema = z.object({
   terminationReason: z.string().nullable().optional(),
 
   lastIncrementDate: z.string().nullable().optional(),
+  timezone: z.string().nullable().optional(),
+  quietHoursStart: z.string().nullable().optional(),
+  quietHoursEnd: z.string().nullable().optional(),
   isArchived: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string(),

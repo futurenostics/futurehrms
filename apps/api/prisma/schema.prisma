@@ -231,6 +231,15 @@ model Employee {
   annualReviewEnabled   Boolean   @default(true)
   lastIncrementDate     DateTime?
 
+  // Reminder delivery preferences. `timezone` is an IANA zone
+  // (e.g. 'Asia/Karachi'); null falls back to the org default. Quiet
+  // hours are wall-clock "HH:MM" strings in the employee's timezone —
+  // reminders due during the window are deferred to `quietHoursEnd`.
+  // Both null = no quiet hours.
+  timezone         String?
+  quietHoursStart  String?
+  quietHoursEnd    String?
+
   emergencyContact Json?
 
   // Offboarding / termination state. noticePeriodStart marks 'Move
