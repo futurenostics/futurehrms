@@ -66,6 +66,7 @@ export function toCommissionLineItemPublic(
     carryForwardToRunId: row.carryForwardToRunId,
     carryForwardFromRunId: row.carryForwardFromRunId,
     finalAmountUsd: Number(row.finalAmountUsd),
+    isClawback: row.isClawback,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
