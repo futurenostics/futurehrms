@@ -10,6 +10,7 @@ import {
   Check,
   Download,
   FileSpreadsheet,
+  Flag,
   Lock,
   PauseCircle,
   PlayCircle,
@@ -20,6 +21,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type {
+  CommissionDisputePublic,
   CommissionLeaderboardRow,
   CommissionLineItemPublic,
   CommissionRollupRow,
@@ -54,6 +56,7 @@ import {
 } from '@/lib/queries/commission-runs';
 import { useProjectsList } from '@/lib/queries/projects';
 import { useEmployeesList } from '@/lib/queries/employees';
+import { useCommissionDisputes, useResolveDispute } from '@/lib/queries/commission-disputes';
 import { usePermissions } from '@/hooks/use-permissions';
 import { cn } from '@/lib/utils';
 
@@ -156,6 +159,9 @@ export default function CommissionRunDetailPage() {
 
         {/* Line items table */}
         <LineItemsTable run={run} canAdjust={canAdjust && run.status === 'draft'} />
+
+        {/* Disputes raised by employees on this run */}
+        <DisputesSection runId={run.id} canManage={perms.has('commissions:manage_disputes')} />
       </div>
 
       {/* Dialogs */}
@@ -1168,6 +1174,158 @@ function RollupList({ title, rows }: { title: string; rows: CommissionRollupRow[
     </div>
   );
 }
+
+/* ───────────────────────── Disputes ───────────────────────── */
+
+function DisputesSection({ runId, canManage }: { runId: string; canManage: boolean }) {
+  const query = useCommissionDisputes({ runId });
+  const [resolving, setResolving] = React.useState<CommissionDisputePublic | null>(null);
+  const disputes = query.data?.items ?? [];
+
+  // Nothing to show if the run has no disputes at all.
+  if (!query.isPending && disputes.length === 0) return null;
+
+  return (
+    <div className="rounded-fn-sm border-fn-border bg-fn-bg-panel overflow-hidden border">
+      <div className="border-fn-divider px-fn-5 py-fn-3_5 gap-fn-2 flex flex-wrap items-center border-b">
+        <Flag className="text-fn-fg-muted h-fn-4 w-fn-4" />
+        <h2 className="text-fn-fg font-fn-semibold text-[14px]">Disputes</h2>
+        {query.data && query.data.openCount > 0 && (
+          <Badge tone="warning">{query.data.openCount} open</Badge>
+        )}
+        <span className="text-fn-fg-faint ml-auto text-[11.5px]">
+          Raised by employees on this run
+        </span>
+      </div>
+      {query.isPending ? (
+        <div className="p-fn-5">
+          <Skeleton className="h-[80px] w-full" />
+        </div>
+      ) : (
+        <ul className="divide-fn-divider divide-y">
+          {disputes.map((d) => (
+            <li key={d.id} className="px-fn-5 py-fn-3 gap-fn-3 flex items-start">
+              <div className="min-w-0 flex-1">
+                <div className="gap-fn-2 flex flex-wrap items-center">
+                  <span className="text-fn-fg font-fn-semibold text-[12.5px]">
+                    {d.employee?.fullName ?? 'Employee'}
+                  </span>
+                  <span className="text-fn-fg-faint text-[11.5px]">
+                    {d.projectName ?? '—'}
+                    {d.roleName ? ` · ${roleLabel(d.roleName)}` : ''}
+                    {d.disputedAmountUsd !== null ? ` · ${formatUsd(d.disputedAmountUsd)}` : ''}
+                  </span>
+                  <Badge tone={DISPUTE_TONES[d.status]} dot>
+                    {DISPUTE_LABELS[d.status]}
+                  </Badge>
+                </div>
+                <p className="text-fn-fg-muted mt-fn-1 text-[12px]">{d.reason}</p>
+                {d.resolutionNote && (
+                  <p className="text-fn-fg-faint mt-fn-0_5 text-[11px]">HR: {d.resolutionNote}</p>
+                )}
+              </div>
+              {canManage && d.status === 'open' && (
+                <Button variant="secondary" size="sm" onClick={() => setResolving(d)}>
+                  Review
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <ResolveDisputeDialog
+        dispute={resolving}
+        onOpenChange={(open) => !open && setResolving(null)}
+      />
+    </div>
+  );
+}
+
+function ResolveDisputeDialog({
+  dispute,
+  onOpenChange,
+}: {
+  dispute: CommissionDisputePublic | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const resolve = useResolveDispute();
+  const [note, setNote] = React.useState('');
+  React.useEffect(() => {
+    if (dispute) setNote('');
+  }, [dispute]);
+
+  async function submit(status: 'resolved' | 'rejected') {
+    if (!dispute) return;
+    try {
+      await resolve.mutateAsync({
+        id: dispute.id,
+        data: { status, resolutionNote: note.trim() || undefined },
+      });
+      toast.success(status === 'resolved' ? 'Dispute resolved.' : 'Dispute declined.');
+      onOpenChange(false);
+    } catch (err) {
+      toast.error((err as Error).message);
+    }
+  }
+
+  return (
+    <Dialog open={Boolean(dispute)} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Review dispute</DialogTitle>
+          <DialogDescription>
+            {dispute?.employee?.fullName ?? 'The employee'} flagged{' '}
+            {dispute?.projectName ?? 'a line item'}. Resolving or declining records your note — it
+            doesn&rsquo;t change the amount. Adjust the line item separately if a fix is needed.
+          </DialogDescription>
+        </DialogHeader>
+        {dispute && (
+          <p className="text-fn-fg-muted bg-fn-bg-inset rounded-fn-xs px-fn-3 py-fn-2 text-[12px]">
+            &ldquo;{dispute.reason}&rdquo;
+          </p>
+        )}
+        <div className="gap-fn-1_5 py-fn-2 flex flex-col">
+          <label className="text-fn-fg font-fn-medium text-[12.5px]">
+            Resolution note (optional)
+          </label>
+          <Textarea
+            rows={3}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="What did you find? What action (if any) was taken?"
+          />
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={resolve.isPending}
+            onClick={() => submit('rejected')}
+          >
+            <XCircle className="h-fn-4 w-fn-4" /> Decline
+          </Button>
+          <Button disabled={resolve.isPending} onClick={() => submit('resolved')}>
+            <Check className="h-fn-4 w-fn-4" /> Resolve
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+const DISPUTE_TONES: Record<string, React.ComponentProps<typeof Badge>['tone']> = {
+  open: 'warning',
+  resolved: 'success',
+  rejected: 'danger',
+};
+const DISPUTE_LABELS: Record<string, string> = {
+  open: 'Open',
+  resolved: 'Resolved',
+  rejected: 'Declined',
+};
 
 /* ───────────────────────── Skeleton / helpers ───────────────────────── */
 
