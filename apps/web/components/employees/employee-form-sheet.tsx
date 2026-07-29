@@ -1585,6 +1585,9 @@ function emptyDefaults(): EmployeeCreateInput {
     probationEndDate: null,
     biannualReviewEnabled: false,
     annualReviewEnabled: true,
+    timezone: null,
+    quietHoursStart: null,
+    quietHoursEnd: null,
     emergencyContact: null,
     systemRole: 'employee',
   };
@@ -1628,6 +1631,9 @@ function toDefaults(employee: EmployeePublic): EmployeeCreateInput {
     probationEndDate: employee.probationEndDate ? new Date(employee.probationEndDate) : null,
     biannualReviewEnabled: false,
     annualReviewEnabled: true,
+    timezone: employee.timezone ?? null,
+    quietHoursStart: employee.quietHoursStart ?? null,
+    quietHoursEnd: employee.quietHoursEnd ?? null,
     emergencyContact: employee.emergencyContact ?? null,
     systemRole: employee.systemRole ?? 'employee',
   };
