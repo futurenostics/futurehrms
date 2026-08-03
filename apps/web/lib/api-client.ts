@@ -78,6 +78,48 @@ async function refreshToken(): Promise<string | null> {
   return refreshing;
 }
 
+/**
+ * Authenticated file download. Same bearer + refresh-on-401 dance as
+ * apiFetch, but reads the response as a Blob and triggers a browser
+ * download. Needed because a plain <a href> GET carries no
+ * Authorization header, so the API's bearer-only guard would 401 it.
+ */
+export async function downloadFile(path: string, filename: string): Promise<void> {
+  const url = path.startsWith('http') ? path : `${API_URL}${path}`;
+  const exec = (token: string | null): Promise<Response> => {
+    const h = new Headers();
+    if (token) h.set('authorization', `Bearer ${token}`);
+    return fetch(url, { headers: h, credentials: 'include' });
+  };
+
+  let res = await exec(accessToken);
+  if (res.status === 401) {
+    const newToken = await refreshToken();
+    if (newToken) res = await exec(newToken);
+  }
+
+  if (!res.ok) {
+    let message = `Download failed (${res.status})`;
+    try {
+      const body = (await res.json()) as { message?: unknown };
+      if (body?.message) message = String(body.message);
+    } catch {
+      /* non-JSON error body — keep the generic message */
+    }
+    throw makeError(res.status, null, message, res.headers);
+  }
+
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
 export async function apiFetch<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
   const url = path.startsWith('http') ? path : `${API_URL}${path}`;
   const headers = new Headers(init.headers);

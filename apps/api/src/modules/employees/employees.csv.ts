@@ -16,6 +16,7 @@
 import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
 import { prisma } from '@futurenostics/db';
+import type { ReportColumn, ReportData } from '../../core/reports/report-formats';
 import {
   type CsvImportPreview,
   type CsvImportRow,
@@ -427,4 +428,51 @@ export function buildCsv(rows: ExportRowInput[], includeSalary: boolean): string
   });
 
   return stringify([header, ...records]);
+}
+
+/**
+ * Column set for the employee export, shared by CSV / Excel / PDF via
+ * the Report Service. Salary is appended only when the caller is
+ * allowed to see it.
+ */
+export function employeeReportData(
+  rows: ExportRowInput[],
+  includeSalary: boolean,
+  generatedAt: Date,
+): ReportData {
+  const columns: ReportColumn[] = [
+    { key: 'eid', header: 'EID', weight: 1 },
+    { key: 'fullName', header: 'Name', weight: 2 },
+    { key: 'email', header: 'Email', weight: 2.4 },
+    { key: 'phone', header: 'Phone', weight: 1.2 },
+    { key: 'department', header: 'Department', weight: 1.4 },
+    { key: 'designation', header: 'Designation', weight: 1.2 },
+    { key: 'status', header: 'Status', weight: 1 },
+    { key: 'contractType', header: 'Contract', weight: 1 },
+    { key: 'joinDate', header: 'Join date', weight: 1 },
+    { key: 'manager', header: 'Manager', weight: 1.6 },
+  ];
+  if (includeSalary) {
+    columns.push({ key: 'salaryPkr', header: 'Salary (PKR)', weight: 1.2, align: 'right' });
+  }
+
+  return {
+    title: 'Employees',
+    subtitle: `${rows.length} ${rows.length === 1 ? 'employee' : 'employees'}`,
+    columns,
+    generatedAt,
+    rows: rows.map((r) => ({
+      eid: r.eid,
+      fullName: r.fullName,
+      email: r.email,
+      phone: r.phone ?? '',
+      department: r.department,
+      designation: r.designation,
+      status: r.status,
+      contractType: r.contractType,
+      joinDate: r.joinDate.toISOString().slice(0, 10),
+      manager: r.manager ?? '',
+      salaryPkr: includeSalary && r.salaryPkr !== null ? r.salaryPkr : '',
+    })),
+  };
 }

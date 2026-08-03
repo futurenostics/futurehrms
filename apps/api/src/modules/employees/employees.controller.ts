@@ -34,7 +34,20 @@ import { RequirePermission } from '../../core/auth/decorators/require-permission
 import type { AuthenticatedUser } from '../../core/auth/types';
 import { StorageService } from '../../core/storage/storage.service';
 import { EmployeesService } from './employees.service';
-import { buildCsv, commitCsv, validateCsv } from './employees.csv';
+import { commitCsv, employeeReportData, validateCsv } from './employees.csv';
+import {
+  contentTypeFor,
+  extensionFor,
+  renderReport,
+  type ReportFormat,
+} from '../../core/reports/report-formats';
+
+const REPORT_FORMATS = new Set<ReportFormat>(['csv', 'xlsx', 'pdf']);
+function parseReportFormat(raw: unknown): ReportFormat {
+  return typeof raw === 'string' && REPORT_FORMATS.has(raw as ReportFormat)
+    ? (raw as ReportFormat)
+    : 'csv';
+}
 
 const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
 const PHOTO_ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
@@ -98,21 +111,22 @@ export class EmployeesController {
 
   @Get('export')
   @RequirePermission('employees:export')
-  async exportCsv(
+  async exportEmployees(
     @CurrentUser() user: AuthenticatedUser,
     @Query() rawQuery: Record<string, unknown>,
     @Res({ passthrough: false }) res: Response,
   ) {
+    const format = parseReportFormat(rawQuery.format);
     const query = employeeListQuerySchema.parse({ ...rawQuery, offset: 0, limit: 10_000 });
     const rows = await this.employees.exportRowsForCsv(user, query);
     const includeSalary = user.permissions.includes('employees:view_salary');
-    const csv = buildCsv(rows, includeSalary);
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="employees-${new Date().toISOString().slice(0, 10)}.csv"`,
-    );
-    res.send(csv);
+    const report = employeeReportData(rows, includeSalary, new Date());
+    const buffer = await renderReport(report, format);
+
+    const filename = `employees-${new Date().toISOString().slice(0, 10)}.${extensionFor(format)}`;
+    res.setHeader('Content-Type', contentTypeFor(format));
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
   }
 
   /**

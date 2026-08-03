@@ -4,7 +4,11 @@ import * as React from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
+  ChevronDown,
   Download,
+  FileSpreadsheet,
+  FileText,
+  FileType,
   LayoutGrid,
   List,
   Plus,
@@ -14,6 +18,13 @@ import {
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { downloadFile } from '@/lib/api-client';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import type { EmployeeListQuery, EmployeePublic, EmployeeSortBy } from '@futurenostics/types';
 import { AppShell } from '@/components/shell/app-shell';
 import { Button } from '@/components/ui/button';
@@ -360,7 +371,21 @@ function EmployeesListInner({ schema }: { schema: ReturnType<typeof buildEmploye
     [router, canArchive],
   );
 
-  const exportUrl = React.useMemo(() => buildExportUrl(filters), [filters]);
+  const [isExporting, setIsExporting] = React.useState(false);
+  const handleExport = React.useCallback(
+    async (format: 'csv' | 'xlsx' | 'pdf') => {
+      setIsExporting(true);
+      try {
+        const filename = `employees-${new Date().toISOString().slice(0, 10)}.${format}`;
+        await downloadFile(buildExportPath(filters, format), filename);
+      } catch (e) {
+        toast.error((e as Error).message || 'Export failed.');
+      } finally {
+        setIsExporting(false);
+      }
+    },
+    [filters],
+  );
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -387,11 +412,25 @@ function EmployeesListInner({ schema }: { schema: ReturnType<typeof buildEmploye
                 </Button>
               )}
               {canExport && (
-                <Button asChild variant="secondary" size="md">
-                  <a href={exportUrl} target="_blank" rel="noreferrer">
-                    <Download className="h-fn-4 w-fn-4" /> Export
-                  </a>
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="secondary" size="md" disabled={isExporting}>
+                      <Download className="h-fn-4 w-fn-4" /> Export
+                      <ChevronDown className="h-fn-3_5 w-fn-3_5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onSelect={() => void handleExport('csv')}>
+                      <FileText className="h-fn-4 w-fn-4" /> CSV (.csv)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => void handleExport('xlsx')}>
+                      <FileSpreadsheet className="h-fn-4 w-fn-4" /> Excel (.xlsx)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => void handleExport('pdf')}>
+                      <FileType className="h-fn-4 w-fn-4" /> PDF (.pdf)
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
               {canCreate && (
                 <Button size="md" onClick={() => openSheet('create')}>
@@ -757,13 +796,16 @@ function formatSalary(value: number): string {
   return new Intl.NumberFormat('en-PK').format(Math.round(value));
 }
 
-function buildExportUrl(query: Partial<EmployeeListQuery>): string {
+function buildExportPath(
+  query: Partial<EmployeeListQuery>,
+  format: 'csv' | 'xlsx' | 'pdf',
+): string {
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(query)) {
     if (v === undefined || v === null || v === '') continue;
     if (k === 'offset' || k === 'limit') continue;
     params.set(k, String(v));
   }
-  const base = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
-  return `${base}/api/employees/export?${params.toString()}`;
+  params.set('format', format);
+  return `/api/employees/export?${params.toString()}`;
 }
