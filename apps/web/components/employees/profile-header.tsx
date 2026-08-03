@@ -44,6 +44,7 @@ export interface ProfileHeaderProps {
   onArchive: () => void;
   onMessage?: () => void;
   onAssignProject?: () => void;
+  onViewPortal?: () => void;
 }
 
 export function ProfileHeader({
@@ -55,6 +56,7 @@ export function ProfileHeader({
   onArchive,
   onMessage,
   onAssignProject,
+  onViewPortal,
 }: ProfileHeaderProps) {
   const perms = usePermissions();
   const uploadMutation = useUploadPhoto(employee.id);
@@ -110,7 +112,7 @@ export function ProfileHeader({
             Edit profile
           </Button>
         )}
-        {(canChangeStatus || canChangeManager || canChangeSalary || canArchive) && (
+        {(onViewPortal || canChangeStatus || canChangeManager || canChangeSalary || canArchive) && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="secondary" size="sm" aria-label="More actions" className="px-fn-2">
@@ -118,6 +120,9 @@ export function ProfileHeader({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-fn-52">
+              {onViewPortal && (
+                <DropdownMenuItem onClick={onViewPortal}>View portal…</DropdownMenuItem>
+              )}
               {canChangeStatus && (
                 <DropdownMenuItem onClick={onChangeStatus}>Change status…</DropdownMenuItem>
               )}

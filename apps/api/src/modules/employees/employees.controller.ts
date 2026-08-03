@@ -139,6 +139,11 @@ export class EmployeesController {
     return this.employees.listTimeline(user, id);
   }
 
+  @Get(':id/assigned-projects')
+  async assignedProjects(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.employees.assignedProjects(user, id);
+  }
+
   /* ---------- Writes ---------- */
 
   @Post()

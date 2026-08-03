@@ -311,6 +311,25 @@ export function useImportCommit() {
   });
 }
 
+export interface AssignedProject {
+  projectId: string;
+  name: string;
+  clientName: string;
+  status: string;
+  roleName: string;
+  percentage: number;
+  revenueUsd: number;
+}
+
+/** Active projects an employee is assigned to — for the read-only portal view. */
+export function useEmployeeAssignedProjects(id: string | null | undefined) {
+  return useQuery<AssignedProject[]>({
+    queryKey: ['employees', id, 'assigned-projects'],
+    queryFn: () => apiFetch<AssignedProject[]>(`/api/employees/${id}/assigned-projects`),
+    enabled: Boolean(id),
+  });
+}
+
 function invalidateEmployeeQueries(qc: QueryClient, id?: string): void {
   qc.invalidateQueries({ queryKey: ['employees', 'list'] });
   qc.invalidateQueries({ queryKey: ['employees', 'total'] });

@@ -129,6 +129,7 @@ export default function EmployeeProfilePage() {
               onChangeManager={() => setChangeManagerOpen(true)}
               onChangeSalary={() => setChangeSalaryOpen(true)}
               onArchive={() => setArchiveOpen(true)}
+              onViewPortal={() => router.push(`/employees/${employee.id}/portal`)}
             />
 
             {/* Quick-stat strip — sits directly under the header per the
