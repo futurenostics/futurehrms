@@ -91,6 +91,26 @@ export async function buildXlsxReport(data: ReportData): Promise<Buffer> {
   return Buffer.from(out);
 }
 
+/**
+ * Truncate a string to fit `maxWidth` at the doc's current font/size,
+ * appending an ellipsis. Guarantees a single line — pdfkit's own
+ * `ellipsis`/`lineBreak:false` options don't reliably clip, so we
+ * measure and cut ourselves.
+ */
+function fitText(doc: PDFKit.PDFDocument, text: string, maxWidth: number): string {
+  if (maxWidth <= 0 || text === '') return '';
+  if (doc.widthOfString(text) <= maxWidth) return text;
+  const ellipsis = '…';
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (doc.widthOfString(text.slice(0, mid) + ellipsis) <= maxWidth) lo = mid;
+    else hi = mid - 1;
+  }
+  return text.slice(0, lo).trimEnd() + ellipsis;
+}
+
 /** PDF — landscape table with title, zebra striping, and page breaks. */
 export function buildPdfReport(data: ReportData): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -134,11 +154,12 @@ export function buildPdfReport(data: ReportData): Promise<Buffer> {
       doc.rect(left, y, tableWidth, rowHeight).fill('#eef3f1');
       doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#14201e');
       data.columns.forEach((c, i) => {
-        doc.text(c.header, colX[i]! + padX, y + 5, {
-          width: colW[i]! - padX * 2,
+        const w = colW[i]! - padX * 2;
+        doc.text(fitText(doc, c.header, w), colX[i]! + padX, y + 5, {
+          width: w,
           align: c.align ?? 'left',
           lineBreak: false,
-          ellipsis: true,
+          height: rowHeight,
         });
       });
       doc.y = y + rowHeight;
@@ -158,11 +179,12 @@ export function buildPdfReport(data: ReportData): Promise<Buffer> {
       }
       doc.font('Helvetica').fontSize(8.5).fillColor('#26332f');
       data.columns.forEach((c, i) => {
-        doc.text(cell(row[c.key]), colX[i]! + padX, y + 5, {
-          width: colW[i]! - padX * 2,
+        const w = colW[i]! - padX * 2;
+        doc.text(fitText(doc, cell(row[c.key]), w), colX[i]! + padX, y + 5, {
+          width: w,
           align: c.align ?? 'left',
           lineBreak: false,
-          ellipsis: true,
+          height: rowHeight,
         });
       });
       doc.y = y + rowHeight;
