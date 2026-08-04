@@ -72,7 +72,13 @@ const SAMPLE_REVENUE = 10_000;
 
 type EditorMode = 'create' | 'edit';
 
-type PoolMode = 'percentage' | 'fixed' | 'tiered' | 'net_revenue_share' | 'designation_fixed';
+type PoolMode =
+  | 'percentage'
+  | 'fixed'
+  | 'tiered'
+  | 'net_revenue_share'
+  | 'designation_fixed'
+  | 'role_fixed';
 
 interface BracketRow {
   minUsd: number;
@@ -96,6 +102,18 @@ const DEFAULT_DESIGNATIONS: DesignationRow[] = [
   { designation: 'ATL', amountUsd: 500 },
   { designation: 'SSE', amountUsd: 300 },
   { designation: 'SE', amountUsd: 200 },
+];
+
+interface RoleAmountRow {
+  role: string;
+  amountUsd: number;
+}
+
+// Seeded from the spec's Engineering External example.
+const DEFAULT_ROLE_AMOUNTS: RoleAmountRow[] = [
+  { role: 'winner', amountUsd: 500 },
+  { role: 'communicator', amountUsd: 300 },
+  { role: 'team_lead', amountUsd: 100 },
 ];
 
 interface RoleSlot {
@@ -154,6 +172,7 @@ export function CommissionRuleEditorSheet({
   const [perPersonCap, setPerPersonCap] = React.useState<string>('');
   const [brackets, setBrackets] = React.useState<BracketRow[]>(DEFAULT_BRACKETS);
   const [designations, setDesignations] = React.useState<DesignationRow[]>(DEFAULT_DESIGNATIONS);
+  const [roleAmounts, setRoleAmounts] = React.useState<RoleAmountRow[]>(DEFAULT_ROLE_AMOUNTS);
   const [roles, setRoles] = React.useState<Array<{ key: string; pct: number }>>([
     { key: 'winner', pct: 50 },
     { key: 'communicator', pct: 30 },
@@ -188,6 +207,11 @@ export function CommissionRuleEditorSheet({
             designation: d.designation,
             amountUsd: Number(d.amountUsd),
           })),
+        );
+      }
+      if (existing.roleAmounts && existing.roleAmounts.length > 0) {
+        setRoleAmounts(
+          existing.roleAmounts.map((r) => ({ role: r.role, amountUsd: Number(r.amountUsd) })),
         );
       }
       const next = Object.entries(existing.rolePercentages).map(([key, pct]) => ({
@@ -232,17 +256,54 @@ export function CommissionRuleEditorSheet({
     poolMode === 'designation_fixed' ? validateDesignations(designations) : null;
   const designationsValid = designationsError === null;
 
+  // Role-fixed validity: at least one row, every row named + non-negative,
+  // no duplicate roles.
+  const roleAmountsError = poolMode === 'role_fixed' ? validateRoleAmounts(roleAmounts) : null;
+  const roleAmountsValid = roleAmountsError === null;
+
   // Pool-shape fields for every payload. Only the active mode's ladder
   // is populated; the others are nulled so a mode switch can't leave
   // stale JSON behind.
   const poolPayload =
     poolMode === 'tiered'
-      ? { poolMode, poolValue: 0, revenueBrackets: brackets, designationAmounts: null }
+      ? {
+          poolMode,
+          poolValue: 0,
+          revenueBrackets: brackets,
+          designationAmounts: null,
+          roleAmounts: null,
+        }
       : poolMode === 'designation_fixed'
-        ? { poolMode, poolValue: 0, revenueBrackets: null, designationAmounts: designations }
-        : poolMode === 'net_revenue_share'
-          ? { poolMode, poolValue: 0, revenueBrackets: null, designationAmounts: null }
-          : { poolMode, poolValue, revenueBrackets: null, designationAmounts: null };
+        ? {
+            poolMode,
+            poolValue: 0,
+            revenueBrackets: null,
+            designationAmounts: designations,
+            roleAmounts: null,
+          }
+        : poolMode === 'role_fixed'
+          ? {
+              poolMode,
+              poolValue: 0,
+              revenueBrackets: null,
+              designationAmounts: null,
+              roleAmounts,
+            }
+          : poolMode === 'net_revenue_share'
+            ? {
+                poolMode,
+                poolValue: 0,
+                revenueBrackets: null,
+                designationAmounts: null,
+                roleAmounts: null,
+              }
+            : {
+                poolMode,
+                poolValue,
+                revenueBrackets: null,
+                designationAmounts: null,
+                roleAmounts: null,
+              };
 
   /* ---------- Mutations ---------- */
   async function saveAsDraft() {
@@ -256,6 +317,10 @@ export function CommissionRuleEditorSheet({
     }
     if (poolMode === 'designation_fixed' && !designationsValid) {
       toast.error(designationsError ?? 'Fix the designation amounts first.');
+      return;
+    }
+    if (poolMode === 'role_fixed' && !roleAmountsValid) {
+      toast.error(roleAmountsError ?? 'Fix the role amounts first.');
       return;
     }
     try {
@@ -320,6 +385,10 @@ export function CommissionRuleEditorSheet({
     }
     if (poolMode === 'designation_fixed' && !designationsValid) {
       toast.error(designationsError ?? 'Fix the designation amounts first.');
+      return;
+    }
+    if (poolMode === 'role_fixed' && !roleAmountsValid) {
+      toast.error(roleAmountsError ?? 'Fix the role amounts first.');
       return;
     }
     try {
@@ -480,6 +549,7 @@ export function CommissionRuleEditorSheet({
                       { value: 'tiered', label: 'Tiered' },
                       { value: 'net_revenue_share', label: 'Net share (Upwork)' },
                       { value: 'designation_fixed', label: 'By designation (B2B)' },
+                      { value: 'role_fixed', label: 'By role (Eng External)' },
                     ]}
                   />
                 }
@@ -496,6 +566,12 @@ export function CommissionRuleEditorSheet({
                     rows={designations}
                     onChange={setDesignations}
                     error={designationsError}
+                  />
+                ) : poolMode === 'role_fixed' ? (
+                  <RoleAmountEditor
+                    rows={roleAmounts}
+                    onChange={setRoleAmounts}
+                    error={roleAmountsError}
                   />
                 ) : poolMode === 'net_revenue_share' ? (
                   <div className="gap-fn-2 rounded-fn-sm border-fn-border bg-fn-bg-inset/40 p-fn-4 flex flex-col border">
@@ -935,7 +1011,9 @@ function PreviewPanel({
           ? 'Net share'
           : poolMode === 'designation_fixed'
             ? 'By designation'
-            : 'Fixed';
+            : poolMode === 'role_fixed'
+              ? 'By role'
+              : 'Fixed';
   return (
     <div className="rounded-fn-sm border-fn-border bg-fn-bg-panel overflow-hidden border">
       <div className="border-fn-divider px-fn-4 py-fn-3 gap-fn-2 flex items-center justify-between border-b">
@@ -1264,6 +1342,20 @@ function validateDesignations(rows: DesignationRow[]): string | null {
   return null;
 }
 
+/** Mirror of the server role-amount validation. */
+function validateRoleAmounts(rows: RoleAmountRow[]): string | null {
+  if (rows.length === 0) return 'Add at least one role.';
+  const seen = new Set<string>();
+  for (const r of rows) {
+    const name = r.role.trim();
+    if (name === '') return 'Every row needs a role name.';
+    if (r.amountUsd < 0) return 'Amounts must be zero or more.';
+    if (seen.has(name)) return `Duplicate role: ${name}`;
+    seen.add(name);
+  }
+  return null;
+}
+
 /** Sample-pool helper shared by the pool section, preview, and compare panels. */
 function poolForSample(
   poolMode: PoolMode,
@@ -1282,7 +1374,12 @@ function poolForSample(
   // net_revenue_share depends on per-project developer salary and
   // designation_fixed has no shared pool — neither has a meaningful
   // revenue-only sample here (0 keeps the shared preview harmless).
-  if (poolMode === 'net_revenue_share' || poolMode === 'designation_fixed') return 0;
+  if (
+    poolMode === 'net_revenue_share' ||
+    poolMode === 'designation_fixed' ||
+    poolMode === 'role_fixed'
+  )
+    return 0;
   return (revenue * poolValue) / 100;
 }
 
@@ -1356,6 +1453,88 @@ function DesignationEditor({
         className="border-fn-border-strong text-fn-fg-muted hover:bg-fn-bg-inset rounded-fn-xs px-fn-3 py-fn-2 gap-fn-1 inline-flex cursor-pointer items-center justify-center border border-dashed text-[12.5px]"
       >
         <Plus className="h-fn-3_5 w-fn-3_5" /> Add a designation
+      </button>
+
+      {error && (
+        <div className="rounded-fn-xs border-fn-warning/30 bg-fn-warning-soft/40 text-fn-warning-soft-fg px-fn-3 py-fn-2 gap-fn-2 flex items-center border text-[12px]">
+          <AlertCircle className="h-fn-3_5 w-fn-3_5" />
+          <span className="font-fn-medium">{error}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RoleAmountEditor({
+  rows,
+  onChange,
+  error,
+}: {
+  rows: RoleAmountRow[];
+  onChange: (next: RoleAmountRow[]) => void;
+  error: string | null;
+}) {
+  function setName(idx: number, value: string) {
+    onChange(rows.map((r, i) => (i === idx ? { ...r, role: value } : r)));
+  }
+  function setAmount(idx: number, value: number) {
+    onChange(rows.map((r, i) => (i === idx ? { ...r, amountUsd: value } : r)));
+  }
+  function addRow() {
+    onChange([...rows, { role: '', amountUsd: 0 }]);
+  }
+  function removeRow(idx: number) {
+    if (rows.length <= 1) return;
+    onChange(rows.filter((_, i) => i !== idx));
+  }
+
+  return (
+    <div className="gap-fn-3 flex flex-col">
+      <p className="text-fn-fg-muted text-[12px]">
+        Each assignee earns the fixed monthly amount matching their role (e.g. winner $500 /
+        communicator $300 / team_lead $100), prorated by month overlap.
+      </p>
+      <div className="gap-fn-2 flex flex-col">
+        {rows.map((r, idx) => (
+          <div
+            key={idx}
+            className="border-fn-border rounded-fn-xs px-fn-3 py-fn-2_5 gap-fn-2 flex items-center border"
+          >
+            <Input
+              value={r.role}
+              placeholder="Role (e.g. winner)"
+              onChange={(e) => setName(idx, e.target.value)}
+              className="h-fn-7 flex-1"
+            />
+            <span className="text-fn-fg-faint text-[12px]">$</span>
+            <Input
+              type="number"
+              min={0}
+              step={50}
+              value={r.amountUsd}
+              onChange={(e) => setAmount(idx, Number(e.target.value))}
+              className="h-fn-7 w-[110px] text-right tabular-nums"
+            />
+            <span className="text-fn-fg-faint text-[11px]">/mo</span>
+            <button
+              type="button"
+              onClick={() => removeRow(idx)}
+              disabled={rows.length <= 1}
+              aria-label="Remove role"
+              className="text-fn-fg-faint hover:text-fn-danger inline-flex cursor-pointer items-center disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Trash2 className="h-fn-3_5 w-fn-3_5" />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        onClick={addRow}
+        className="border-fn-border-strong text-fn-fg-muted hover:bg-fn-bg-inset rounded-fn-xs px-fn-3 py-fn-2 gap-fn-1 inline-flex cursor-pointer items-center justify-center border border-dashed text-[12.5px]"
+      >
+        <Plus className="h-fn-3_5 w-fn-3_5" /> Add a role
       </button>
 
       {error && (
