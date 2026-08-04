@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 import type {
   CommissionRulePublic,
   CommissionRuleStatus,
+  DesignationAmounts,
   PoolMode,
   RevenueBrackets,
   RolePercentages,
@@ -42,6 +43,7 @@ export function toCommissionRulePublic(row: CommissionRuleRowForMapping): Commis
     perPersonFloorUsd: row.perPersonFloorUsd != null ? Number(row.perPersonFloorUsd) : null,
     perPersonCapUsd: row.perPersonCapUsd != null ? Number(row.perPersonCapUsd) : null,
     revenueBrackets: (row.revenueBrackets as RevenueBrackets | null) ?? null,
+    designationAmounts: (row.designationAmounts as DesignationAmounts | null) ?? null,
     rolePercentages: row.rolePercentages as RolePercentages,
     disbursementSchedule: (row.disbursementSchedule as Record<string, unknown> | null) ?? null,
     effectiveFrom: row.effectiveFrom.toISOString(),

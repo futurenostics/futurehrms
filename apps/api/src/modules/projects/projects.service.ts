@@ -376,6 +376,8 @@ export class ProjectsService {
           hasOverride: input.hasOverride,
           overrideReason: input.overrideReason ?? null,
           revenueUsd: new Prisma.Decimal(input.revenueUsd),
+          developerSalaryPkr:
+            input.developerSalaryPkr != null ? new Prisma.Decimal(input.developerSalaryPkr) : null,
           status: input.status,
           startDate: new Date(input.startDate),
           expectedCompletionDate: input.expectedCompletionDate
@@ -470,6 +472,10 @@ export class ProjectsService {
     if (rest.name !== undefined) data.name = rest.name;
     if (rest.clientName !== undefined) data.clientName = rest.clientName;
     if (rest.revenueUsd !== undefined) data.revenueUsd = new Prisma.Decimal(rest.revenueUsd);
+    if (rest.developerSalaryPkr !== undefined) {
+      data.developerSalaryPkr =
+        rest.developerSalaryPkr != null ? new Prisma.Decimal(rest.developerSalaryPkr) : null;
+    }
     if (rest.startDate !== undefined) data.startDate = new Date(rest.startDate);
     if (rest.expectedCompletionDate !== undefined) {
       data.expectedCompletionDate = rest.expectedCompletionDate

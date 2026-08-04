@@ -393,6 +393,11 @@ model Project {
   // rule uses poolMode='percentage'.
   revenueUsd Decimal @db.Decimal(12, 2)
 
+  // Upwork only: the developer's monthly salary in PKR. Converted to
+  // USD at the run's pinned FX rate and subtracted from revenue to
+  // form the net pool for poolMode='net_revenue_share'. Null otherwise.
+  developerSalaryPkr Decimal? @db.Decimal(14, 2)
+
   // Lifecycle. Constrained by the API layer (see projectStatusSchema)
   // to: draft | active | in_billing | on_hold | completed | cancelled | refunded.
   status String @default("draft")
@@ -467,6 +472,13 @@ model CommissionRule {
   // The calc engine picks the bracket where minUsd <= revenue < maxUsd
   // and uses poolPct for the pool. Null for percentage/fixed rules.
   revenueBrackets Json?
+
+  // Designation → fixed monthly amount ladder for
+  // poolMode='designation_fixed' (B2B). JSON array:
+  //   [{ designation, amountUsd }]
+  // Each assignee earns the amount matching their designation. Null
+  // for all other pool modes.
+  designationAmounts Json?
 
   // Projects whose revenueUsd is below this threshold get no line
   // items in the monthly run. 0 = no threshold (the default).

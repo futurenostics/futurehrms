@@ -8,6 +8,7 @@
  * Locked decisions live in docs/DECISIONS.md § "Phase 2 — Business rules".
  */
 import { z } from 'zod';
+import { poolModeSchema } from './commission-rule';
 
 /* ---------- Enums ---------- */
 
@@ -131,6 +132,12 @@ export const projectCreateSchema = z.object({
   categoryId: z.string().min(1),
   departmentId: z.string().min(1),
   revenueUsd: z.coerce.number().min(0).max(99_999_999.99),
+  /**
+   * Upwork only: the project developer's monthly salary in PKR.
+   * Converted to USD at run time and subtracted from revenue to form
+   * the net pool for `poolMode='net_revenue_share'`.
+   */
+  developerSalaryPkr: z.coerce.number().min(0).max(999_999_999.99).nullable().optional(),
   status: projectStatusSchema.default('draft'),
   startDate: z.string().min(1),
   expectedCompletionDate: z.string().nullable().optional(),
@@ -292,12 +299,13 @@ export const projectPublicSchema = z.object({
     id: z.string(),
     version: z.string(),
     department: z.string(),
-    poolMode: z.enum(['percentage', 'fixed', 'tiered']),
+    poolMode: poolModeSchema,
     poolValue: z.number(),
   }),
   hasOverride: z.boolean(),
   overrideReason: z.string().nullable(),
   revenueUsd: z.number(),
+  developerSalaryPkr: z.number().nullable(),
   status: projectStatusSchema,
   startDate: z.string(),
   expectedCompletionDate: z.string().nullable(),

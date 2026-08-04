@@ -241,6 +241,10 @@ export class CommissionRulesService {
           input.poolMode === 'tiered' && input.revenueBrackets
             ? (input.revenueBrackets as unknown as Prisma.InputJsonValue)
             : Prisma.DbNull,
+        designationAmounts:
+          input.poolMode === 'designation_fixed' && input.designationAmounts
+            ? (input.designationAmounts as unknown as Prisma.InputJsonValue)
+            : Prisma.DbNull,
         rolePercentages: input.rolePercentages as unknown as Prisma.InputJsonValue,
         disbursementSchedule:
           (input.disbursementSchedule as Prisma.InputJsonValue | undefined) ?? Prisma.DbNull,
@@ -295,6 +299,14 @@ export class CommissionRulesService {
     } else if (input.poolMode !== undefined && input.poolMode !== 'tiered') {
       // Switching away from tiered clears any stale bracket ladder.
       data.revenueBrackets = Prisma.DbNull;
+    }
+    if (input.designationAmounts !== undefined) {
+      data.designationAmounts = input.designationAmounts
+        ? (input.designationAmounts as unknown as Prisma.InputJsonValue)
+        : Prisma.DbNull;
+    } else if (input.poolMode !== undefined && input.poolMode !== 'designation_fixed') {
+      // Switching away from designation_fixed clears any stale ladder.
+      data.designationAmounts = Prisma.DbNull;
     }
     if (input.rolePercentages !== undefined) {
       this.validateRolePercentages(input.rolePercentages, input.status ?? existing.status);
