@@ -48,9 +48,24 @@ export class CommissionRulesService {
 
   /* ---------- Validation ---------- */
 
-  private validateRolePercentages(rolePercentages: RolePercentages, status: string): void {
+  private validateRolePercentages(
+    rolePercentages: RolePercentages,
+    status: string,
+    poolMode?: string,
+  ): void {
     if (status === 'pending') return; // pending rows are explicitly TBD
     const sum = Object.values(rolePercentages).reduce((a, b) => a + b, 0);
+    // Upwork net-share pays only the assigned winner's %; the remainder
+    // is the company's and isn't paid out, so splits need only NOT
+    // exceed 100 (a positive winner share).
+    if (poolMode === 'net_revenue_share') {
+      if (sum <= 0 || sum - 100 > PERCENTAGE_TOLERANCE) {
+        throw new BadRequestException(
+          `Role percentages must be > 0 and ≤ 100 for net-share rules — got ${sum.toFixed(2)}`,
+        );
+      }
+      return;
+    }
     if (Math.abs(sum - 100) > PERCENTAGE_TOLERANCE) {
       throw new BadRequestException(`Role percentages must sum to 100 — got ${sum.toFixed(2)}`);
     }
@@ -212,7 +227,7 @@ export class CommissionRulesService {
     });
     if (!category) throw new BadRequestException('Unknown category');
 
-    this.validateRolePercentages(input.rolePercentages, input.status);
+    this.validateRolePercentages(input.rolePercentages, input.status, input.poolMode);
 
     if (input.status === 'pending' && !input.pendingReason) {
       throw new BadRequestException('pendingReason is required for pending rules');
@@ -309,7 +324,11 @@ export class CommissionRulesService {
       data.designationAmounts = Prisma.DbNull;
     }
     if (input.rolePercentages !== undefined) {
-      this.validateRolePercentages(input.rolePercentages, input.status ?? existing.status);
+      this.validateRolePercentages(
+        input.rolePercentages,
+        input.status ?? existing.status,
+        input.poolMode ?? existing.poolMode,
+      );
       data.rolePercentages = input.rolePercentages as unknown as Prisma.InputJsonValue;
     }
     if (input.disbursementSchedule !== undefined) {
@@ -352,7 +371,11 @@ export class CommissionRulesService {
       throw new BadRequestException('Archived rules cannot be published');
     }
 
-    this.validateRolePercentages(draft.rolePercentages as RolePercentages, 'active');
+    this.validateRolePercentages(
+      draft.rolePercentages as RolePercentages,
+      'active',
+      draft.poolMode,
+    );
 
     const effectiveFrom = input.effectiveFrom ? new Date(input.effectiveFrom) : new Date();
 
