@@ -153,10 +153,10 @@ export class ProjectsService {
       }
     }
 
-    // Designation-fixed (B2B) pays each assignee by their designation,
-    // not by percentage — assignment %s are irrelevant, so skip the
-    // sum + role-default checks entirely.
-    if (poolMode === 'designation_fixed') return;
+    // Designation-fixed (B2B) and role-fixed (Eng External) pay each
+    // assignee a fixed amount, not by percentage — assignment %s are
+    // irrelevant, so skip the sum + role-default checks entirely.
+    if (poolMode === 'designation_fixed' || poolMode === 'role_fixed') return;
 
     const sum = assignments.reduce((acc, a) => acc + a.percentage, 0);
     if (poolMode === 'net_revenue_share') {

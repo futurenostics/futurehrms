@@ -34,6 +34,13 @@ export interface CalcDesignationAmount {
   amountUsd: number;
 }
 
+/** One role → fixed monthly amount row for `poolMode='role_fixed'`. */
+export interface CalcRoleAmount {
+  /** Role name (matched against the assignment's roleName). */
+  role: string;
+  amountUsd: number;
+}
+
 /**
  * Pool modes:
  *   - percentage        : pool = revenue × poolValue%          (External / default)
@@ -43,13 +50,17 @@ export interface CalcDesignationAmount {
  *                          assignment %, e.g. 20% winner / 80% company-not-paid)
  *   - designation_fixed : NO shared pool — each assignee earns a fixed monthly
  *                          amount looked up by their designation (B2B)
+ *   - role_fixed        : NO shared pool — each assignee earns a fixed monthly
+ *                          amount looked up by their role (Eng External:
+ *                          winner $500 / communicator $300 / team_lead $100)
  */
 export type CalcPoolMode =
   | 'percentage'
   | 'fixed'
   | 'tiered'
   | 'net_revenue_share'
-  | 'designation_fixed';
+  | 'designation_fixed'
+  | 'role_fixed';
 
 export interface CalcRuleSnapshot {
   poolMode: CalcPoolMode;
@@ -75,6 +86,12 @@ export interface CalcRuleSnapshot {
    * amount matching their designation, prorated by month overlap.
    */
   designationAmounts?: CalcDesignationAmount[] | null;
+  /**
+   * Role → fixed monthly amount ladder for `poolMode='role_fixed'`
+   * (Engineering External). Each assignee earns the amount matching
+   * their role, prorated by month overlap.
+   */
+  roleAmounts?: CalcRoleAmount[] | null;
 }
 
 export interface CalcAssignment {
@@ -198,6 +215,25 @@ export function calcProjectLineItems(project: CalcProject, options: CalcOptions)
     });
   }
 
+  // Role-fixed (Engineering External) has no shared pool: each assignee
+  // earns the fixed monthly amount for their role, prorated by overlap.
+  if (project.rule.poolMode === 'role_fixed') {
+    const byRole = new Map((project.rule.roleAmounts ?? []).map((r) => [r.role, r.amountUsd]));
+    return project.assignments.map((a) => {
+      const perMonth = byRole.get(a.roleName) ?? 0;
+      return {
+        projectId: project.id,
+        employeeId: a.employeeId,
+        roleName: a.roleName,
+        snapshotPercentage: a.percentage,
+        baseRevenueUsd: project.revenueUsd,
+        monthFractionNumerator: overlapDays,
+        monthFractionDenominator: daysInMonth,
+        calculatedAmountUsd: applyGuardrails(roundUsd(perMonth * proration), project.rule),
+      };
+    });
+  }
+
   // Pool modes (percentage / fixed / tiered / net_revenue_share): a
   // whole-project pool sliced by month then split by assignment %.
   const totalPool = computeTotalPool(
@@ -300,6 +336,24 @@ export function coerceDesignationAmounts(value: unknown): CalcDesignationAmount[
 }
 
 /**
+ * Coerce a stored value into the calc engine's role-amount array.
+ * Returns null when malformed so callers fall back to zero payouts.
+ */
+export function coerceRoleAmounts(value: unknown): CalcRoleAmount[] | null {
+  if (!Array.isArray(value)) return null;
+  const out: CalcRoleAmount[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
+    const row = entry as Record<string, unknown>;
+    const role = typeof row.role === 'string' ? row.role : null;
+    const amountUsd = Number(row.amountUsd);
+    if (!role || !Number.isFinite(amountUsd)) return null;
+    out.push({ role, amountUsd });
+  }
+  return out;
+}
+
+/**
  * The whole-project commission pool for a rule + revenue. `percentage`
  * and `fixed` are the original modes; `tiered` selects a bracket's
  * `poolPct` by revenue (0 when no bracket matches); `net_revenue_share`
@@ -321,8 +375,9 @@ export function computeTotalPool(
   if (rule.poolMode === 'net_revenue_share') {
     return Math.max(0, revenueUsd - developerSalaryUsd);
   }
-  // designation_fixed has no shared pool (handled in calcProjectLineItems).
-  if (rule.poolMode === 'designation_fixed') return 0;
+  // designation_fixed + role_fixed have no shared pool (handled in
+  // calcProjectLineItems).
+  if (rule.poolMode === 'designation_fixed' || rule.poolMode === 'role_fixed') return 0;
   return (revenueUsd * rule.poolValue) / 100;
 }
 

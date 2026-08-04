@@ -20,6 +20,8 @@ export const poolModeSchema = z.enum([
   'net_revenue_share',
   /** B2B: no shared pool — each assignee earns a fixed amount by designation. */
   'designation_fixed',
+  /** Eng External: no shared pool — each assignee earns a fixed amount by role. */
+  'role_fixed',
 ]);
 export type PoolMode = z.infer<typeof poolModeSchema>;
 
@@ -43,6 +45,27 @@ export const designationAmountsSchema = z
     }
   });
 export type DesignationAmounts = z.infer<typeof designationAmountsSchema>;
+
+/** One role → fixed monthly amount row for `poolMode='role_fixed'`. */
+export const roleAmountSchema = z.object({
+  role: z.string().trim().min(1).max(40),
+  amountUsd: z.coerce.number().min(0).max(99_999_999.99),
+});
+export type RoleAmount = z.infer<typeof roleAmountSchema>;
+
+export const roleAmountsSchema = z
+  .array(roleAmountSchema)
+  .min(1, 'At least one role amount required')
+  .superRefine((rows, ctx) => {
+    const seen = new Set<string>();
+    for (const r of rows) {
+      if (seen.has(r.role)) {
+        ctx.addIssue({ code: 'custom', message: `Duplicate role: ${r.role}` });
+      }
+      seen.add(r.role);
+    }
+  });
+export type RoleAmounts = z.infer<typeof roleAmountsSchema>;
 
 /**
  * A single revenue bracket for `poolMode='tiered'`. `maxUsd=null`
@@ -138,6 +161,8 @@ const commissionRuleBaseSchema = z.object({
   revenueBrackets: revenueBracketsSchema.nullable().optional(),
   /** Designation → amount ladder for `poolMode='designation_fixed'`; null otherwise. */
   designationAmounts: designationAmountsSchema.nullable().optional(),
+  /** Role → amount ladder for `poolMode='role_fixed'`; null otherwise. */
+  roleAmounts: roleAmountsSchema.nullable().optional(),
   rolePercentages: rolePercentagesSchema,
   disbursementSchedule: z.record(z.string(), z.unknown()).nullable().optional(),
   effectiveFrom: z.string().min(1).optional(),
@@ -157,6 +182,7 @@ function commissionRuleRefine(
     poolMode?: PoolMode;
     revenueBrackets?: RevenueBrackets | null;
     designationAmounts?: DesignationAmounts | null;
+    roleAmounts?: RoleAmounts | null;
     status?: CommissionRuleStatus;
     perPersonFloorUsd?: number | null;
     perPersonCapUsd?: number | null;
@@ -212,6 +238,22 @@ function commissionRuleRefine(
       path: ['designationAmounts'],
     });
   }
+
+  if (input.poolMode === 'role_fixed') {
+    if (input.status !== 'pending' && (!input.roleAmounts || input.roleAmounts.length === 0)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Role-fixed rules require at least one role amount',
+        path: ['roleAmounts'],
+      });
+    }
+  } else if (input.poolMode !== undefined && input.roleAmounts) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'Role amounts only apply to role-fixed rules',
+      path: ['roleAmounts'],
+    });
+  }
 }
 
 export const commissionRuleCreateSchema =
@@ -248,6 +290,7 @@ export const commissionRulePublicSchema = z.object({
   perPersonCapUsd: z.number().nullable(),
   revenueBrackets: revenueBracketsSchema.nullable(),
   designationAmounts: designationAmountsSchema.nullable(),
+  roleAmounts: roleAmountsSchema.nullable(),
   rolePercentages: rolePercentagesSchema,
   disbursementSchedule: z.record(z.string(), z.unknown()).nullable(),
   effectiveFrom: z.string(),

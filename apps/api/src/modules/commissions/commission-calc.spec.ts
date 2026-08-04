@@ -20,6 +20,7 @@ import { describe, expect, it } from 'vitest';
 import {
   calcProjectLineItems,
   coerceDesignationAmounts,
+  coerceRoleAmounts,
   coerceRevenueBrackets,
   computeTotalPool,
   computeFinal,
@@ -560,5 +561,68 @@ describe('coerceDesignationAmounts', () => {
     expect(coerceDesignationAmounts('nope')).toBeNull();
     expect(coerceDesignationAmounts([{ designation: 'ATL' }])).toBeNull();
     expect(coerceDesignationAmounts([{ amountUsd: 5 }])).toBeNull();
+  });
+});
+
+/* ---------- Engineering External: role_fixed ---------- */
+
+describe('role_fixed (Engineering External)', () => {
+  const RULE = {
+    poolMode: 'role_fixed' as const,
+    poolValue: 0,
+    minProjectRevenueUsd: 0,
+    roleAmounts: [
+      { role: 'winner', amountUsd: 500 },
+      { role: 'communicator', amountUsd: 300 },
+      { role: 'team_lead', amountUsd: 100 },
+    ],
+  };
+
+  it('pays each assignee the fixed amount for their role; unknown role → 0', () => {
+    const project = makeProject({
+      revenueUsd: 0,
+      startDate: new Date('2026-05-01T00:00:00Z'),
+      expectedCompletionDate: null,
+      rule: RULE,
+      assignments: [
+        { employeeId: 'a', roleName: 'winner', percentage: 0 },
+        { employeeId: 'b', roleName: 'communicator', percentage: 0 },
+        { employeeId: 'c', roleName: 'team_lead', percentage: 0 },
+        { employeeId: 'd', roleName: 'eligible_team', percentage: 0 },
+      ],
+    });
+    const items = calcProjectLineItems(project, { monthKey: '2026-05' });
+    const byId = Object.fromEntries(items.map((i) => [i.employeeId, i.calculatedAmountUsd]));
+    expect(byId).toEqual({ a: 500, b: 300, c: 100, d: 0 });
+  });
+
+  it('prorates role amounts across a multi-month project', () => {
+    const project = makeProject({
+      revenueUsd: 0,
+      startDate: new Date('2026-05-01T00:00:00Z'),
+      expectedCompletionDate: new Date('2026-06-30T00:00:00Z'),
+      rule: RULE,
+      assignments: [{ employeeId: 'a', roleName: 'winner', percentage: 0 }],
+    });
+    const items = calcProjectLineItems(project, { monthKey: '2026-05' });
+    // 500 * (31/61) = 254.098… → 254.1
+    expect(items[0].calculatedAmountUsd).toBe(254.1);
+  });
+
+  it('does not build a shared pool for role_fixed', () => {
+    expect(computeTotalPool(RULE, 100_000)).toBe(0);
+  });
+});
+
+describe('coerceRoleAmounts', () => {
+  it('parses a well-formed array', () => {
+    expect(coerceRoleAmounts([{ role: 'winner', amountUsd: 500 }])).toEqual([
+      { role: 'winner', amountUsd: 500 },
+    ]);
+  });
+  it('returns null on malformed input', () => {
+    expect(coerceRoleAmounts('nope')).toBeNull();
+    expect(coerceRoleAmounts([{ role: 'winner' }])).toBeNull();
+    expect(coerceRoleAmounts([{ amountUsd: 5 }])).toBeNull();
   });
 });

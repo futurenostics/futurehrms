@@ -55,6 +55,7 @@ import { ApprovalsService } from '../approvals/approvals.service';
 import {
   calcProjectLineItems,
   coerceDesignationAmounts,
+  coerceRoleAmounts,
   coerceRevenueBrackets,
   computeFinal,
   monthLabel,
@@ -451,6 +452,7 @@ export class CommissionRunsService {
             : null,
         revenueBrackets: coerceRevenueBrackets(p.commissionRule.revenueBrackets),
         designationAmounts: coerceDesignationAmounts(p.commissionRule.designationAmounts),
+        roleAmounts: coerceRoleAmounts(p.commissionRule.roleAmounts),
       },
       assignments: p.assignments.map((a) => ({
         employeeId: a.employeeId,

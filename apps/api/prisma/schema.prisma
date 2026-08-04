@@ -486,6 +486,11 @@ model CommissionRule {
   // for all other pool modes.
   designationAmounts Json?
 
+  // Role → fixed monthly amount ladder for poolMode='role_fixed'
+  // (Engineering External). JSON array: [{ role, amountUsd }]
+  // Each assignee earns the amount matching their role. Null otherwise.
+  roleAmounts Json?
+
   // Projects whose revenueUsd is below this threshold get no line
   // items in the monthly run. 0 = no threshold (the default).
   minProjectRevenueUsd Decimal @default(0) @db.Decimal(12, 2)
