@@ -123,6 +123,12 @@ export function ProjectFormSheet({ open, onOpenChange, mode, projectId }: Projec
     rolePercentages: Record<string, number>;
     designationAmounts: Array<{ designation: string; amountUsd: number }> | null;
     roleAmounts: Array<{ role: string; amountUsd: number }> | null;
+    durationMatrix: Array<{
+      subType: string;
+      role: string;
+      amountUsd: number;
+      durationMonths: number;
+    }> | null;
   } | null>(null);
   const [ruleResolving, setRuleResolving] = React.useState(false);
   const [ruleError, setRuleError] = React.useState<string | null>(null);
@@ -146,6 +152,12 @@ export function ProjectFormSheet({ open, onOpenChange, mode, projectId }: Projec
         rolePercentages: Record<string, number>;
         designationAmounts: Array<{ designation: string; amountUsd: number }> | null;
         roleAmounts: Array<{ role: string; amountUsd: number }> | null;
+        durationMatrix: Array<{
+          subType: string;
+          role: string;
+          amountUsd: number;
+          durationMonths: number;
+        }> | null;
         status: string;
       }>;
     }>(`/api/commission-rules?activeOnly=true&categoryIds=${categoryId}&limit=50`)
@@ -173,6 +185,7 @@ export function ProjectFormSheet({ open, onOpenChange, mode, projectId }: Projec
           rolePercentages: rule.rolePercentages,
           designationAmounts: rule.designationAmounts ?? null,
           roleAmounts: rule.roleAmounts ?? null,
+          durationMatrix: rule.durationMatrix ?? null,
         });
       })
       .catch((err) => {
@@ -534,6 +547,8 @@ export function ProjectFormSheet({ open, onOpenChange, mode, projectId }: Projec
                   developerSalaryPkr={Number(watch('developerSalaryPkr') ?? 0)}
                   designationAmounts={resolvedRule?.designationAmounts ?? null}
                   roleAmounts={resolvedRule?.roleAmounts ?? null}
+                  durationMatrix={resolvedRule?.durationMatrix ?? null}
+                  subType={(watch('subType') as string | null) ?? null}
                   rolePercentages={resolvedRule?.rolePercentages ?? {}}
                   assignments={assignments}
                   employees={employees}
@@ -665,6 +680,8 @@ function CommissionPreview({
   developerSalaryPkr,
   designationAmounts,
   roleAmounts,
+  durationMatrix,
+  subType,
   rolePercentages,
   assignments,
   employees,
@@ -676,11 +693,20 @@ function CommissionPreview({
   developerSalaryPkr: number;
   designationAmounts: Array<{ designation: string; amountUsd: number }> | null;
   roleAmounts: Array<{ role: string; amountUsd: number }> | null;
+  durationMatrix: Array<{
+    subType: string;
+    role: string;
+    amountUsd: number;
+    durationMonths: number;
+  }> | null;
+  subType: string | null;
   rolePercentages: Record<string, number>;
   assignments: Array<{ employeeId: string; roleName: string; percentage: number }>;
   employees: Array<{ id: string; fullName: string }>;
 }) {
   const devSalaryUsd = developerSalaryPkr * APPROX_PKR_TO_USD;
+  // Matrix rows applicable to the project's selected sub-type.
+  const matrixForSubType = (durationMatrix ?? []).filter((m) => m.subType === subType);
   const totalPool = !poolMode
     ? 0
     : poolMode === 'percentage'
@@ -691,9 +717,11 @@ function CommissionPreview({
           ? (designationAmounts ?? []).reduce((s, d) => s + d.amountUsd, 0)
           : poolMode === 'role_fixed'
             ? (roleAmounts ?? []).reduce((s, r) => s + r.amountUsd, 0)
-            : poolMode === 'fixed'
-              ? poolValue
-              : 0;
+            : poolMode === 'duration_matrix'
+              ? matrixForSubType.reduce((s, m) => s + m.amountUsd, 0)
+              : poolMode === 'fixed'
+                ? poolValue
+                : 0;
 
   return (
     <div className="gap-fn-4 flex flex-col">
@@ -723,6 +751,7 @@ function CommissionPreview({
           {poolMode === 'net_revenue_share' && <Badge tone="accent">Net of dev salary</Badge>}
           {poolMode === 'designation_fixed' && <Badge tone="accent">By designation</Badge>}
           {poolMode === 'role_fixed' && <Badge tone="accent">By role</Badge>}
+          {poolMode === 'duration_matrix' && <Badge tone="accent">Duration matrix</Badge>}
         </div>
         <div
           className="text-fn-fg font-fn-semibold text-[28px] tabular-nums"
@@ -759,6 +788,27 @@ function CommissionPreview({
                 <span className="tabular-nums">{formatUsd(r.amountUsd)}/mo</span>
               </div>
             ))}
+          </div>
+        )}
+        {poolMode === 'duration_matrix' && (
+          <div className="gap-fn-0_5 mt-fn-1 flex flex-col">
+            {matrixForSubType.length > 0 ? (
+              matrixForSubType.map((m) => (
+                <div
+                  key={m.role}
+                  className="text-fn-fg-faint flex items-center justify-between text-[10.5px]"
+                >
+                  <span>{m.role}</span>
+                  <span className="tabular-nums">
+                    {formatUsd(m.amountUsd)}/mo × {m.durationMonths}mo
+                  </span>
+                </div>
+              ))
+            ) : (
+              <span className="text-fn-fg-faint text-[10.5px]">
+                {subType ? 'No matrix rows for this sub-type.' : 'Pick a sub-type to see amounts.'}
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -916,6 +966,8 @@ function formatPool(rule: { poolMode: PoolMode; poolValue: number }): string {
       return 'a per-designation amount';
     case 'role_fixed':
       return 'a per-role amount';
+    case 'duration_matrix':
+      return 'a time-limited per-role amount';
     default:
       return formatUsd(rule.poolValue);
   }
