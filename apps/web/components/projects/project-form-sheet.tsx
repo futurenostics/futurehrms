@@ -146,7 +146,7 @@ export function ProjectFormSheet({ open, onOpenChange, mode, projectId }: Projec
         designationAmounts: Array<{ designation: string; amountUsd: number }> | null;
         status: string;
       }>;
-    }>(`/api/commission-rules?activeOnly=true&categoryId=${categoryId}&limit=50`)
+    }>(`/api/commission-rules?activeOnly=true&categoryIds=${categoryId}&limit=50`)
       .then((res) => {
         if (cancelled) return;
         const dept = refsQuery.data?.departments.find((d) => d.id === departmentId);
