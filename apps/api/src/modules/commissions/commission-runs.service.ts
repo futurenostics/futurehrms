@@ -54,10 +54,12 @@ import { EventBusService } from '../../core/events/event-bus.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import {
   calcProjectLineItems,
+  coerceDesignationAmounts,
   coerceRevenueBrackets,
   computeFinal,
   monthLabel,
   roundUsd,
+  type CalcPoolMode,
   type CalcProject,
 } from './commission-calc';
 import {
@@ -248,7 +250,13 @@ export class CommissionRunsService {
     runId: string,
     monthKey: string,
   ): Promise<void> {
-    const projects = await this.fetchCalcProjectsTx(tx, monthKey);
+    // The run's pinned FX rate converts per-project developer salaries
+    // (PKR) to USD for Upwork net-share projects.
+    const run = await tx.commissionRun.findUniqueOrThrow({
+      where: { id: runId },
+      select: { fxRateUsdToPkr: true },
+    });
+    const projects = await this.fetchCalcProjectsTx(tx, monthKey, Number(run.fxRateUsdToPkr));
     const lineItemsToWrite: Prisma.CommissionLineItemCreateManyInput[] = [];
 
     for (const project of projects) {
@@ -405,6 +413,7 @@ export class CommissionRunsService {
   private async fetchCalcProjectsTx(
     tx: Prisma.TransactionClient,
     _monthKey: string,
+    fxRateUsdToPkr: number,
   ): Promise<CalcProject[]> {
     const projects = await tx.project.findMany({
       where: {
@@ -413,7 +422,10 @@ export class CommissionRunsService {
       },
       include: {
         commissionRule: true,
-        assignments: { where: { removedAt: null } },
+        assignments: {
+          where: { removedAt: null },
+          include: { employee: { select: { designation: { select: { name: true } } } } },
+        },
       },
     });
     return projects.map((p) => ({
@@ -422,8 +434,11 @@ export class CommissionRunsService {
       status: p.status,
       startDate: p.startDate,
       expectedCompletionDate: p.expectedCompletionDate,
+      // Upwork: PKR salary → USD at the run's pinned rate.
+      developerSalaryUsd:
+        p.developerSalaryPkr != null ? Number(p.developerSalaryPkr) * fxRateUsdToPkr : null,
       rule: {
-        poolMode: p.commissionRule.poolMode as 'percentage' | 'fixed' | 'tiered',
+        poolMode: p.commissionRule.poolMode as CalcPoolMode,
         poolValue: Number(p.commissionRule.poolValue),
         minProjectRevenueUsd: Number(p.commissionRule.minProjectRevenueUsd),
         perPersonFloorUsd:
@@ -435,11 +450,13 @@ export class CommissionRunsService {
             ? Number(p.commissionRule.perPersonCapUsd)
             : null,
         revenueBrackets: coerceRevenueBrackets(p.commissionRule.revenueBrackets),
+        designationAmounts: coerceDesignationAmounts(p.commissionRule.designationAmounts),
       },
       assignments: p.assignments.map((a) => ({
         employeeId: a.employeeId,
         roleName: a.roleName,
         percentage: Number(a.percentage),
+        designation: a.employee?.designation?.name ?? null,
       })),
     }));
   }

@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { AlertTriangle, ArrowRight, Briefcase, Building2, Layers } from 'lucide-react';
 import {
   projectCreateSchema,
+  type PoolMode,
   type ProjectCategoryPublic,
   type ProjectCreateInput,
   type ProjectPublic,
@@ -16,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Combobox, MultiCombobox, type ComboboxOption } from '@/components/ui/combobox';
+import { Switch } from '@/components/ui/switch';
 import {
   Sheet,
   SheetBody,
@@ -63,6 +65,17 @@ const ROLES = [
   { key: 'eligible_team', label: 'Eligible team' },
 ] as const;
 
+// External-project engagement sub-types (spec §4.3.1).
+const SUB_TYPE_OPTIONS: ComboboxOption[] = [
+  { value: 'full_time', label: 'Full-Time' },
+  { value: 'part_time', label: 'Part-Time' },
+  { value: 'partial_short', label: 'Partial · 20–25 hrs/week (≤ 4.5 months)' },
+  { value: 'partial_extended', label: 'Partial · 20–25 hrs/week (> 4.5 months)' },
+  { value: 'probation_training', label: 'Probation / Training / Internship' },
+  { value: 'team_lead_owned', label: 'Team Lead-Owned' },
+  { value: 'associates', label: 'Associates (Johnny + Michele)' },
+];
+
 export function ProjectFormSheet({ open, onOpenChange, mode, projectId }: ProjectFormSheetProps) {
   const createMutation = useCreateProject();
   const updateMutation = useUpdateProject(projectId ?? '');
@@ -80,6 +93,10 @@ export function ProjectFormSheet({ open, onOpenChange, mode, projectId }: Projec
   React.useEffect(() => {
     setStep(mode === 'edit' ? 2 : 1);
   }, [mode, open]);
+
+  // "Will the developer handle communication?" — when on, there's no
+  // separate communicator (the winner covers comms).
+  const [devHandlesComms, setDevHandlesComms] = React.useState(true);
 
   /* ---------- Form ---------- */
   const form = useForm<ProjectCreateInput>({
@@ -101,9 +118,10 @@ export function ProjectFormSheet({ open, onOpenChange, mode, projectId }: Projec
   /* ---------- Rule resolution preview ---------- */
   const [resolvedRule, setResolvedRule] = React.useState<{
     version: string;
-    poolMode: 'percentage' | 'fixed';
+    poolMode: PoolMode;
     poolValue: number;
     rolePercentages: Record<string, number>;
+    designationAmounts: Array<{ designation: string; amountUsd: number }> | null;
   } | null>(null);
   const [ruleResolving, setRuleResolving] = React.useState(false);
   const [ruleError, setRuleError] = React.useState<string | null>(null);
@@ -122,12 +140,13 @@ export function ProjectFormSheet({ open, onOpenChange, mode, projectId }: Projec
         version: string;
         department: string;
         categoryId: string;
-        poolMode: 'percentage' | 'fixed';
+        poolMode: PoolMode;
         poolValue: number;
         rolePercentages: Record<string, number>;
+        designationAmounts: Array<{ designation: string; amountUsd: number }> | null;
         status: string;
       }>;
-    }>(`/api/commission-rules?activeOnly=true&categoryId=${categoryId}&limit=50`)
+    }>(`/api/commission-rules?activeOnly=true&categoryIds=${categoryId}&limit=50`)
       .then((res) => {
         if (cancelled) return;
         const dept = refsQuery.data?.departments.find((d) => d.id === departmentId);
@@ -150,6 +169,7 @@ export function ProjectFormSheet({ open, onOpenChange, mode, projectId }: Projec
           poolMode: rule.poolMode,
           poolValue: rule.poolValue,
           rolePercentages: rule.rolePercentages,
+          designationAmounts: rule.designationAmounts ?? null,
         });
       })
       .catch((err) => {
@@ -357,6 +377,21 @@ export function ProjectFormSheet({ open, onOpenChange, mode, projectId }: Projec
                   <Input placeholder="Acme Inc." {...register('clientName')} />
                 </Field>
 
+                <Field
+                  label="Engagement sub-type"
+                  hint="For External projects — full-time, part-time, partial, etc. (optional)"
+                >
+                  <Combobox
+                    options={SUB_TYPE_OPTIONS}
+                    value={watch('subType') ?? ''}
+                    onValueChange={(v) =>
+                      setValue('subType', (v || null) as ProjectCreateInput['subType'])
+                    }
+                    placeholder="Select a sub-type"
+                    searchPlaceholder="Search sub-types…"
+                  />
+                </Field>
+
                 <div className="gap-fn-3 grid grid-cols-1 sm:grid-cols-2">
                   <Field
                     label="Revenue (USD)"
@@ -375,6 +410,21 @@ export function ProjectFormSheet({ open, onOpenChange, mode, projectId }: Projec
                   </Field>
                 </div>
 
+                {resolvedRule?.poolMode === 'net_revenue_share' && (
+                  <Field
+                    label="Developer salary (PKR / month)"
+                    hint="Subtracted from revenue (converted to USD at run time) to form the net commission pool."
+                    error={formState.errors.developerSalaryPkr?.message}
+                  >
+                    <Input
+                      type="number"
+                      placeholder="250000"
+                      step="1000"
+                      {...register('developerSalaryPkr')}
+                    />
+                  </Field>
+                )}
+
                 <Field
                   label="Expected completion (optional)"
                   hint="Drives the time-proportional disbursement. If unset, the pool pays out in the start month."
@@ -386,7 +436,7 @@ export function ProjectFormSheet({ open, onOpenChange, mode, projectId }: Projec
                 <div className="gap-fn-3 flex flex-col">
                   <div className="text-fn-fg font-fn-semibold text-[13.5px]">Role assignments</div>
 
-                  <Field label="Winner" required>
+                  <Field label="Developer who won the project" required>
                     <Controller
                       name="assignments"
                       control={control}
@@ -402,20 +452,45 @@ export function ProjectFormSheet({ open, onOpenChange, mode, projectId }: Projec
                     />
                   </Field>
 
-                  <Field label="Communicator" hint="The day-to-day client point of contact.">
-                    <Controller
-                      name="assignments"
-                      control={control}
-                      render={() => (
-                        <Combobox
-                          options={employeeOptions}
-                          value={communicatorId}
-                          onValueChange={(id) => setRoleSingle('communicator', id)}
-                          placeholder="Pick the comms lead"
-                        />
-                      )}
+                  <div className="border-fn-border rounded-fn-sm px-fn-3 py-fn-2_5 gap-fn-3 flex items-center justify-between border">
+                    <div className="gap-fn-0_5 flex flex-col">
+                      <span className="text-fn-fg font-fn-medium text-[13px]">
+                        Will the developer handle communication?
+                      </span>
+                      <span className="text-fn-fg-faint text-[11.5px]">
+                        Turn off to assign a separate communicator.
+                      </span>
+                    </div>
+                    <Switch
+                      checked={devHandlesComms}
+                      onCheckedChange={(v) => {
+                        setDevHandlesComms(v);
+                        if (v) {
+                          setValue(
+                            'assignments',
+                            assignments.filter((a) => a.roleName !== 'communicator'),
+                          );
+                        }
+                      }}
                     />
-                  </Field>
+                  </div>
+
+                  {!devHandlesComms && (
+                    <Field label="Communicator" hint="The day-to-day client point of contact.">
+                      <Controller
+                        name="assignments"
+                        control={control}
+                        render={() => (
+                          <Combobox
+                            options={employeeOptions}
+                            value={communicatorId}
+                            onValueChange={(id) => setRoleSingle('communicator', id)}
+                            placeholder="Pick the comms lead"
+                          />
+                        )}
+                      />
+                    </Field>
+                  )}
 
                   <Field
                     label="Eligible team"
@@ -453,6 +528,8 @@ export function ProjectFormSheet({ open, onOpenChange, mode, projectId }: Projec
                   poolMode={resolvedRule?.poolMode}
                   poolValue={resolvedRule?.poolValue ?? 0}
                   revenueUsd={revenueUsd}
+                  developerSalaryPkr={Number(watch('developerSalaryPkr') ?? 0)}
+                  designationAmounts={resolvedRule?.designationAmounts ?? null}
                   rolePercentages={resolvedRule?.rolePercentages ?? {}}
                   assignments={assignments}
                   employees={employees}
@@ -572,29 +649,43 @@ function Field({
   );
 }
 
+// Display-only FX for the live net-share preview; the real conversion
+// happens at run time using the run's pinned rate.
+const APPROX_PKR_TO_USD = 0.0035;
+
 function CommissionPreview({
   ruleVersion,
   poolMode,
   poolValue,
   revenueUsd,
+  developerSalaryPkr,
+  designationAmounts,
   rolePercentages,
   assignments,
   employees,
 }: {
   ruleVersion: string | null;
-  poolMode?: 'percentage' | 'fixed';
+  poolMode?: PoolMode;
   poolValue: number;
   revenueUsd: number;
+  developerSalaryPkr: number;
+  designationAmounts: Array<{ designation: string; amountUsd: number }> | null;
   rolePercentages: Record<string, number>;
   assignments: Array<{ employeeId: string; roleName: string; percentage: number }>;
   employees: Array<{ id: string; fullName: string }>;
 }) {
-  const totalPool =
-    !poolMode || !revenueUsd
-      ? 0
-      : poolMode === 'percentage'
-        ? (revenueUsd * poolValue) / 100
-        : poolValue;
+  const devSalaryUsd = developerSalaryPkr * APPROX_PKR_TO_USD;
+  const totalPool = !poolMode
+    ? 0
+    : poolMode === 'percentage'
+      ? (revenueUsd * poolValue) / 100
+      : poolMode === 'net_revenue_share'
+        ? Math.max(0, revenueUsd - devSalaryUsd)
+        : poolMode === 'designation_fixed'
+          ? (designationAmounts ?? []).reduce((s, d) => s + d.amountUsd, 0)
+          : poolMode === 'fixed'
+            ? poolValue
+            : 0;
 
   return (
     <div className="gap-fn-4 flex flex-col">
@@ -621,6 +712,8 @@ function CommissionPreview({
             Commission pool
           </span>
           {poolMode === 'percentage' && <Badge tone="accent">{poolValue}% of revenue</Badge>}
+          {poolMode === 'net_revenue_share' && <Badge tone="accent">Net of dev salary</Badge>}
+          {poolMode === 'designation_fixed' && <Badge tone="accent">By designation</Badge>}
         </div>
         <div
           className="text-fn-fg font-fn-semibold text-[28px] tabular-nums"
@@ -628,6 +721,24 @@ function CommissionPreview({
         >
           {formatUsd(totalPool)}
         </div>
+        {poolMode === 'net_revenue_share' && (
+          <div className="text-fn-fg-faint text-[10.5px]">
+            {formatUsd(revenueUsd)} − {formatUsd(devSalaryUsd)} dev salary (approx; final at run FX)
+          </div>
+        )}
+        {poolMode === 'designation_fixed' && (designationAmounts?.length ?? 0) > 0 && (
+          <div className="gap-fn-0_5 mt-fn-1 flex flex-col">
+            {(designationAmounts ?? []).map((d) => (
+              <div
+                key={d.designation}
+                className="text-fn-fg-faint flex items-center justify-between text-[10.5px]"
+              >
+                <span>{d.designation}</span>
+                <span className="tabular-nums">{formatUsd(d.amountUsd)}/mo</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Pool bar viz */}
@@ -771,8 +882,19 @@ function formatUsd(value: number): string {
   }).format(value);
 }
 
-function formatPool(rule: { poolMode: 'percentage' | 'fixed'; poolValue: number }): string {
-  return rule.poolMode === 'percentage' ? `${rule.poolValue}%` : formatUsd(rule.poolValue);
+function formatPool(rule: { poolMode: PoolMode; poolValue: number }): string {
+  switch (rule.poolMode) {
+    case 'percentage':
+      return `${rule.poolValue}%`;
+    case 'tiered':
+      return 'a tiered %';
+    case 'net_revenue_share':
+      return 'net of developer salary';
+    case 'designation_fixed':
+      return 'a per-designation amount';
+    default:
+      return formatUsd(rule.poolValue);
+  }
 }
 
 function colorToHue(color: string): number {

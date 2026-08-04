@@ -27,8 +27,32 @@ export interface CalcRevenueBracket {
   poolPct: number;
 }
 
+/** One designation → fixed monthly amount row for `poolMode='designation_fixed'`. */
+export interface CalcDesignationAmount {
+  /** Designation name (matched against the assignee's designation). */
+  designation: string;
+  amountUsd: number;
+}
+
+/**
+ * Pool modes:
+ *   - percentage        : pool = revenue × poolValue%          (External / default)
+ *   - fixed             : pool = poolValue                      (External flat)
+ *   - tiered            : pool = revenue × bracket poolPct%     (revenue ladder)
+ *   - net_revenue_share : pool = max(0, revenue − dev salary)   (Upwork; split by
+ *                          assignment %, e.g. 20% winner / 80% company-not-paid)
+ *   - designation_fixed : NO shared pool — each assignee earns a fixed monthly
+ *                          amount looked up by their designation (B2B)
+ */
+export type CalcPoolMode =
+  | 'percentage'
+  | 'fixed'
+  | 'tiered'
+  | 'net_revenue_share'
+  | 'designation_fixed';
+
 export interface CalcRuleSnapshot {
-  poolMode: 'percentage' | 'fixed' | 'tiered';
+  poolMode: CalcPoolMode;
   poolValue: number;
   minProjectRevenueUsd: number;
   /**
@@ -45,12 +69,20 @@ export interface CalcRuleSnapshot {
    * maxUsd is null) and uses its `poolPct` as the pool percentage.
    */
   revenueBrackets?: CalcRevenueBracket[] | null;
+  /**
+   * Designation → fixed monthly amount ladder for
+   * `poolMode='designation_fixed'` (B2B). Each assignee earns the
+   * amount matching their designation, prorated by month overlap.
+   */
+  designationAmounts?: CalcDesignationAmount[] | null;
 }
 
 export interface CalcAssignment {
   employeeId: string;
   roleName: string;
   percentage: number;
+  /** Assignee's designation — only read by `poolMode='designation_fixed'`. */
+  designation?: string | null;
 }
 
 export interface CalcProject {
@@ -61,6 +93,12 @@ export interface CalcProject {
   expectedCompletionDate: Date | null;
   rule: CalcRuleSnapshot;
   assignments: CalcAssignment[];
+  /**
+   * Developer salary for this project, already converted to USD at the
+   * run's pinned FX rate. Only read by `poolMode='net_revenue_share'`
+   * (Upwork), where it's subtracted from revenue to form the net pool.
+   */
+  developerSalaryUsd?: number | null;
 }
 
 export interface CalcLineItem {
@@ -137,11 +175,37 @@ export function calcProjectLineItems(project: CalcProject, options: CalcOptions)
   const totalActiveDays = inclusiveDays(projectStart, projectEnd);
   if (totalActiveDays <= 0) return [];
 
-  // Total pool for the whole project.
-  const totalPool = computeTotalPool(project.rule, project.revenueUsd);
+  const proration = overlapDays / totalActiveDays;
 
-  // Month's slice of that pool.
-  const monthShare = (totalPool * overlapDays) / totalActiveDays;
+  // Designation-fixed (B2B) has no shared pool: each assignee earns the
+  // fixed monthly amount for their designation, prorated by overlap.
+  if (project.rule.poolMode === 'designation_fixed') {
+    const byDesignation = new Map(
+      (project.rule.designationAmounts ?? []).map((d) => [d.designation, d.amountUsd]),
+    );
+    return project.assignments.map((a) => {
+      const perMonth = a.designation ? (byDesignation.get(a.designation) ?? 0) : 0;
+      return {
+        projectId: project.id,
+        employeeId: a.employeeId,
+        roleName: a.roleName,
+        snapshotPercentage: a.percentage,
+        baseRevenueUsd: project.revenueUsd,
+        monthFractionNumerator: overlapDays,
+        monthFractionDenominator: daysInMonth,
+        calculatedAmountUsd: applyGuardrails(roundUsd(perMonth * proration), project.rule),
+      };
+    });
+  }
+
+  // Pool modes (percentage / fixed / tiered / net_revenue_share): a
+  // whole-project pool sliced by month then split by assignment %.
+  const totalPool = computeTotalPool(
+    project.rule,
+    project.revenueUsd,
+    project.developerSalaryUsd ?? 0,
+  );
+  const monthShare = totalPool * proration;
 
   return project.assignments.map((a) => {
     const rawShare = (monthShare * a.percentage) / 100;
@@ -217,16 +281,48 @@ export function coerceRevenueBrackets(value: unknown): CalcRevenueBracket[] | nu
 }
 
 /**
+ * Coerce a stored value (Prisma JSON / API payload) into the calc
+ * engine's designation-amount array. Returns null when malformed so
+ * callers fall back to zero payouts rather than throwing.
+ */
+export function coerceDesignationAmounts(value: unknown): CalcDesignationAmount[] | null {
+  if (!Array.isArray(value)) return null;
+  const out: CalcDesignationAmount[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
+    const row = entry as Record<string, unknown>;
+    const designation = typeof row.designation === 'string' ? row.designation : null;
+    const amountUsd = Number(row.amountUsd);
+    if (!designation || !Number.isFinite(amountUsd)) return null;
+    out.push({ designation, amountUsd });
+  }
+  return out;
+}
+
+/**
  * The whole-project commission pool for a rule + revenue. `percentage`
  * and `fixed` are the original modes; `tiered` selects a bracket's
- * `poolPct` by revenue (0 when no bracket matches).
+ * `poolPct` by revenue (0 when no bracket matches); `net_revenue_share`
+ * subtracts the developer salary from revenue.
  */
-export function computeTotalPool(rule: CalcRuleSnapshot, revenueUsd: number): number {
+export function computeTotalPool(
+  rule: CalcRuleSnapshot,
+  revenueUsd: number,
+  developerSalaryUsd = 0,
+): number {
   if (rule.poolMode === 'fixed') return rule.poolValue;
   if (rule.poolMode === 'tiered') {
     const pct = resolveTieredPoolPct(rule.revenueBrackets, revenueUsd);
     return pct === null ? 0 : (revenueUsd * pct) / 100;
   }
+  // Upwork: distributable pool is revenue net of the developer's salary
+  // (already in USD). Winner takes their assignment %; the remainder is
+  // the company's and simply isn't paid out as a line item.
+  if (rule.poolMode === 'net_revenue_share') {
+    return Math.max(0, revenueUsd - developerSalaryUsd);
+  }
+  // designation_fixed has no shared pool (handled in calcProjectLineItems).
+  if (rule.poolMode === 'designation_fixed') return 0;
   return (revenueUsd * rule.poolValue) / 100;
 }
 

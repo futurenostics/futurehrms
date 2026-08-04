@@ -19,6 +19,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   calcProjectLineItems,
+  coerceDesignationAmounts,
   coerceRevenueBrackets,
   computeTotalPool,
   computeFinal,
@@ -454,5 +455,110 @@ describe('monthLabel', () => {
   });
   it('returns the input on parse failure', () => {
     expect(monthLabel('bogus')).toBe('bogus');
+  });
+});
+
+/* ---------- Upwork: net_revenue_share ---------- */
+
+describe('net_revenue_share (Upwork)', () => {
+  it('winner gets their % of (revenue − developer salary); company remainder is not a line', () => {
+    // revenue 10,000 − dev salary 3,500 USD = 6,500 net; winner 20% = 1,300.
+    const project = makeProject({
+      revenueUsd: 10_000,
+      developerSalaryUsd: 3_500,
+      startDate: new Date('2026-05-01T00:00:00Z'),
+      expectedCompletionDate: null,
+      rule: { poolMode: 'net_revenue_share', poolValue: 0, minProjectRevenueUsd: 0 },
+      assignments: [{ employeeId: 'bd1', roleName: 'winner', percentage: 20 }],
+    });
+    const items = calcProjectLineItems(project, { monthKey: '2026-05' });
+    expect(items).toHaveLength(1); // only the winner; 80% company share is not paid out
+    expect(items[0].calculatedAmountUsd).toBe(1_300);
+  });
+
+  it('net pool floors at zero when the developer salary exceeds revenue', () => {
+    expect(
+      computeTotalPool(
+        { poolMode: 'net_revenue_share', poolValue: 0, minProjectRevenueUsd: 0 },
+        4_000,
+        5_000,
+      ),
+    ).toBe(0);
+  });
+
+  it('prorates the net share across a multi-month project', () => {
+    // net 6,000; May overlap 31/61 days.
+    const project = makeProject({
+      revenueUsd: 10_000,
+      developerSalaryUsd: 4_000,
+      startDate: new Date('2026-05-01T00:00:00Z'),
+      expectedCompletionDate: new Date('2026-06-30T00:00:00Z'),
+      rule: { poolMode: 'net_revenue_share', poolValue: 0, minProjectRevenueUsd: 0 },
+      assignments: [{ employeeId: 'bd1', roleName: 'winner', percentage: 20 }],
+    });
+    const items = calcProjectLineItems(project, { monthKey: '2026-05' });
+    // 6000 * (31/61) * 0.20 = 609.836… → 609.84
+    expect(items[0].calculatedAmountUsd).toBe(609.84);
+  });
+});
+
+/* ---------- B2B: designation_fixed ---------- */
+
+describe('designation_fixed (B2B)', () => {
+  const RULE = {
+    poolMode: 'designation_fixed' as const,
+    poolValue: 0,
+    minProjectRevenueUsd: 0,
+    designationAmounts: [
+      { designation: 'ATL', amountUsd: 500 },
+      { designation: 'SSE', amountUsd: 300 },
+    ],
+  };
+
+  it('pays each assignee the fixed amount for their designation; unknown designation → 0', () => {
+    const project = makeProject({
+      revenueUsd: 0,
+      startDate: new Date('2026-05-01T00:00:00Z'),
+      expectedCompletionDate: null,
+      rule: RULE,
+      assignments: [
+        { employeeId: 'a', roleName: 'developer', percentage: 0, designation: 'ATL' },
+        { employeeId: 'b', roleName: 'developer', percentage: 0, designation: 'SSE' },
+        { employeeId: 'c', roleName: 'developer', percentage: 0, designation: 'SE' },
+      ],
+    });
+    const items = calcProjectLineItems(project, { monthKey: '2026-05' });
+    const byId = Object.fromEntries(items.map((i) => [i.employeeId, i.calculatedAmountUsd]));
+    expect(byId).toEqual({ a: 500, b: 300, c: 0 });
+  });
+
+  it('prorates designation amounts across a multi-month project', () => {
+    const project = makeProject({
+      revenueUsd: 0,
+      startDate: new Date('2026-05-01T00:00:00Z'),
+      expectedCompletionDate: new Date('2026-06-30T00:00:00Z'),
+      rule: RULE,
+      assignments: [{ employeeId: 'a', roleName: 'developer', percentage: 0, designation: 'ATL' }],
+    });
+    const items = calcProjectLineItems(project, { monthKey: '2026-05' });
+    // 500 * (31/61) = 254.098… → 254.1
+    expect(items[0].calculatedAmountUsd).toBe(254.1);
+  });
+
+  it('does not build a shared pool for designation_fixed', () => {
+    expect(computeTotalPool(RULE, 100_000)).toBe(0);
+  });
+});
+
+describe('coerceDesignationAmounts', () => {
+  it('parses a well-formed array', () => {
+    expect(coerceDesignationAmounts([{ designation: 'ATL', amountUsd: 500 }])).toEqual([
+      { designation: 'ATL', amountUsd: 500 },
+    ]);
+  });
+  it('returns null on malformed input', () => {
+    expect(coerceDesignationAmounts('nope')).toBeNull();
+    expect(coerceDesignationAmounts([{ designation: 'ATL' }])).toBeNull();
+    expect(coerceDesignationAmounts([{ amountUsd: 5 }])).toBeNull();
   });
 });

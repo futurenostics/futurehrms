@@ -72,7 +72,7 @@ const SAMPLE_REVENUE = 10_000;
 
 type EditorMode = 'create' | 'edit';
 
-type PoolMode = 'percentage' | 'fixed' | 'tiered';
+type PoolMode = 'percentage' | 'fixed' | 'tiered' | 'net_revenue_share' | 'designation_fixed';
 
 interface BracketRow {
   minUsd: number;
@@ -84,6 +84,18 @@ const DEFAULT_BRACKETS: BracketRow[] = [
   { minUsd: 0, maxUsd: 10_000, poolPct: 5 },
   { minUsd: 10_000, maxUsd: 50_000, poolPct: 8 },
   { minUsd: 50_000, maxUsd: null, poolPct: 12 },
+];
+
+interface DesignationRow {
+  designation: string;
+  amountUsd: number;
+}
+
+// Seeded from the spec's B2B example (ATL $500, SSE $300, …).
+const DEFAULT_DESIGNATIONS: DesignationRow[] = [
+  { designation: 'ATL', amountUsd: 500 },
+  { designation: 'SSE', amountUsd: 300 },
+  { designation: 'SE', amountUsd: 200 },
 ];
 
 interface RoleSlot {
@@ -141,6 +153,7 @@ export function CommissionRuleEditorSheet({
   const [perPersonFloor, setPerPersonFloor] = React.useState<string>('');
   const [perPersonCap, setPerPersonCap] = React.useState<string>('');
   const [brackets, setBrackets] = React.useState<BracketRow[]>(DEFAULT_BRACKETS);
+  const [designations, setDesignations] = React.useState<DesignationRow[]>(DEFAULT_DESIGNATIONS);
   const [roles, setRoles] = React.useState<Array<{ key: string; pct: number }>>([
     { key: 'winner', pct: 50 },
     { key: 'communicator', pct: 30 },
@@ -169,6 +182,14 @@ export function CommissionRuleEditorSheet({
           })),
         );
       }
+      if (existing.designationAmounts && existing.designationAmounts.length > 0) {
+        setDesignations(
+          existing.designationAmounts.map((d) => ({
+            designation: d.designation,
+            amountUsd: Number(d.amountUsd),
+          })),
+        );
+      }
       const next = Object.entries(existing.rolePercentages).map(([key, pct]) => ({
         key,
         pct: Number(pct),
@@ -185,7 +206,13 @@ export function CommissionRuleEditorSheet({
   /* ---------- Derived ---------- */
   const samplePoolUsd = poolForSample(poolMode, poolValue, brackets, SAMPLE_REVENUE);
   const splitsTotal = roles.reduce((s, r) => s + r.pct, 0);
-  const splitsValid = Math.abs(splitsTotal - 100) <= 0.01;
+  // Upwork (net_revenue_share) pays only the assigned winner's %; the
+  // remainder is the company's and stays unpaid, so splits need only
+  // NOT exceed 100 (not sum to it). Other modes still require 100.
+  const splitsValid =
+    poolMode === 'net_revenue_share'
+      ? splitsTotal <= 100.01 && splitsTotal > 0
+      : Math.abs(splitsTotal - 100) <= 0.01;
   const selectedCategory = categories.find((c) => c.id === categoryId);
 
   // Guardrails: empty / invalid input => no bound (null).
@@ -198,11 +225,24 @@ export function CommissionRuleEditorSheet({
   // open-ended tail. Only enforced when tiered mode is active.
   const bracketsError = poolMode === 'tiered' ? validateBrackets(brackets) : null;
   const bracketsValid = bracketsError === null;
-  // Pool-shape fields (poolMode / poolValue / revenueBrackets) for every payload.
+
+  // Designation-fixed validity: at least one row, every row named +
+  // non-negative, no duplicate designations.
+  const designationsError =
+    poolMode === 'designation_fixed' ? validateDesignations(designations) : null;
+  const designationsValid = designationsError === null;
+
+  // Pool-shape fields for every payload. Only the active mode's ladder
+  // is populated; the others are nulled so a mode switch can't leave
+  // stale JSON behind.
   const poolPayload =
     poolMode === 'tiered'
-      ? { poolMode, poolValue: 0, revenueBrackets: brackets }
-      : { poolMode, poolValue, revenueBrackets: null };
+      ? { poolMode, poolValue: 0, revenueBrackets: brackets, designationAmounts: null }
+      : poolMode === 'designation_fixed'
+        ? { poolMode, poolValue: 0, revenueBrackets: null, designationAmounts: designations }
+        : poolMode === 'net_revenue_share'
+          ? { poolMode, poolValue: 0, revenueBrackets: null, designationAmounts: null }
+          : { poolMode, poolValue, revenueBrackets: null, designationAmounts: null };
 
   /* ---------- Mutations ---------- */
   async function saveAsDraft() {
@@ -212,6 +252,10 @@ export function CommissionRuleEditorSheet({
     }
     if (poolMode === 'tiered' && !bracketsValid) {
       toast.error(bracketsError ?? 'Fix the revenue brackets first.');
+      return;
+    }
+    if (poolMode === 'designation_fixed' && !designationsValid) {
+      toast.error(designationsError ?? 'Fix the designation amounts first.');
       return;
     }
     try {
@@ -272,6 +316,10 @@ export function CommissionRuleEditorSheet({
     }
     if (poolMode === 'tiered' && !bracketsValid) {
       toast.error(bracketsError ?? 'Fix the revenue brackets first.');
+      return;
+    }
+    if (poolMode === 'designation_fixed' && !designationsValid) {
+      toast.error(designationsError ?? 'Fix the designation amounts first.');
       return;
     }
     try {
@@ -430,6 +478,8 @@ export function CommissionRuleEditorSheet({
                       { value: 'percentage', label: 'Percentage' },
                       { value: 'fixed', label: 'Fixed amount' },
                       { value: 'tiered', label: 'Tiered' },
+                      { value: 'net_revenue_share', label: 'Net share (Upwork)' },
+                      { value: 'designation_fixed', label: 'By designation (B2B)' },
                     ]}
                   />
                 }
@@ -441,6 +491,26 @@ export function CommissionRuleEditorSheet({
                     error={bracketsError}
                     samplePoolUsd={samplePoolUsd}
                   />
+                ) : poolMode === 'designation_fixed' ? (
+                  <DesignationEditor
+                    rows={designations}
+                    onChange={setDesignations}
+                    error={designationsError}
+                  />
+                ) : poolMode === 'net_revenue_share' ? (
+                  <div className="gap-fn-2 rounded-fn-sm border-fn-border bg-fn-bg-inset/40 p-fn-4 flex flex-col border">
+                    <p className="text-fn-fg text-[13px]">
+                      Pool ={' '}
+                      <span className="font-fn-semibold">project revenue − developer salary</span>{' '}
+                      (salary converted from PKR at the run&rsquo;s FX rate). The winner earns their
+                      role % of that net; the remainder is the company&rsquo;s and isn&rsquo;t paid
+                      out.
+                    </p>
+                    <p className="text-fn-fg-faint text-[11.5px]">
+                      Set the winner&rsquo;s share below (e.g. 20%). Enter each project&rsquo;s
+                      developer salary on the project form.
+                    </p>
+                  </div>
                 ) : (
                   <div className="gap-fn-3 flex flex-col">
                     <div className="gap-fn-3 flex items-center">
@@ -857,7 +927,15 @@ function PreviewPanel({
 }) {
   const pool = poolForSample(poolMode, poolValue, brackets, sampleRevenue);
   const poolModeLabel =
-    poolMode === 'percentage' ? `${poolValue}%` : poolMode === 'tiered' ? 'Tiered' : 'Fixed';
+    poolMode === 'percentage'
+      ? `${poolValue}%`
+      : poolMode === 'tiered'
+        ? 'Tiered'
+        : poolMode === 'net_revenue_share'
+          ? 'Net share'
+          : poolMode === 'designation_fixed'
+            ? 'By designation'
+            : 'Fixed';
   return (
     <div className="rounded-fn-sm border-fn-border bg-fn-bg-panel overflow-hidden border">
       <div className="border-fn-divider px-fn-4 py-fn-3 gap-fn-2 flex items-center justify-between border-b">
@@ -1172,6 +1250,20 @@ function validateBrackets(rows: BracketRow[]): string | null {
   return null;
 }
 
+/** Mirror of the server designation-amount validation. */
+function validateDesignations(rows: DesignationRow[]): string | null {
+  if (rows.length === 0) return 'Add at least one designation.';
+  const seen = new Set<string>();
+  for (const r of rows) {
+    const name = r.designation.trim();
+    if (name === '') return 'Every row needs a designation name.';
+    if (r.amountUsd < 0) return 'Amounts must be zero or more.';
+    if (seen.has(name)) return `Duplicate designation: ${name}`;
+    seen.add(name);
+  }
+  return null;
+}
+
 /** Sample-pool helper shared by the pool section, preview, and compare panels. */
 function poolForSample(
   poolMode: PoolMode,
@@ -1187,7 +1279,93 @@ function poolForSample(
     }
     return 0;
   }
+  // net_revenue_share depends on per-project developer salary and
+  // designation_fixed has no shared pool — neither has a meaningful
+  // revenue-only sample here (0 keeps the shared preview harmless).
+  if (poolMode === 'net_revenue_share' || poolMode === 'designation_fixed') return 0;
   return (revenue * poolValue) / 100;
+}
+
+function DesignationEditor({
+  rows,
+  onChange,
+  error,
+}: {
+  rows: DesignationRow[];
+  onChange: (next: DesignationRow[]) => void;
+  error: string | null;
+}) {
+  function setName(idx: number, value: string) {
+    onChange(rows.map((r, i) => (i === idx ? { ...r, designation: value } : r)));
+  }
+  function setAmount(idx: number, value: number) {
+    onChange(rows.map((r, i) => (i === idx ? { ...r, amountUsd: value } : r)));
+  }
+  function addRow() {
+    onChange([...rows, { designation: '', amountUsd: 0 }]);
+  }
+  function removeRow(idx: number) {
+    if (rows.length <= 1) return;
+    onChange(rows.filter((_, i) => i !== idx));
+  }
+
+  return (
+    <div className="gap-fn-3 flex flex-col">
+      <p className="text-fn-fg-muted text-[12px]">
+        Each assignee earns the fixed monthly amount matching their designation, prorated by how
+        much of the month they were active.
+      </p>
+      <div className="gap-fn-2 flex flex-col">
+        {rows.map((r, idx) => (
+          <div
+            key={idx}
+            className="border-fn-border rounded-fn-xs px-fn-3 py-fn-2_5 gap-fn-2 flex items-center border"
+          >
+            <Input
+              value={r.designation}
+              placeholder="Designation (e.g. ATL)"
+              onChange={(e) => setName(idx, e.target.value)}
+              className="h-fn-7 flex-1"
+            />
+            <span className="text-fn-fg-faint text-[12px]">$</span>
+            <Input
+              type="number"
+              min={0}
+              step={50}
+              value={r.amountUsd}
+              onChange={(e) => setAmount(idx, Number(e.target.value))}
+              className="h-fn-7 w-[110px] text-right tabular-nums"
+            />
+            <span className="text-fn-fg-faint text-[11px]">/mo</span>
+            <button
+              type="button"
+              onClick={() => removeRow(idx)}
+              disabled={rows.length <= 1}
+              aria-label="Remove designation"
+              className="text-fn-fg-faint hover:text-fn-danger inline-flex cursor-pointer items-center disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Trash2 className="h-fn-3_5 w-fn-3_5" />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        onClick={addRow}
+        className="border-fn-border-strong text-fn-fg-muted hover:bg-fn-bg-inset rounded-fn-xs px-fn-3 py-fn-2 gap-fn-1 inline-flex cursor-pointer items-center justify-center border border-dashed text-[12.5px]"
+      >
+        <Plus className="h-fn-3_5 w-fn-3_5" /> Add a designation
+      </button>
+
+      {error && (
+        <div className="rounded-fn-xs border-fn-warning/30 bg-fn-warning-soft/40 text-fn-warning-soft-fg px-fn-3 py-fn-2 gap-fn-2 flex items-center border text-[12px]">
+          <AlertCircle className="h-fn-3_5 w-fn-3_5" />
+          <span className="font-fn-medium">{error}</span>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function rolesToMap(roles: Array<{ key: string; pct: number }>): Record<string, number> {

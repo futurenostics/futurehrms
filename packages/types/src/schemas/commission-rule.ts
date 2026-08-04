@@ -12,8 +12,37 @@
  */
 import { z } from 'zod';
 
-export const poolModeSchema = z.enum(['percentage', 'fixed', 'tiered']);
+export const poolModeSchema = z.enum([
+  'percentage',
+  'fixed',
+  'tiered',
+  /** Upwork: pool = revenue − developer salary (USD), split by assignment %. */
+  'net_revenue_share',
+  /** B2B: no shared pool — each assignee earns a fixed amount by designation. */
+  'designation_fixed',
+]);
 export type PoolMode = z.infer<typeof poolModeSchema>;
+
+/** One designation → fixed monthly amount row for `poolMode='designation_fixed'`. */
+export const designationAmountSchema = z.object({
+  designation: z.string().trim().min(1).max(60),
+  amountUsd: z.coerce.number().min(0).max(99_999_999.99),
+});
+export type DesignationAmount = z.infer<typeof designationAmountSchema>;
+
+export const designationAmountsSchema = z
+  .array(designationAmountSchema)
+  .min(1, 'At least one designation amount required')
+  .superRefine((rows, ctx) => {
+    const seen = new Set<string>();
+    for (const r of rows) {
+      if (seen.has(r.designation)) {
+        ctx.addIssue({ code: 'custom', message: `Duplicate designation: ${r.designation}` });
+      }
+      seen.add(r.designation);
+    }
+  });
+export type DesignationAmounts = z.infer<typeof designationAmountsSchema>;
 
 /**
  * A single revenue bracket for `poolMode='tiered'`. `maxUsd=null`
@@ -107,6 +136,8 @@ const commissionRuleBaseSchema = z.object({
   perPersonCapUsd: z.coerce.number().min(0).max(99_999_999.99).nullable().optional(),
   /** Bracket ladder for `poolMode='tiered'`; null/omitted otherwise. */
   revenueBrackets: revenueBracketsSchema.nullable().optional(),
+  /** Designation → amount ladder for `poolMode='designation_fixed'`; null otherwise. */
+  designationAmounts: designationAmountsSchema.nullable().optional(),
   rolePercentages: rolePercentagesSchema,
   disbursementSchedule: z.record(z.string(), z.unknown()).nullable().optional(),
   effectiveFrom: z.string().min(1).optional(),
@@ -125,6 +156,7 @@ function commissionRuleRefine(
   input: {
     poolMode?: PoolMode;
     revenueBrackets?: RevenueBrackets | null;
+    designationAmounts?: DesignationAmounts | null;
     status?: CommissionRuleStatus;
     perPersonFloorUsd?: number | null;
     perPersonCapUsd?: number | null;
@@ -159,6 +191,25 @@ function commissionRuleRefine(
       code: 'custom',
       message: 'Revenue brackets only apply to tiered rules',
       path: ['revenueBrackets'],
+    });
+  }
+
+  if (input.poolMode === 'designation_fixed') {
+    if (
+      input.status !== 'pending' &&
+      (!input.designationAmounts || input.designationAmounts.length === 0)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Designation-fixed rules require at least one designation amount',
+        path: ['designationAmounts'],
+      });
+    }
+  } else if (input.poolMode !== undefined && input.designationAmounts) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'Designation amounts only apply to designation-fixed rules',
+      path: ['designationAmounts'],
     });
   }
 }
@@ -196,6 +247,7 @@ export const commissionRulePublicSchema = z.object({
   perPersonFloorUsd: z.number().nullable(),
   perPersonCapUsd: z.number().nullable(),
   revenueBrackets: revenueBracketsSchema.nullable(),
+  designationAmounts: designationAmountsSchema.nullable(),
   rolePercentages: rolePercentagesSchema,
   disbursementSchedule: z.record(z.string(), z.unknown()).nullable(),
   effectiveFrom: z.string(),
