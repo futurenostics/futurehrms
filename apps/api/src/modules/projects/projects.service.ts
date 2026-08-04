@@ -137,6 +137,7 @@ export class ProjectsService {
     assignments: ProjectAssignmentInput[],
     rolePercentages: RolePercentages,
     hasOverride: boolean,
+    poolMode: string,
   ): void {
     if (assignments.length === 0) {
       throw new BadRequestException('At least one role assignment is required');
@@ -152,9 +153,22 @@ export class ProjectsService {
       }
     }
 
-    // Percentages sum to 100 with a small floating tolerance.
+    // Designation-fixed (B2B) pays each assignee by their designation,
+    // not by percentage — assignment %s are irrelevant, so skip the
+    // sum + role-default checks entirely.
+    if (poolMode === 'designation_fixed') return;
+
     const sum = assignments.reduce((acc, a) => acc + a.percentage, 0);
-    if (Math.abs(sum - 100) > PERCENTAGE_TOLERANCE) {
+    if (poolMode === 'net_revenue_share') {
+      // Upwork pays only the assigned winner's %; the remainder is the
+      // company's and isn't paid out, so assignments need only be > 0
+      // and not exceed 100.
+      if (sum <= 0 || sum - 100 > PERCENTAGE_TOLERANCE) {
+        throw new BadRequestException(
+          `Assignment percentages must be > 0 and ≤ 100 for net-share projects — got ${sum.toFixed(2)}`,
+        );
+      }
+    } else if (Math.abs(sum - 100) > PERCENTAGE_TOLERANCE) {
       throw new BadRequestException(
         `Assignment percentages must sum to 100 — got ${sum.toFixed(2)}`,
       );
@@ -353,7 +367,7 @@ export class ProjectsService {
 
     const rule = await this.resolveActiveRule(department.slug, category.id);
     const rolePercentages = rule.rolePercentages as RolePercentages;
-    this.validateAssignments(input.assignments, rolePercentages, input.hasOverride);
+    this.validateAssignments(input.assignments, rolePercentages, input.hasOverride, rule.poolMode);
 
     // Look up every employee in one shot so we can fail fast on bad ids.
     const employeeIds = input.assignments.map((a) => a.employeeId);
