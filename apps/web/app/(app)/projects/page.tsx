@@ -38,7 +38,9 @@ import {
   useProjectCategories,
 } from '@/lib/queries/projects';
 import { useEmployeesList, useReferences } from '@/lib/queries/employees';
+import { useCommissionRunsList } from '@/lib/queries/commission-runs';
 import { usePermissions } from '@/hooks/use-permissions';
+import { cn } from '@/lib/utils';
 
 const PAGE_SIZE = 50;
 
@@ -127,7 +129,6 @@ export default function ProjectsListPage() {
 
 function ProjectsListInner({
   schema,
-  categories,
 }: {
   schema: ReturnType<typeof buildProjectFilterSchema>;
   categories: Array<{ id: string; slug: string; name: string; parentId: string | null }>;
@@ -296,33 +297,26 @@ function ProjectsListInner({
     [router, canDelete, deleteProject],
   );
 
-  /* ---------- KPI strip — three top-level category cards ---------- */
+  /* ---------- KPI strip — the three module-spec KPIs ---------- */
+  // Pending commission approvals — runs awaiting sign-off.
+  const runsQuery = useCommissionRunsList({});
+  const pendingApprovals = React.useMemo(
+    () => (runsQuery.data?.items ?? []).filter((r) => r.status === 'pending_approval').length,
+    [runsQuery.data],
+  );
+  // Active projects + their revenue (from the loaded set — grows as you
+  // scroll the infinite list).
   const kpis = React.useMemo(() => {
-    const groups = new Map<
-      string,
-      { name: string; active: number; revenue: number; commission: number }
-    >();
+    let activeProjects = 0;
+    let activeRevenue = 0;
     for (const row of rows) {
-      const parent = row.category.parentId
-        ? categories.find((c) => c.id === row.category.parentId)
-        : row.category;
-      const slug = parent?.slug ?? row.category.slug;
-      const name = parent?.name ?? row.category.name;
-      const g = groups.get(slug) ?? { name, active: 0, revenue: 0, commission: 0 };
-      const isActive = row.status === 'active' || row.status === 'in_billing';
-      if (isActive) g.active += 1;
-      g.revenue += row.revenueUsd;
-      const cr = row.commissionRule;
-      const pool =
-        cr.poolMode === 'percentage' ? (row.revenueUsd * cr.poolValue) / 100 : cr.poolValue;
-      g.commission += pool;
-      groups.set(slug, g);
+      if (row.status === 'active' || row.status === 'in_billing') {
+        activeProjects += 1;
+        activeRevenue += row.revenueUsd;
+      }
     }
-    return ['external', 'upwork', 'b2b'].map((slug) => ({
-      slug,
-      ...(groups.get(slug) ?? { name: slug, active: 0, revenue: 0, commission: 0 }),
-    }));
-  }, [rows, categories]);
+    return { activeProjects, activeRevenue };
+  }, [rows]);
 
   return (
     <AppShell breadcrumbs={[{ label: 'Projects' }]}>
@@ -355,9 +349,22 @@ function ProjectsListInner({
 
         {/* KPI strip */}
         <div className="gap-fn-4 grid grid-cols-1 md:grid-cols-3">
-          {kpis.map((k) => (
-            <CategoryKpiCard key={k.slug} {...k} color={catColorFor(k.slug)} />
-          ))}
+          <SpecKpiCard
+            label="Total active projects"
+            value={String(kpis.activeProjects)}
+            hue={280}
+          />
+          <SpecKpiCard
+            label="Revenue this month"
+            value={formatUsd(kpis.activeRevenue, true)}
+            hue={175}
+          />
+          <SpecKpiCard
+            label="Pending commission approvals"
+            value={String(pendingApprovals)}
+            hue={65}
+            emphasize={pendingApprovals > 0}
+          />
         </div>
 
         {/* Table card */}
@@ -446,48 +453,41 @@ function ProjectsListInner({
 
 /* ───────────────────────── Sub-components ───────────────────────── */
 
-function CategoryKpiCard({
-  name,
-  active,
-  revenue,
-  commission,
-  color,
+function SpecKpiCard({
+  label,
+  value,
+  hue,
+  emphasize = false,
 }: {
-  name: string;
-  active: number;
-  revenue: number;
-  commission: number;
+  label: string;
+  value: string;
   /** OKLCH hue number (0–360). */
-  color: number;
+  hue: number;
+  emphasize?: boolean;
 }) {
   return (
-    <div className="rounded-fn-sm border-fn-border bg-fn-bg-panel p-fn-4 gap-fn-2_5 flex flex-col border">
+    <div
+      className={cn(
+        'rounded-fn-sm border-fn-border bg-fn-bg-panel p-fn-4 gap-fn-2_5 flex flex-col border',
+        emphasize && 'border-fn-warning/40',
+      )}
+    >
       <div className="gap-fn-2 flex items-center">
         <span
           aria-hidden
           className="rounded-fn-full h-fn-2 w-fn-2 inline-block shrink-0"
-          style={{ background: `oklch(0.55 0.16 ${color})` }}
+          style={{ background: `oklch(0.55 0.16 ${hue})` }}
         />
         <span className="text-fn-fg-faint font-fn-semibold tracking-fn-uppercase-tight text-[11px] uppercase">
-          {name}
+          {label}
         </span>
-        <Badge tone="default" className="ml-auto">
-          {active} active
-        </Badge>
       </div>
-      <div className="gap-fn-1 flex flex-wrap items-baseline">
-        <span
-          className="text-fn-fg font-fn-semibold leading-fn-unit text-[26px] tabular-nums"
-          style={{ letterSpacing: '-0.025em' }}
-        >
-          {formatUsd(revenue, true)}
-        </span>
-        <span className="text-fn-fg-faint text-[12px]">revenue (USD)</span>
-      </div>
-      <div className="text-fn-fg-muted gap-fn-2 flex items-center text-[12px]">
-        <span className="font-fn-medium">Commission</span>
-        <span className="text-fn-fg font-fn-semibold tabular-nums">{formatUsd(commission)}</span>
-      </div>
+      <span
+        className="text-fn-fg font-fn-semibold leading-fn-unit text-[30px] tabular-nums"
+        style={{ letterSpacing: '-0.025em' }}
+      >
+        {value}
+      </span>
     </div>
   );
 }
@@ -651,11 +651,4 @@ function colorToHue(color: string): number {
       return Math.abs(h) % 360;
     }
   }
-}
-
-function catColorFor(slug: string): number {
-  if (slug === 'external') return 280;
-  if (slug === 'upwork') return 65;
-  if (slug === 'b2b') return 175;
-  return 245;
 }
