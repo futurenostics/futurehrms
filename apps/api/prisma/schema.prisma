@@ -491,6 +491,12 @@ model CommissionRule {
   // Each assignee earns the amount matching their role. Null otherwise.
   roleAmounts Json?
 
+  // (sub-type × role) matrix for poolMode='duration_matrix' (BD
+  // External). JSON array: [{ subType, role, amountUsd, durationMonths }]
+  // Pays amountUsd/month for the first durationMonths calendar months
+  // from project start, then auto-stops. Null otherwise.
+  durationMatrix Json?
+
   // Projects whose revenueUsd is below this threshold get no line
   // items in the monthly run. 0 = no threshold (the default).
   minProjectRevenueUsd Decimal @default(0) @db.Decimal(12, 2)

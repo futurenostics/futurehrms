@@ -42,6 +42,19 @@ export interface CalcRoleAmount {
 }
 
 /**
+ * One (sub-type × role) cell of the BD-External duration matrix for
+ * `poolMode='duration_matrix'`. Pays `amountUsd` per month for the
+ * first `durationMonths` calendar months from the project start, to
+ * assignees whose role matches, on projects of the matching sub-type.
+ */
+export interface CalcDurationMatrixRow {
+  subType: string;
+  role: string;
+  amountUsd: number;
+  durationMonths: number;
+}
+
+/**
  * Pool modes:
  *   - percentage        : pool = revenue × poolValue%          (External / default)
  *   - fixed             : pool = poolValue                      (External flat)
@@ -53,6 +66,9 @@ export interface CalcRoleAmount {
  *   - role_fixed        : NO shared pool — each assignee earns a fixed monthly
  *                          amount looked up by their role (Eng External:
  *                          winner $500 / communicator $300 / team_lead $100)
+ *   - duration_matrix   : NO shared pool — BD External. A (sub-type × role)
+ *                          matrix pays a fixed monthly amount for the first
+ *                          N calendar months from project start, then stops.
  */
 export type CalcPoolMode =
   | 'percentage'
@@ -60,7 +76,8 @@ export type CalcPoolMode =
   | 'tiered'
   | 'net_revenue_share'
   | 'designation_fixed'
-  | 'role_fixed';
+  | 'role_fixed'
+  | 'duration_matrix';
 
 export interface CalcRuleSnapshot {
   poolMode: CalcPoolMode;
@@ -92,6 +109,11 @@ export interface CalcRuleSnapshot {
    * their role, prorated by month overlap.
    */
   roleAmounts?: CalcRoleAmount[] | null;
+  /**
+   * (sub-type × role) matrix for `poolMode='duration_matrix'` (BD
+   * External). Time-limited fixed amounts.
+   */
+  durationMatrix?: CalcDurationMatrixRow[] | null;
 }
 
 export interface CalcAssignment {
@@ -116,6 +138,8 @@ export interface CalcProject {
    * (Upwork), where it's subtracted from revenue to form the net pool.
    */
   developerSalaryUsd?: number | null;
+  /** Engagement sub-type — only read by `poolMode='duration_matrix'`. */
+  subType?: string | null;
 }
 
 export interface CalcLineItem {
@@ -170,6 +194,37 @@ export function calcProjectLineItems(project: CalcProject, options: CalcOptions)
   if (!COMMISSION_ELIGIBLE_STATUSES.has(project.status)) return [];
 
   const { firstDay, lastDay, daysInMonth } = parseMonth(options.monthKey);
+
+  // Duration-matrix (BD External): time-limited, not overlap-based. Each
+  // assignee is paid the (sub-type × role) amount for the first N
+  // calendar months from the project start, then it auto-stops. We
+  // handle it before the overlap/single-shot logic because the duration
+  // — not expectedCompletionDate — defines the payout window.
+  if (project.rule.poolMode === 'duration_matrix') {
+    const [runYear, runMonth] = options.monthKey.split('-').map(Number);
+    const startYear = project.startDate.getUTCFullYear();
+    const startMonth = project.startDate.getUTCMonth() + 1;
+    // 1-indexed month number since start (start month = 1).
+    const monthIndex = (runYear! - startYear) * 12 + (runMonth! - startMonth) + 1;
+    if (monthIndex < 1) return [];
+
+    const subType = project.subType ?? '';
+    const matrix = project.rule.durationMatrix ?? [];
+    return project.assignments.map((a) => {
+      const row = matrix.find((m) => m.subType === subType && m.role === a.roleName);
+      const perMonth = row && monthIndex <= row.durationMonths ? row.amountUsd : 0;
+      return {
+        projectId: project.id,
+        employeeId: a.employeeId,
+        roleName: a.roleName,
+        snapshotPercentage: a.percentage,
+        baseRevenueUsd: project.revenueUsd,
+        monthFractionNumerator: daysInMonth,
+        monthFractionDenominator: daysInMonth,
+        calculatedAmountUsd: applyGuardrails(roundUsd(perMonth), project.rule),
+      };
+    });
+  }
 
   // Project effective window. If expectedCompletionDate is null,
   // treat as single-shot in the project's startDate month: the
@@ -354,6 +409,28 @@ export function coerceRoleAmounts(value: unknown): CalcRoleAmount[] | null {
 }
 
 /**
+ * Coerce a stored value into the calc engine's duration-matrix array.
+ * Returns null when malformed so callers fall back to zero payouts.
+ */
+export function coerceDurationMatrix(value: unknown): CalcDurationMatrixRow[] | null {
+  if (!Array.isArray(value)) return null;
+  const out: CalcDurationMatrixRow[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
+    const row = entry as Record<string, unknown>;
+    const subType = typeof row.subType === 'string' ? row.subType : null;
+    const role = typeof row.role === 'string' ? row.role : null;
+    const amountUsd = Number(row.amountUsd);
+    const durationMonths = Number(row.durationMonths);
+    if (!subType || !role || !Number.isFinite(amountUsd) || !Number.isFinite(durationMonths)) {
+      return null;
+    }
+    out.push({ subType, role, amountUsd, durationMonths });
+  }
+  return out;
+}
+
+/**
  * The whole-project commission pool for a rule + revenue. `percentage`
  * and `fixed` are the original modes; `tiered` selects a bracket's
  * `poolPct` by revenue (0 when no bracket matches); `net_revenue_share`
@@ -375,9 +452,15 @@ export function computeTotalPool(
   if (rule.poolMode === 'net_revenue_share') {
     return Math.max(0, revenueUsd - developerSalaryUsd);
   }
-  // designation_fixed + role_fixed have no shared pool (handled in
-  // calcProjectLineItems).
-  if (rule.poolMode === 'designation_fixed' || rule.poolMode === 'role_fixed') return 0;
+  // designation_fixed / role_fixed / duration_matrix have no shared pool
+  // (handled in calcProjectLineItems).
+  if (
+    rule.poolMode === 'designation_fixed' ||
+    rule.poolMode === 'role_fixed' ||
+    rule.poolMode === 'duration_matrix'
+  ) {
+    return 0;
+  }
   return (revenueUsd * rule.poolValue) / 100;
 }
 

@@ -55,6 +55,7 @@ import { ApprovalsService } from '../approvals/approvals.service';
 import {
   calcProjectLineItems,
   coerceDesignationAmounts,
+  coerceDurationMatrix,
   coerceRoleAmounts,
   coerceRevenueBrackets,
   computeFinal,
@@ -438,6 +439,7 @@ export class CommissionRunsService {
       // Upwork: PKR salary → USD at the run's pinned rate.
       developerSalaryUsd:
         p.developerSalaryPkr != null ? Number(p.developerSalaryPkr) * fxRateUsdToPkr : null,
+      subType: p.subType ?? null,
       rule: {
         poolMode: p.commissionRule.poolMode as CalcPoolMode,
         poolValue: Number(p.commissionRule.poolValue),
@@ -453,6 +455,7 @@ export class CommissionRunsService {
         revenueBrackets: coerceRevenueBrackets(p.commissionRule.revenueBrackets),
         designationAmounts: coerceDesignationAmounts(p.commissionRule.designationAmounts),
         roleAmounts: coerceRoleAmounts(p.commissionRule.roleAmounts),
+        durationMatrix: coerceDurationMatrix(p.commissionRule.durationMatrix),
       },
       assignments: p.assignments.map((a) => ({
         employeeId: a.employeeId,

@@ -20,6 +20,7 @@ import { describe, expect, it } from 'vitest';
 import {
   calcProjectLineItems,
   coerceDesignationAmounts,
+  coerceDurationMatrix,
   coerceRoleAmounts,
   coerceRevenueBrackets,
   computeTotalPool,
@@ -624,5 +625,90 @@ describe('coerceRoleAmounts', () => {
     expect(coerceRoleAmounts('nope')).toBeNull();
     expect(coerceRoleAmounts([{ role: 'winner' }])).toBeNull();
     expect(coerceRoleAmounts([{ amountUsd: 5 }])).toBeNull();
+  });
+});
+
+/* ---------- BD External: duration_matrix ---------- */
+
+describe('duration_matrix (BD External)', () => {
+  const RULE = {
+    poolMode: 'duration_matrix' as const,
+    poolValue: 0,
+    minProjectRevenueUsd: 0,
+    durationMatrix: [
+      { subType: 'full_time', role: 'associate', amountUsd: 50, durationMonths: 6 },
+      { subType: 'full_time', role: 'manager', amountUsd: 30, durationMonths: 6 },
+      { subType: 'part_time', role: 'associate', amountUsd: 50, durationMonths: 2 },
+    ],
+  };
+
+  function bd(monthKey: string) {
+    const project = makeProject({
+      revenueUsd: 0,
+      subType: 'full_time',
+      startDate: new Date('2026-01-01T00:00:00Z'),
+      expectedCompletionDate: null,
+      rule: RULE,
+      assignments: [
+        { employeeId: 'assoc', roleName: 'associate', percentage: 0 },
+        { employeeId: 'mgr', roleName: 'manager', percentage: 0 },
+        { employeeId: 'other', roleName: 'winner', percentage: 0 }, // not in matrix
+      ],
+    });
+    const items = calcProjectLineItems(project, { monthKey });
+    return Object.fromEntries(items.map((i) => [i.employeeId, i.calculatedAmountUsd]));
+  }
+
+  it('pays the matrix amount for months within the duration', () => {
+    expect(bd('2026-01')).toEqual({ assoc: 50, mgr: 30, other: 0 }); // month 1
+    expect(bd('2026-06')).toEqual({ assoc: 50, mgr: 30, other: 0 }); // month 6
+  });
+
+  it('auto-stops after the duration expires', () => {
+    expect(bd('2026-07')).toEqual({ assoc: 0, mgr: 0, other: 0 }); // month 7 > 6
+  });
+
+  it('pays nothing before the project start month', () => {
+    const project = makeProject({
+      revenueUsd: 0,
+      subType: 'full_time',
+      startDate: new Date('2026-03-01T00:00:00Z'),
+      expectedCompletionDate: null,
+      rule: RULE,
+      assignments: [{ employeeId: 'assoc', roleName: 'associate', percentage: 0 }],
+    });
+    expect(calcProjectLineItems(project, { monthKey: '2026-02' })).toEqual([]);
+  });
+
+  it('shorter duration for a different sub-type', () => {
+    const project = makeProject({
+      revenueUsd: 0,
+      subType: 'part_time',
+      startDate: new Date('2026-01-01T00:00:00Z'),
+      expectedCompletionDate: null,
+      rule: RULE,
+      assignments: [{ employeeId: 'assoc', roleName: 'associate', percentage: 0 }],
+    });
+    expect(calcProjectLineItems(project, { monthKey: '2026-02' })[0].calculatedAmountUsd).toBe(50); // month 2 <= 2
+    expect(calcProjectLineItems(project, { monthKey: '2026-03' })[0].calculatedAmountUsd).toBe(0); // month 3 > 2
+  });
+
+  it('does not build a shared pool', () => {
+    expect(computeTotalPool(RULE, 100_000)).toBe(0);
+  });
+});
+
+describe('coerceDurationMatrix', () => {
+  it('parses a well-formed matrix', () => {
+    expect(
+      coerceDurationMatrix([
+        { subType: 'full_time', role: 'associate', amountUsd: 50, durationMonths: 6 },
+      ]),
+    ).toEqual([{ subType: 'full_time', role: 'associate', amountUsd: 50, durationMonths: 6 }]);
+  });
+  it('returns null on malformed input', () => {
+    expect(coerceDurationMatrix('nope')).toBeNull();
+    expect(coerceDurationMatrix([{ subType: 'x', role: 'y', amountUsd: 5 }])).toBeNull();
+    expect(coerceDurationMatrix([{ role: 'y', amountUsd: 5, durationMonths: 6 }])).toBeNull();
   });
 });
