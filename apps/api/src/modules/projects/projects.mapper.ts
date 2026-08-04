@@ -85,6 +85,7 @@ export function toProjectPublic(row: ProjectRowForMapping): ProjectPublic {
     overrideReason: row.overrideReason,
     revenueUsd: Number(row.revenueUsd),
     developerSalaryPkr: row.developerSalaryPkr != null ? Number(row.developerSalaryPkr) : null,
+    subType: (row.subType as ProjectPublic['subType']) ?? null,
     status: row.status as ProjectStatus,
     startDate: row.startDate.toISOString(),
     expectedCompletionDate: row.expectedCompletionDate?.toISOString() ?? null,

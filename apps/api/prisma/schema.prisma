@@ -398,6 +398,12 @@ model Project {
   // form the net pool for poolMode='net_revenue_share'. Null otherwise.
   developerSalaryPkr Decimal? @db.Decimal(14, 2)
 
+  // External projects: engagement sub-type (full_time, part_time,
+  // partial_short, partial_extended, probation_training,
+  // team_lead_owned, associates). Free-form string; constrained by the
+  // API layer (projectSubTypeSchema). Null for non-External projects.
+  subType String?
+
   // Lifecycle. Constrained by the API layer (see projectStatusSchema)
   // to: draft | active | in_billing | on_hold | completed | cancelled | refunded.
   status String @default("draft")

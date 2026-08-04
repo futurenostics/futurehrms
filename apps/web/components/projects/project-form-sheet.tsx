@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Combobox, MultiCombobox, type ComboboxOption } from '@/components/ui/combobox';
+import { Switch } from '@/components/ui/switch';
 import {
   Sheet,
   SheetBody,
@@ -64,6 +65,17 @@ const ROLES = [
   { key: 'eligible_team', label: 'Eligible team' },
 ] as const;
 
+// External-project engagement sub-types (spec §4.3.1).
+const SUB_TYPE_OPTIONS: ComboboxOption[] = [
+  { value: 'full_time', label: 'Full-Time' },
+  { value: 'part_time', label: 'Part-Time' },
+  { value: 'partial_short', label: 'Partial · 20–25 hrs/week (≤ 4.5 months)' },
+  { value: 'partial_extended', label: 'Partial · 20–25 hrs/week (> 4.5 months)' },
+  { value: 'probation_training', label: 'Probation / Training / Internship' },
+  { value: 'team_lead_owned', label: 'Team Lead-Owned' },
+  { value: 'associates', label: 'Associates (Johnny + Michele)' },
+];
+
 export function ProjectFormSheet({ open, onOpenChange, mode, projectId }: ProjectFormSheetProps) {
   const createMutation = useCreateProject();
   const updateMutation = useUpdateProject(projectId ?? '');
@@ -81,6 +93,10 @@ export function ProjectFormSheet({ open, onOpenChange, mode, projectId }: Projec
   React.useEffect(() => {
     setStep(mode === 'edit' ? 2 : 1);
   }, [mode, open]);
+
+  // "Will the developer handle communication?" — when on, there's no
+  // separate communicator (the winner covers comms).
+  const [devHandlesComms, setDevHandlesComms] = React.useState(true);
 
   /* ---------- Form ---------- */
   const form = useForm<ProjectCreateInput>({
@@ -361,6 +377,21 @@ export function ProjectFormSheet({ open, onOpenChange, mode, projectId }: Projec
                   <Input placeholder="Acme Inc." {...register('clientName')} />
                 </Field>
 
+                <Field
+                  label="Engagement sub-type"
+                  hint="For External projects — full-time, part-time, partial, etc. (optional)"
+                >
+                  <Combobox
+                    options={SUB_TYPE_OPTIONS}
+                    value={watch('subType') ?? ''}
+                    onValueChange={(v) =>
+                      setValue('subType', (v || null) as ProjectCreateInput['subType'])
+                    }
+                    placeholder="Select a sub-type"
+                    searchPlaceholder="Search sub-types…"
+                  />
+                </Field>
+
                 <div className="gap-fn-3 grid grid-cols-1 sm:grid-cols-2">
                   <Field
                     label="Revenue (USD)"
@@ -405,7 +436,7 @@ export function ProjectFormSheet({ open, onOpenChange, mode, projectId }: Projec
                 <div className="gap-fn-3 flex flex-col">
                   <div className="text-fn-fg font-fn-semibold text-[13.5px]">Role assignments</div>
 
-                  <Field label="Winner" required>
+                  <Field label="Developer who won the project" required>
                     <Controller
                       name="assignments"
                       control={control}
@@ -421,20 +452,45 @@ export function ProjectFormSheet({ open, onOpenChange, mode, projectId }: Projec
                     />
                   </Field>
 
-                  <Field label="Communicator" hint="The day-to-day client point of contact.">
-                    <Controller
-                      name="assignments"
-                      control={control}
-                      render={() => (
-                        <Combobox
-                          options={employeeOptions}
-                          value={communicatorId}
-                          onValueChange={(id) => setRoleSingle('communicator', id)}
-                          placeholder="Pick the comms lead"
-                        />
-                      )}
+                  <div className="border-fn-border rounded-fn-sm px-fn-3 py-fn-2_5 gap-fn-3 flex items-center justify-between border">
+                    <div className="gap-fn-0_5 flex flex-col">
+                      <span className="text-fn-fg font-fn-medium text-[13px]">
+                        Will the developer handle communication?
+                      </span>
+                      <span className="text-fn-fg-faint text-[11.5px]">
+                        Turn off to assign a separate communicator.
+                      </span>
+                    </div>
+                    <Switch
+                      checked={devHandlesComms}
+                      onCheckedChange={(v) => {
+                        setDevHandlesComms(v);
+                        if (v) {
+                          setValue(
+                            'assignments',
+                            assignments.filter((a) => a.roleName !== 'communicator'),
+                          );
+                        }
+                      }}
                     />
-                  </Field>
+                  </div>
+
+                  {!devHandlesComms && (
+                    <Field label="Communicator" hint="The day-to-day client point of contact.">
+                      <Controller
+                        name="assignments"
+                        control={control}
+                        render={() => (
+                          <Combobox
+                            options={employeeOptions}
+                            value={communicatorId}
+                            onValueChange={(id) => setRoleSingle('communicator', id)}
+                            placeholder="Pick the comms lead"
+                          />
+                        )}
+                      />
+                    </Field>
+                  )}
 
                   <Field
                     label="Eligible team"

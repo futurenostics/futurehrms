@@ -12,6 +12,22 @@ import { poolModeSchema } from './commission-rule';
 
 /* ---------- Enums ---------- */
 
+/**
+ * External-project engagement sub-type (spec §4.3.1). Drives nothing in
+ * the commission engine today — it's descriptive metadata surfaced on
+ * the project form + detail.
+ */
+export const projectSubTypeSchema = z.enum([
+  'full_time',
+  'part_time',
+  'partial_short',
+  'partial_extended',
+  'probation_training',
+  'team_lead_owned',
+  'associates',
+]);
+export type ProjectSubType = z.infer<typeof projectSubTypeSchema>;
+
 export const projectStatusSchema = z.enum([
   'draft',
   'active',
@@ -138,6 +154,8 @@ export const projectCreateSchema = z.object({
    * the net pool for `poolMode='net_revenue_share'`.
    */
   developerSalaryPkr: z.coerce.number().min(0).max(999_999_999.99).nullable().optional(),
+  /** External-project engagement sub-type; null for other categories. */
+  subType: projectSubTypeSchema.nullable().optional(),
   status: projectStatusSchema.default('draft'),
   startDate: z.string().min(1),
   expectedCompletionDate: z.string().nullable().optional(),
@@ -306,6 +324,7 @@ export const projectPublicSchema = z.object({
   overrideReason: z.string().nullable(),
   revenueUsd: z.number(),
   developerSalaryPkr: z.number().nullable(),
+  subType: projectSubTypeSchema.nullable(),
   status: projectStatusSchema,
   startDate: z.string(),
   expectedCompletionDate: z.string().nullable(),

@@ -378,6 +378,7 @@ export class ProjectsService {
           revenueUsd: new Prisma.Decimal(input.revenueUsd),
           developerSalaryPkr:
             input.developerSalaryPkr != null ? new Prisma.Decimal(input.developerSalaryPkr) : null,
+          subType: input.subType ?? null,
           status: input.status,
           startDate: new Date(input.startDate),
           expectedCompletionDate: input.expectedCompletionDate
@@ -476,6 +477,7 @@ export class ProjectsService {
       data.developerSalaryPkr =
         rest.developerSalaryPkr != null ? new Prisma.Decimal(rest.developerSalaryPkr) : null;
     }
+    if (rest.subType !== undefined) data.subType = rest.subType ?? null;
     if (rest.startDate !== undefined) data.startDate = new Date(rest.startDate);
     if (rest.expectedCompletionDate !== undefined) {
       data.expectedCompletionDate = rest.expectedCompletionDate
