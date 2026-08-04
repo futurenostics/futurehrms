@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { AlertTriangle, ArrowRight, Briefcase, Building2, Layers } from 'lucide-react';
 import {
   projectCreateSchema,
+  type PoolMode,
   type ProjectCategoryPublic,
   type ProjectCreateInput,
   type ProjectPublic,
@@ -101,9 +102,10 @@ export function ProjectFormSheet({ open, onOpenChange, mode, projectId }: Projec
   /* ---------- Rule resolution preview ---------- */
   const [resolvedRule, setResolvedRule] = React.useState<{
     version: string;
-    poolMode: 'percentage' | 'fixed';
+    poolMode: PoolMode;
     poolValue: number;
     rolePercentages: Record<string, number>;
+    designationAmounts: Array<{ designation: string; amountUsd: number }> | null;
   } | null>(null);
   const [ruleResolving, setRuleResolving] = React.useState(false);
   const [ruleError, setRuleError] = React.useState<string | null>(null);
@@ -122,9 +124,10 @@ export function ProjectFormSheet({ open, onOpenChange, mode, projectId }: Projec
         version: string;
         department: string;
         categoryId: string;
-        poolMode: 'percentage' | 'fixed';
+        poolMode: PoolMode;
         poolValue: number;
         rolePercentages: Record<string, number>;
+        designationAmounts: Array<{ designation: string; amountUsd: number }> | null;
         status: string;
       }>;
     }>(`/api/commission-rules?activeOnly=true&categoryId=${categoryId}&limit=50`)
@@ -150,6 +153,7 @@ export function ProjectFormSheet({ open, onOpenChange, mode, projectId }: Projec
           poolMode: rule.poolMode,
           poolValue: rule.poolValue,
           rolePercentages: rule.rolePercentages,
+          designationAmounts: rule.designationAmounts ?? null,
         });
       })
       .catch((err) => {
@@ -375,6 +379,21 @@ export function ProjectFormSheet({ open, onOpenChange, mode, projectId }: Projec
                   </Field>
                 </div>
 
+                {resolvedRule?.poolMode === 'net_revenue_share' && (
+                  <Field
+                    label="Developer salary (PKR / month)"
+                    hint="Subtracted from revenue (converted to USD at run time) to form the net commission pool."
+                    error={formState.errors.developerSalaryPkr?.message}
+                  >
+                    <Input
+                      type="number"
+                      placeholder="250000"
+                      step="1000"
+                      {...register('developerSalaryPkr')}
+                    />
+                  </Field>
+                )}
+
                 <Field
                   label="Expected completion (optional)"
                   hint="Drives the time-proportional disbursement. If unset, the pool pays out in the start month."
@@ -453,6 +472,8 @@ export function ProjectFormSheet({ open, onOpenChange, mode, projectId }: Projec
                   poolMode={resolvedRule?.poolMode}
                   poolValue={resolvedRule?.poolValue ?? 0}
                   revenueUsd={revenueUsd}
+                  developerSalaryPkr={Number(watch('developerSalaryPkr') ?? 0)}
+                  designationAmounts={resolvedRule?.designationAmounts ?? null}
                   rolePercentages={resolvedRule?.rolePercentages ?? {}}
                   assignments={assignments}
                   employees={employees}
@@ -572,29 +593,43 @@ function Field({
   );
 }
 
+// Display-only FX for the live net-share preview; the real conversion
+// happens at run time using the run's pinned rate.
+const APPROX_PKR_TO_USD = 0.0035;
+
 function CommissionPreview({
   ruleVersion,
   poolMode,
   poolValue,
   revenueUsd,
+  developerSalaryPkr,
+  designationAmounts,
   rolePercentages,
   assignments,
   employees,
 }: {
   ruleVersion: string | null;
-  poolMode?: 'percentage' | 'fixed';
+  poolMode?: PoolMode;
   poolValue: number;
   revenueUsd: number;
+  developerSalaryPkr: number;
+  designationAmounts: Array<{ designation: string; amountUsd: number }> | null;
   rolePercentages: Record<string, number>;
   assignments: Array<{ employeeId: string; roleName: string; percentage: number }>;
   employees: Array<{ id: string; fullName: string }>;
 }) {
-  const totalPool =
-    !poolMode || !revenueUsd
-      ? 0
-      : poolMode === 'percentage'
-        ? (revenueUsd * poolValue) / 100
-        : poolValue;
+  const devSalaryUsd = developerSalaryPkr * APPROX_PKR_TO_USD;
+  const totalPool = !poolMode
+    ? 0
+    : poolMode === 'percentage'
+      ? (revenueUsd * poolValue) / 100
+      : poolMode === 'net_revenue_share'
+        ? Math.max(0, revenueUsd - devSalaryUsd)
+        : poolMode === 'designation_fixed'
+          ? (designationAmounts ?? []).reduce((s, d) => s + d.amountUsd, 0)
+          : poolMode === 'fixed'
+            ? poolValue
+            : 0;
 
   return (
     <div className="gap-fn-4 flex flex-col">
@@ -621,6 +656,8 @@ function CommissionPreview({
             Commission pool
           </span>
           {poolMode === 'percentage' && <Badge tone="accent">{poolValue}% of revenue</Badge>}
+          {poolMode === 'net_revenue_share' && <Badge tone="accent">Net of dev salary</Badge>}
+          {poolMode === 'designation_fixed' && <Badge tone="accent">By designation</Badge>}
         </div>
         <div
           className="text-fn-fg font-fn-semibold text-[28px] tabular-nums"
@@ -628,6 +665,24 @@ function CommissionPreview({
         >
           {formatUsd(totalPool)}
         </div>
+        {poolMode === 'net_revenue_share' && (
+          <div className="text-fn-fg-faint text-[10.5px]">
+            {formatUsd(revenueUsd)} − {formatUsd(devSalaryUsd)} dev salary (approx; final at run FX)
+          </div>
+        )}
+        {poolMode === 'designation_fixed' && (designationAmounts?.length ?? 0) > 0 && (
+          <div className="gap-fn-0_5 mt-fn-1 flex flex-col">
+            {(designationAmounts ?? []).map((d) => (
+              <div
+                key={d.designation}
+                className="text-fn-fg-faint flex items-center justify-between text-[10.5px]"
+              >
+                <span>{d.designation}</span>
+                <span className="tabular-nums">{formatUsd(d.amountUsd)}/mo</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Pool bar viz */}
@@ -771,8 +826,19 @@ function formatUsd(value: number): string {
   }).format(value);
 }
 
-function formatPool(rule: { poolMode: 'percentage' | 'fixed'; poolValue: number }): string {
-  return rule.poolMode === 'percentage' ? `${rule.poolValue}%` : formatUsd(rule.poolValue);
+function formatPool(rule: { poolMode: PoolMode; poolValue: number }): string {
+  switch (rule.poolMode) {
+    case 'percentage':
+      return `${rule.poolValue}%`;
+    case 'tiered':
+      return 'a tiered %';
+    case 'net_revenue_share':
+      return 'net of developer salary';
+    case 'designation_fixed':
+      return 'a per-designation amount';
+    default:
+      return formatUsd(rule.poolValue);
+  }
 }
 
 function colorToHue(color: string): number {
