@@ -328,6 +328,10 @@ function EmployeesListInner({ schema }: { schema: ReturnType<typeof buildEmploye
       const items: DataTableRowAction[] = [
         { label: 'View profile', onClick: () => router.push(`/employees/${employee.id}`) },
         {
+          label: 'View portal',
+          onClick: () => router.push(`/employees/${employee.id}/portal`),
+        },
+        {
           label: 'Edit details',
           onClick: () => openSheet({ id: employee.id, employee }),
         },

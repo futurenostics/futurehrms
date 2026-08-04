@@ -160,6 +160,60 @@ export class EmployeesService {
     return toEmployeePublic(row as unknown as EmployeeRowForMapping, viewer, photoUrl);
   }
 
+  /**
+   * Active project engagements for an employee — the "active projects"
+   * strip on their (read-only) self-service portal view. Returns only
+   * live projects (active / in-billing / on-hold) the employee is
+   * currently assigned to, with their role and share.
+   */
+  async assignedProjects(
+    viewer: AuthenticatedUser,
+    id: string,
+  ): Promise<
+    Array<{
+      projectId: string;
+      name: string;
+      clientName: string;
+      status: string;
+      roleName: string;
+      percentage: number;
+      revenueUsd: number;
+    }>
+  > {
+    const employee = await prisma.employee.findUnique({
+      where: { id },
+      select: { id: true, departmentId: true },
+    });
+    if (!employee) throw new NotFoundException('Employee not found');
+    assertEmployeeReadable(viewer, { id: employee.id, departmentId: employee.departmentId });
+
+    const rows = await prisma.projectAssignment.findMany({
+      where: {
+        employeeId: id,
+        removedAt: null,
+        project: { deletedAt: null, status: { in: ['active', 'in_billing', 'on_hold'] } },
+      },
+      select: {
+        roleName: true,
+        percentage: true,
+        project: {
+          select: { id: true, name: true, clientName: true, status: true, revenueUsd: true },
+        },
+      },
+      orderBy: { project: { name: 'asc' } },
+    });
+
+    return rows.map((r) => ({
+      projectId: r.project.id,
+      name: r.project.name,
+      clientName: r.project.clientName,
+      status: r.project.status,
+      roleName: r.roleName,
+      percentage: Number(r.percentage),
+      revenueUsd: Number(r.project.revenueUsd),
+    }));
+  }
+
   async totalActiveCount(viewer: AuthenticatedUser): Promise<{
     total: number;
     byStatus: Array<{ slug: string; name: string; count: number }>;
