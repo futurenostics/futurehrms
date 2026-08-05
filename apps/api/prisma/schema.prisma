@@ -595,6 +595,11 @@ model CommissionRun {
   rejectReason String?
   lockedAt     DateTime?
   lockedById   String?
+  // Post-lock disbursement (Module 4). Stamped when HR pushes the
+  // locked run out to the payout portals; gates the "Send emails" /
+  // payslip actions and shows "Disbursed on …" in the UI.
+  disbursedAt   DateTime?
+  disbursedById String?
 
   // The typed-phrase confirmation from PNG 10 — captured for audit.
   approvalConfirmationPhrase String?

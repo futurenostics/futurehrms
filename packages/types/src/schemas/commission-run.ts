@@ -112,6 +112,9 @@ export const commissionRunSummarySchema = z.object({
   rejectReason: z.string().nullable(),
   lockedAt: z.string().nullable(),
   lockedById: z.string().nullable(),
+  /** Post-lock disbursement to payout portals (Module 4). */
+  disbursedAt: z.string().nullable(),
+  disbursedById: z.string().nullable(),
   notes: z.string().nullable(),
 });
 export type CommissionRunSummary = z.infer<typeof commissionRunSummarySchema>;

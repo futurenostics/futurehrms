@@ -49,11 +49,15 @@ import {
   useAdjustLineItem,
   useCommissionRun,
   useCommissionRunAnalytics,
+  useDisburseCommissionRun,
+  useLockCommissionRun,
   useRecalculateCommissionRun,
   useRejectCommissionRun,
   useRemoveLineItem,
+  useSendCommissionEmails,
   useSubmitCommissionRun,
 } from '@/lib/queries/commission-runs';
+import { downloadFile } from '@/lib/api-client';
 import { useProjectsList } from '@/lib/queries/projects';
 import { useEmployeesList } from '@/lib/queries/employees';
 import { useCommissionDisputes, useResolveDispute } from '@/lib/queries/commission-disputes';
@@ -127,6 +131,48 @@ export default function CommissionRunDetailPage() {
   const initialAction = searchParams.get('action');
   const [approveOpen, setApproveOpen] = React.useState(initialAction === 'approve');
 
+  // Post-approval / post-lock actions (Module 4).
+  const lockMut = useLockCommissionRun(runId ?? '');
+  const disburseMut = useDisburseCommissionRun(runId ?? '');
+  const sendEmailsMut = useSendCommissionEmails(runId ?? '');
+  const [payslipBusy, setPayslipBusy] = React.useState(false);
+
+  const handleLock = React.useCallback(() => {
+    lockMut.mutate(undefined, {
+      onSuccess: () => toast.success('Run locked for disbursement'),
+      onError: (e) => toast.error((e as Error).message),
+    });
+  }, [lockMut]);
+
+  const handleDisburse = React.useCallback(() => {
+    disburseMut.mutate(undefined, {
+      onSuccess: () => toast.success('Disbursed to payout portals'),
+      onError: (e) => toast.error((e as Error).message),
+    });
+  }, [disburseMut]);
+
+  const handleSendEmails = React.useCallback(() => {
+    sendEmailsMut.mutate(undefined, {
+      onSuccess: (r) => toast.success(`Payout emails sent to ${r.sent} recipient(s)`),
+      onError: (e) => toast.error((e as Error).message),
+    });
+  }, [sendEmailsMut]);
+
+  const handleDownloadPayslips = React.useCallback(async () => {
+    if (!runId) return;
+    setPayslipBusy(true);
+    try {
+      await downloadFile(
+        `/api/commission-runs/${runId}/payslips.pdf`,
+        `commission-payslips-${run?.monthKey ?? runId}.pdf`,
+      );
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setPayslipBusy(false);
+    }
+  }, [runId, run?.monthKey]);
+
   if (runQuery.isPending) {
     return <RunSkeleton />;
   }
@@ -169,6 +215,14 @@ export default function CommissionRunDetailPage() {
           onSubmit={() => setSubmitOpen(true)}
           onApprove={() => setApproveOpen(true)}
           onReject={() => setRejectOpen(true)}
+          onLock={handleLock}
+          onDisburse={handleDisburse}
+          onSendEmails={handleSendEmails}
+          onDownloadPayslips={handleDownloadPayslips}
+          locking={lockMut.isPending}
+          disbursing={disburseMut.isPending}
+          sendingEmails={sendEmailsMut.isPending}
+          payslipBusy={payslipBusy}
         />
 
         {/* KPI strip */}
@@ -217,6 +271,14 @@ function RunHeader({
   onSubmit,
   onApprove,
   onReject,
+  onLock,
+  onDisburse,
+  onSendEmails,
+  onDownloadPayslips,
+  locking,
+  disbursing,
+  sendingEmails,
+  payslipBusy,
 }: {
   run: CommissionRunDetail;
   canRecalc: boolean;
@@ -229,6 +291,14 @@ function RunHeader({
   onSubmit: () => void;
   onApprove: () => void;
   onReject: () => void;
+  onLock: () => void;
+  onDisburse: () => void;
+  onSendEmails: () => void;
+  onDownloadPayslips: () => void;
+  locking: boolean;
+  disbursing: boolean;
+  sendingEmails: boolean;
+  payslipBusy: boolean;
 }) {
   return (
     <div className="gap-fn-3 flex flex-wrap items-start justify-between">
@@ -289,9 +359,31 @@ function RunHeader({
           </>
         )}
         {run.status === 'approved' && canLock && (
-          <Button variant="secondary" disabled>
-            <Lock className="h-fn-4 w-fn-4" /> Lock (Phase 7)
+          <Button variant="secondary" onClick={onLock} disabled={locking}>
+            <Lock className="h-fn-4 w-fn-4" /> {locking ? 'Locking…' : 'Lock run'}
           </Button>
+        )}
+        {run.status === 'locked' && (
+          <>
+            <Button variant="ghost" size="md" onClick={onDownloadPayslips} disabled={payslipBusy}>
+              <Download className="h-fn-4 w-fn-4" /> {payslipBusy ? 'Preparing…' : 'Payslips (PDF)'}
+            </Button>
+            {canLock && (
+              <>
+                <Button variant="secondary" onClick={onSendEmails} disabled={sendingEmails}>
+                  <Send className="h-fn-4 w-fn-4" /> {sendingEmails ? 'Sending…' : 'Send emails'}
+                </Button>
+                <Button onClick={onDisburse} disabled={disbursing || run.disbursedAt !== null}>
+                  <Check className="h-fn-4 w-fn-4" />{' '}
+                  {run.disbursedAt
+                    ? 'Disbursed'
+                    : disbursing
+                      ? 'Disbursing…'
+                      : 'Disburse to portals'}
+                </Button>
+              </>
+            )}
+          </>
         )}
         {run.status === 'rejected' && canRecalc && (
           <Button variant="secondary" onClick={onRecalculate}>
@@ -319,6 +411,12 @@ function MetaStrip({ run }: { run: CommissionRunDetail }) {
         <>
           <Sep />
           <Meta label="Approved">{formatRelative(run.approvedAt)}</Meta>
+        </>
+      )}
+      {run.disbursedAt && (
+        <>
+          <Sep />
+          <Meta label="Disbursed">{formatRelative(run.disbursedAt)}</Meta>
         </>
       )}
       {run.rejectedAt && run.rejectReason && (

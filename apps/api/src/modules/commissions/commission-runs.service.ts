@@ -52,6 +52,8 @@ import type { AuthenticatedUser } from '../../core/auth/types';
 import { AuditService } from '../../core/audit/audit.service';
 import { EventBusService } from '../../core/events/event-bus.service';
 import { ApprovalsService } from '../approvals/approvals.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import type { ReportData } from '../../core/reports/report-formats';
 import {
   calcProjectLineItems,
   coerceDesignationAmounts,
@@ -79,6 +81,7 @@ export class CommissionRunsService {
     private readonly events: EventBusService,
     private readonly audit: AuditService,
     private readonly approvals: ApprovalsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /* ---------- Permission helpers ---------- */
@@ -860,6 +863,170 @@ export class CommissionRunsService {
       data: { status: 'draft' },
     });
     return this.summary(id);
+  }
+
+  /* ---------- Disbursement (Module 4) ---------- */
+
+  /**
+   * Push a locked run out to the payout portals. Stamps
+   * `disbursedAt` / `disbursedById` and emits `commission.run.disbursed`.
+   * Only a locked run can be disbursed; re-disbursing a run just
+   * re-stamps (idempotent from the caller's perspective). Emailing is a
+   * separate explicit step (`sendEmails`) so HR can review the portal
+   * push before recipients are notified.
+   */
+  async disburse(viewer: AuthenticatedUser, id: string): Promise<CommissionRunSummary> {
+    this.require('commissions:lock_run', viewer);
+    const existing = await prisma.commissionRun.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Commission run not found');
+    if (existing.status !== 'locked') {
+      throw new BadRequestException('Only a locked run can be disbursed to portals');
+    }
+
+    await prisma.commissionRun.update({
+      where: { id },
+      data: { disbursedAt: new Date(), disbursedById: viewer.id },
+    });
+
+    this.events.emit(
+      'commission.run.disbursed',
+      { runId: id, monthKey: existing.monthKey },
+      { actorId: viewer.id },
+    );
+
+    return this.summary(id);
+  }
+
+  /**
+   * Email (+ in-app bell) every recipient of a locked/disbursed run
+   * their net payout for the month. Mirrors the automatic
+   * lock-time notification but is a manual, on-demand re-send so HR can
+   * push payslip emails after reviewing the portal disbursement.
+   *
+   * Recipients + amounts are computed from the run's line items (net of
+   * clawbacks, excluding held rows). Employees without an active linked
+   * user are skipped. Returns the count actually delivered.
+   */
+  async sendEmails(viewer: AuthenticatedUser, id: string): Promise<{ sent: number }> {
+    this.require('commissions:lock_run', viewer);
+    const run = await prisma.commissionRun.findUnique({ where: { id } });
+    if (!run) throw new NotFoundException('Commission run not found');
+    if (run.status !== 'locked') {
+      throw new BadRequestException('Only a locked run can have payout emails sent');
+    }
+
+    const grouped = await prisma.commissionLineItem.groupBy({
+      by: ['employeeId'],
+      where: { runId: id, isHeld: false },
+      _sum: { finalAmountUsd: true },
+    });
+
+    const label = monthLabel(run.monthKey);
+    let sent = 0;
+    for (const g of grouped) {
+      const total = Number(g._sum.finalAmountUsd ?? 0);
+      if (total <= 0) continue;
+
+      const user = await prisma.user.findFirst({
+        where: { employeeId: g.employeeId, isActive: true },
+        select: { id: true },
+      });
+      if (!user) continue;
+
+      await this.notifications.send({
+        recipientUserId: user.id,
+        typeKey: 'commissions.run-disbursed',
+        payload: {
+          monthLabel: label,
+          amountUsd: total.toLocaleString('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          }),
+          runId: id,
+          employeeId: g.employeeId,
+        },
+        source: { type: 'commissionRun', id },
+        actorId: viewer.id,
+      });
+      sent += 1;
+    }
+
+    await this.audit.record({
+      module: 'commissions',
+      entity: 'CommissionRun',
+      entityId: id,
+      action: 'commission.run.emails_sent',
+      actorId: viewer.id,
+      after: { sent, monthKey: run.monthKey },
+    });
+
+    return { sent };
+  }
+
+  /**
+   * Build a per-employee payslip report for a run: one row per
+   * recipient with their net commission in USD and the approximate PKR
+   * at the run's pinned FX rate. The controller renders it as a PDF the
+   * recipient / HR can download or attach to the payout email.
+   */
+  async buildPayslipsReport(
+    viewer: AuthenticatedUser,
+    id: string,
+  ): Promise<{ filename: string; data: ReportData }> {
+    this.require('commissions:view_runs', viewer);
+    const run = await prisma.commissionRun.findUnique({
+      where: { id },
+      include: COMMISSION_RUN_INCLUDE,
+    });
+    if (!run) throw new NotFoundException('Commission run not found');
+
+    const fx = Number(run.fxRateUsdToPkr);
+    const label = monthLabel(run.monthKey);
+
+    // Net payout per employee (held rows excluded; clawbacks net in).
+    const byEmployee = new Map<
+      string,
+      { eid: string; name: string; dept: string | null; total: number }
+    >();
+    for (const li of run.lineItems) {
+      if (li.isHeld) continue;
+      const key = li.employeeId;
+      const entry = byEmployee.get(key) ?? {
+        eid: li.employee.eid,
+        name: li.employee.fullName,
+        dept: li.employee.department?.name ?? null,
+        total: 0,
+      };
+      entry.total += Number(li.finalAmountUsd);
+      byEmployee.set(key, entry);
+    }
+
+    const rows = [...byEmployee.values()]
+      .filter((e) => e.total > 0)
+      .sort((a, b) => b.total - a.total)
+      .map((e) => ({
+        eid: e.eid,
+        name: e.name,
+        dept: e.dept ?? '—',
+        commissionUsd: e.total.toFixed(2),
+        approxPkr: Math.round(e.total * fx).toLocaleString('en-US'),
+      }));
+
+    const data: ReportData = {
+      title: `Commission Payslips — ${label}`,
+      subtitle: `${rows.length} recipient(s) · FX ${fx} USD→PKR · Status: ${run.status}`,
+      columns: [
+        { key: 'eid', header: 'EID', weight: 1 },
+        { key: 'name', header: 'Employee', weight: 2 },
+        { key: 'dept', header: 'Department', weight: 1.5 },
+        { key: 'commissionUsd', header: 'Commission (USD)', align: 'right', weight: 1.2 },
+        { key: 'approxPkr', header: 'Approx PKR', align: 'right', weight: 1.2 },
+      ],
+      rows,
+      generatedAt: new Date(),
+    };
+
+    return { filename: `commission-payslips-${run.monthKey}.pdf`, data };
   }
 
   /* ---------- CSV export ---------- */

@@ -112,6 +112,8 @@ export function toCommissionRunSummary(row: CommissionRunRowForMapping): Commiss
     rejectReason: row.rejectReason,
     lockedAt: row.lockedAt?.toISOString() ?? null,
     lockedById: row.lockedById,
+    disbursedAt: row.disbursedAt?.toISOString() ?? null,
+    disbursedById: row.disbursedById,
     notes: row.notes,
   };
 }

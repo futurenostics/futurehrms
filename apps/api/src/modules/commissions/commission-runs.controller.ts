@@ -14,6 +14,7 @@ import {
 import { CurrentUser } from '../../core/auth/decorators/current-user.decorator';
 import { RequirePermission } from '../../core/auth/decorators/require-permission.decorator';
 import type { AuthenticatedUser } from '../../core/auth/types';
+import { contentTypeFor, renderReport } from '../../core/reports/report-formats';
 import { CommissionRunsService } from './commission-runs.service';
 
 @Controller('commission-runs')
@@ -171,5 +172,34 @@ export class CommissionRunsController {
   @RequirePermission('commissions:create_run')
   async reopen(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.runs.reopenRejected(user, id);
+  }
+
+  /* ---------- Disbursement (Module 4) ---------- */
+
+  @Post(':id/disburse')
+  @RequirePermission('commissions:lock_run')
+  async disburse(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.runs.disburse(user, id);
+  }
+
+  @Post(':id/send-emails')
+  @RequirePermission('commissions:lock_run')
+  async sendEmails(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.runs.sendEmails(user, id);
+  }
+
+  /** Per-employee payslip PDF for the run. */
+  @Get(':id/payslips.pdf')
+  @RequirePermission('commissions:view_runs')
+  async payslips(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Res({ passthrough: false }) res: Response,
+  ) {
+    const { filename, data } = await this.runs.buildPayslipsReport(user, id);
+    const pdf = await renderReport(data, 'pdf');
+    res.setHeader('Content-Type', contentTypeFor('pdf'));
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(pdf);
   }
 }
