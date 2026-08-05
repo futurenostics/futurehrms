@@ -522,6 +522,39 @@ export class CommissionRunsService {
     const data: Prisma.CommissionLineItemUpdateInput = {};
     let changed = false;
 
+    // Upwork processing: a manually entered period revenue overrides the
+    // snapshot base revenue and re-derives the calculated amount
+    // linearly — scaling by the revenue ratio preserves whatever
+    // month-fraction + rule percentage the original calc encoded. If the
+    // original base was 0 we can't derive a rate, so fall back to
+    // percentage × month-fraction. Must run before the leave block so
+    // the leave deduction uses the refreshed calculated amount.
+    let newCalculated = Number(existing.calculatedAmountUsd);
+    if (input.periodRevenueUsd != null) {
+      const periodRevenue = input.periodRevenueUsd;
+      const priorBase = Number(existing.baseRevenueUsd);
+      const priorCalc = Number(existing.calculatedAmountUsd);
+      if (priorBase > 0) {
+        newCalculated = roundUsd(periodRevenue * (priorCalc / priorBase));
+      } else {
+        const fraction =
+          existing.monthFractionDenominator > 0
+            ? existing.monthFractionNumerator / existing.monthFractionDenominator
+            : 1;
+        newCalculated = roundUsd(
+          ((periodRevenue * Number(existing.snapshotPercentage)) / 100) * fraction,
+        );
+      }
+      data.baseRevenueUsd = new Prisma.Decimal(periodRevenue);
+      data.periodRevenueUsd = new Prisma.Decimal(periodRevenue);
+      data.calculatedAmountUsd = new Prisma.Decimal(newCalculated);
+      changed = true;
+    }
+    if (input.paymentSource !== undefined) {
+      data.paymentSource = input.paymentSource;
+      changed = true;
+    }
+
     // Leave-days model (External): working days + approved leaves →
     // −calculated × leaves/workingDays. Takes precedence over a raw
     // leaveAdjustmentUsd if both provided.
@@ -531,7 +564,7 @@ export class CommissionRunsService {
       const leaves = input.leaveDays ?? existing.leaveDays ?? 0;
       if (workingDays && workingDays > 0) {
         const cappedLeaves = Math.min(Math.max(leaves, 0), workingDays);
-        const deduction = (Number(existing.calculatedAmountUsd) * cappedLeaves) / workingDays;
+        const deduction = (newCalculated * cappedLeaves) / workingDays;
         newLeave = roundUsd(-deduction);
         data.leaveAdjustmentUsd = new Prisma.Decimal(newLeave);
         data.workingDaysInMonth = workingDays;
@@ -542,6 +575,17 @@ export class CommissionRunsService {
       newLeave = input.leaveAdjustmentUsd;
       data.leaveAdjustmentUsd = new Prisma.Decimal(newLeave);
       changed = true;
+    } else if (
+      input.periodRevenueUsd != null &&
+      existing.workingDaysInMonth &&
+      existing.workingDaysInMonth > 0 &&
+      existing.leaveDays
+    ) {
+      // Revenue override changed `newCalculated` — refresh the stored
+      // leave deduction against the new base so the two stay consistent.
+      const deduction = (newCalculated * existing.leaveDays) / existing.workingDaysInMonth;
+      newLeave = roundUsd(-deduction);
+      data.leaveAdjustmentUsd = new Prisma.Decimal(newLeave);
     }
 
     if (input.manualAdjustmentUsd !== undefined) {
@@ -573,7 +617,7 @@ export class CommissionRunsService {
     // Recompute final.
     const newManual = input.manualAdjustmentUsd ?? Number(existing.manualAdjustmentUsd);
     const finalAmountUsd = computeFinal({
-      calculatedAmountUsd: Number(existing.calculatedAmountUsd),
+      calculatedAmountUsd: newCalculated,
       leaveAdjustmentUsd: newLeave,
       manualAdjustmentUsd: newManual,
     });

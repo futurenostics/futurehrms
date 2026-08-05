@@ -14,6 +14,10 @@ import { z } from 'zod';
 
 /* ---------- Enums ---------- */
 
+/** Upwork payout source — Profile balance vs the linked Mastercard. */
+export const commissionPaymentSourceSchema = z.enum(['profile', 'mastercard']);
+export type CommissionPaymentSource = z.infer<typeof commissionPaymentSourceSchema>;
+
 export const commissionRunStatusSchema = z.enum([
   'draft',
   'pending_approval',
@@ -168,6 +172,9 @@ export const commissionLineItemPublicSchema = z.object({
   isHeld: z.boolean(),
   /** Mandatory reason when the line is held. */
   holdReason: z.string().nullable(),
+  /** Upwork processing: manually entered period revenue + payout source. */
+  periodRevenueUsd: z.number().nullable(),
+  paymentSource: commissionPaymentSourceSchema.nullable(),
   carryForwardToRunId: z.string().nullable(),
   carryForwardFromRunId: z.string().nullable(),
   finalAmountUsd: z.number(),
@@ -200,6 +207,15 @@ export const commissionLineItemAdjustSchema = z.object({
   isHeld: z.boolean().optional(),
   /** Required (non-empty) when isHeld is set true. */
   holdReason: z.string().trim().max(500).nullable().optional(),
+  /**
+   * Upwork processing (draft only). When `periodRevenueUsd` is provided
+   * it overrides the line's snapshot base revenue and the calculated
+   * amount is re-derived linearly (preserving the month-fraction and
+   * rule percentage the line already carries). `paymentSource` records
+   * the payout channel.
+   */
+  periodRevenueUsd: z.coerce.number().min(0).nullable().optional(),
+  paymentSource: commissionPaymentSourceSchema.nullable().optional(),
 });
 export type CommissionLineItemAdjustInput = z.infer<typeof commissionLineItemAdjustSchema>;
 

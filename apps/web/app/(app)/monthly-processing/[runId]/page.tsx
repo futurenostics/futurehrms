@@ -24,6 +24,7 @@ import type {
   CommissionDisputePublic,
   CommissionLeaderboardRow,
   CommissionLineItemPublic,
+  CommissionPaymentSource,
   CommissionRollupRow,
   CommissionRunDetail,
   CommissionRunStatus,
@@ -33,6 +34,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Combobox } from '@/components/ui/combobox';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
@@ -690,6 +698,7 @@ function LineItemRow({
   // also carry a zero fraction, so exclude them from the manual case.
   const isClawback = lineItem.isClawback;
   const isManual = !isClawback && lineItem.monthFractionNumerator === 0;
+  const isUpwork = categoryOf(lineItem.project.category.slug) === 'upwork';
 
   async function remove() {
     try {
@@ -730,6 +739,19 @@ function LineItemRow({
   async function adjustLeaveDays(patch: { workingDaysInMonth?: number; leaveDays?: number }) {
     try {
       await adjustMutation.mutateAsync({ lineItemId: lineItem.id, data: patch });
+    } catch (err) {
+      toast.error((err as Error).message);
+    }
+  }
+
+  // Upwork processing (spec 6.3): manual period revenue + payout source.
+  async function adjustUpwork(patch: {
+    periodRevenueUsd?: number;
+    paymentSource?: CommissionPaymentSource;
+  }) {
+    try {
+      await adjustMutation.mutateAsync({ lineItemId: lineItem.id, data: patch });
+      toast.success('Upwork inputs updated.');
     } catch (err) {
       toast.error((err as Error).message);
     }
@@ -823,8 +845,42 @@ function LineItemRow({
           )}
         </div>
       </td>
-      <td className="px-fn-4 py-fn-2_5 text-fn-fg-muted text-right tabular-nums">
-        {formatUsd(lineItem.baseRevenueUsd)}
+      <td className="px-fn-4 py-fn-2_5 text-right">
+        {canAdjust && isUpwork && !isClawback ? (
+          <div className="gap-fn-1 flex flex-col items-end">
+            <Input
+              type="number"
+              min={0}
+              step="0.01"
+              placeholder="Revenue"
+              title="Actual Upwork revenue for the period (USD)"
+              defaultValue={lineItem.periodRevenueUsd ?? lineItem.baseRevenueUsd}
+              onBlur={(e) => {
+                const v = Number(e.target.value);
+                const current = lineItem.periodRevenueUsd ?? lineItem.baseRevenueUsd;
+                if (!Number.isNaN(v) && v >= 0 && v !== current)
+                  adjustUpwork({ periodRevenueUsd: v });
+              }}
+              className="h-fn-7 w-[92px] text-right tabular-nums"
+            />
+            <Select
+              value={lineItem.paymentSource ?? undefined}
+              onValueChange={(s) => adjustUpwork({ paymentSource: s as CommissionPaymentSource })}
+            >
+              <SelectTrigger variant="compact" className="w-[92px]">
+                <SelectValue placeholder="Paid via" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="profile">Profile</SelectItem>
+                <SelectItem value="mastercard">Mastercard</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        ) : (
+          <span className="text-fn-fg-muted tabular-nums">
+            {formatUsd(lineItem.baseRevenueUsd)}
+          </span>
+        )}
       </td>
       <td className="px-fn-4 py-fn-2_5 text-fn-fg font-fn-medium text-right tabular-nums">
         {formatUsd(lineItem.calculatedAmountUsd)}

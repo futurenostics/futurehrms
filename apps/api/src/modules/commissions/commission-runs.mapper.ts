@@ -66,6 +66,8 @@ export function toCommissionLineItemPublic(
     manualAdjustmentNote: row.manualAdjustmentNote,
     isHeld: row.isHeld,
     holdReason: row.holdReason ?? null,
+    periodRevenueUsd: row.periodRevenueUsd != null ? Number(row.periodRevenueUsd) : null,
+    paymentSource: (row.paymentSource as 'profile' | 'mastercard' | null) ?? null,
     carryForwardToRunId: row.carryForwardToRunId,
     carryForwardFromRunId: row.carryForwardFromRunId,
     finalAmountUsd: Number(row.finalAmountUsd),
