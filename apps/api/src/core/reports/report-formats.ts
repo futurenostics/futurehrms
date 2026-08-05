@@ -205,3 +205,15 @@ export async function renderReport(data: ReportData, format: ReportFormat): Prom
       return buildPdfReport(data);
   }
 }
+
+const REPORT_FORMATS = new Set<ReportFormat>(['csv', 'xlsx', 'pdf']);
+
+/**
+ * Coerce a raw query value into a valid ReportFormat, falling back to
+ * `fallback` (default 'csv') for anything unrecognised.
+ */
+export function parseReportFormat(raw: unknown, fallback: ReportFormat = 'csv'): ReportFormat {
+  return typeof raw === 'string' && REPORT_FORMATS.has(raw as ReportFormat)
+    ? (raw as ReportFormat)
+    : fallback;
+}

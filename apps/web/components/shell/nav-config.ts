@@ -109,7 +109,13 @@ export const navGroups: NavGroup[] = [
         href: '/hr/evaluations',
         badge: '4',
       },
-      { key: 'reports', label: 'Reports', icon: BarChart3, href: '/reports' },
+      {
+        key: 'reports',
+        label: 'Reports',
+        icon: BarChart3,
+        href: '/reports',
+        requires: 'reports:view',
+      },
     ],
   },
   {

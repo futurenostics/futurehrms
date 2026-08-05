@@ -21,6 +21,7 @@ import { CommissionsModule } from './modules/commissions/commissions.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { RemindersModule } from './modules/reminders/reminders.module';
 import { ApprovalsModule } from './modules/approvals/approvals.module';
+import { ReportsModule } from './modules/reports/reports.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -43,6 +44,7 @@ import { HealthController } from './health.controller';
     NotificationsModule,
     RemindersModule,
     ApprovalsModule,
+    ReportsModule,
   ],
   controllers: [HealthController],
   providers: [
