@@ -712,3 +712,43 @@ describe('coerceDurationMatrix', () => {
     expect(coerceDurationMatrix([{ role: 'y', amountUsd: 5, durationMonths: 6 }])).toBeNull();
   });
 });
+
+/* ---------- Custom processing period (Upwork date-range) ---------- */
+
+describe('custom processing period', () => {
+  it('uses the custom window instead of the calendar month', () => {
+    const project = makeProject({
+      revenueUsd: 10_000,
+      startDate: new Date('2026-05-01T00:00:00Z'),
+      expectedCompletionDate: new Date('2026-07-31T00:00:00Z'),
+      rule: { poolMode: 'percentage', poolValue: 24, minProjectRevenueUsd: 0 },
+      assignments: [{ employeeId: 'e1', roleName: 'winner', percentage: 100 }],
+    });
+    // Period spans the whole 92-day project → full pool, denominator 92.
+    const items = calcProjectLineItems(project, {
+      monthKey: '2026-05',
+      periodStart: new Date('2026-05-01T00:00:00Z'),
+      periodEnd: new Date('2026-07-31T00:00:00Z'),
+    });
+    expect(items[0].calculatedAmountUsd).toBe(2_400);
+    expect(items[0].monthFractionDenominator).toBe(92);
+  });
+
+  it('net-share over a custom window pays the winner their % of net', () => {
+    const project = makeProject({
+      revenueUsd: 10_000,
+      developerSalaryUsd: 3_000,
+      startDate: new Date('2026-05-01T00:00:00Z'),
+      expectedCompletionDate: new Date('2026-05-31T00:00:00Z'),
+      rule: { poolMode: 'net_revenue_share', poolValue: 0, minProjectRevenueUsd: 0 },
+      assignments: [{ employeeId: 'bd', roleName: 'winner', percentage: 20 }],
+    });
+    const items = calcProjectLineItems(project, {
+      monthKey: '2026-05',
+      periodStart: new Date('2026-05-01T00:00:00Z'),
+      periodEnd: new Date('2026-05-31T00:00:00Z'),
+    });
+    // net 7,000 × 20% = 1,400 (full window overlap).
+    expect(items[0].calculatedAmountUsd).toBe(1_400);
+  });
+});

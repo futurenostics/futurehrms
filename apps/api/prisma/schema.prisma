@@ -562,6 +562,12 @@ model CommissionRun {
   // 'YYYY-MM' — the month the run is FOR (not when created).
   monthKey String
 
+  // Optional custom processing window (Upwork custom date-range). When
+  // both are set, the calc engine uses them as the payout window
+  // instead of monthKey's calendar-month bounds. Null = full month.
+  periodStart DateTime?
+  periodEnd   DateTime?
+
   // Pinned FX rate for downstream PKR conversion. Display-only in
   // Phase 2; Phase 7 reads it to mint payslips.
   fxRateUsdToPkr Decimal @db.Decimal(14, 6)

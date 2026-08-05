@@ -156,6 +156,14 @@ export interface CalcLineItem {
 export interface CalcOptions {
   /** 'YYYY-MM' format — the month being calculated. */
   monthKey: string;
+  /**
+   * Optional custom processing window (Upwork custom date-range). When
+   * both are set, the calc uses them as the payout window instead of
+   * the calendar-month bounds derived from `monthKey`. Does not affect
+   * `duration_matrix`, which is month-index based.
+   */
+  periodStart?: Date | null;
+  periodEnd?: Date | null;
 }
 
 const COMMISSION_ELIGIBLE_STATUSES = new Set(['active', 'in_billing', 'on_hold']);
@@ -239,8 +247,18 @@ export function calcProjectLineItems(project: CalcProject, options: CalcOptions)
     projectEnd = new Date(Date.UTC(y, m + 1, 0));
   }
 
-  const overlapStart = laterOf(projectStart, firstDay);
-  const overlapEnd = earlierOf(projectEnd, lastDay);
+  // Payout window: the calendar month, or a custom period when the run
+  // pins one (Upwork custom date-range). The denominator (days in the
+  // window) drives the month-fraction display + proration base.
+  const usePeriod = options.periodStart != null && options.periodEnd != null;
+  const windowStart = usePeriod ? options.periodStart! : firstDay;
+  const windowEnd = usePeriod ? options.periodEnd! : lastDay;
+  const windowDenominator = usePeriod
+    ? inclusiveDays(options.periodStart!, options.periodEnd!)
+    : daysInMonth;
+
+  const overlapStart = laterOf(projectStart, windowStart);
+  const overlapEnd = earlierOf(projectEnd, windowEnd);
   const overlapDays = inclusiveDays(overlapStart, overlapEnd);
   if (overlapDays <= 0) return [];
 
@@ -264,7 +282,7 @@ export function calcProjectLineItems(project: CalcProject, options: CalcOptions)
         snapshotPercentage: a.percentage,
         baseRevenueUsd: project.revenueUsd,
         monthFractionNumerator: overlapDays,
-        monthFractionDenominator: daysInMonth,
+        monthFractionDenominator: windowDenominator,
         calculatedAmountUsd: applyGuardrails(roundUsd(perMonth * proration), project.rule),
       };
     });
@@ -283,7 +301,7 @@ export function calcProjectLineItems(project: CalcProject, options: CalcOptions)
         snapshotPercentage: a.percentage,
         baseRevenueUsd: project.revenueUsd,
         monthFractionNumerator: overlapDays,
-        monthFractionDenominator: daysInMonth,
+        monthFractionDenominator: windowDenominator,
         calculatedAmountUsd: applyGuardrails(roundUsd(perMonth * proration), project.rule),
       };
     });
@@ -307,7 +325,7 @@ export function calcProjectLineItems(project: CalcProject, options: CalcOptions)
       snapshotPercentage: a.percentage,
       baseRevenueUsd: project.revenueUsd,
       monthFractionNumerator: overlapDays,
-      monthFractionDenominator: daysInMonth,
+      monthFractionDenominator: windowDenominator,
       calculatedAmountUsd: applyGuardrails(roundUsd(rawShare), project.rule),
     };
   });

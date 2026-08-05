@@ -37,13 +37,39 @@ export const COMMISSION_RUN_TRANSITIONS: Record<CommissionRunStatus, CommissionR
 
 /* ---------- Run create / list / public ---------- */
 
-export const commissionRunCreateSchema = z.object({
-  /** 'YYYY-MM'. The month the run is FOR. */
-  monthKey: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'monthKey must be YYYY-MM'),
-  /** USD → PKR rate pinned for the run. Display only in Phase 2. */
-  fxRateUsdToPkr: z.coerce.number().min(0.000001).max(10_000),
-  notes: z.string().trim().max(2000).optional(),
-});
+export const commissionRunCreateSchema = z
+  .object({
+    /** 'YYYY-MM'. The month the run is FOR. */
+    monthKey: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'monthKey must be YYYY-MM'),
+    /** USD → PKR rate pinned for the run. Display only in Phase 2. */
+    fxRateUsdToPkr: z.coerce.number().min(0.000001).max(10_000),
+    /**
+     * Optional custom processing window (Upwork custom date-range). Both
+     * must be set together; when present the calc uses them as the
+     * payout window instead of the calendar month. ISO date strings.
+     */
+    periodStart: z.string().min(1).nullable().optional(),
+    periodEnd: z.string().min(1).nullable().optional(),
+    notes: z.string().trim().max(2000).optional(),
+  })
+  .superRefine((v, ctx) => {
+    const hasStart = !!v.periodStart;
+    const hasEnd = !!v.periodEnd;
+    if (hasStart !== hasEnd) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Set both a period start and end, or neither.',
+        path: [hasStart ? 'periodEnd' : 'periodStart'],
+      });
+    }
+    if (hasStart && hasEnd && Date.parse(v.periodEnd!) < Date.parse(v.periodStart!)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Period end must be on or after the start.',
+        path: ['periodEnd'],
+      });
+    }
+  });
 export type CommissionRunCreateInput = z.infer<typeof commissionRunCreateSchema>;
 
 export const commissionRunListQuerySchema = z.object({
@@ -62,6 +88,9 @@ export const commissionRunSummarySchema = z.object({
   id: z.string(),
   monthKey: z.string(),
   monthLabel: z.string(), // 'May 2026'
+  /** Custom processing window (ISO), when the run pins one; else null. */
+  periodStart: z.string().nullable(),
+  periodEnd: z.string().nullable(),
   status: commissionRunStatusSchema,
   fxRateUsdToPkr: z.number(),
   /** Totals derived from line items. */

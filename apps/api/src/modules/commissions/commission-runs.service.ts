@@ -183,6 +183,8 @@ export class CommissionRunsService {
       const run = await tx.commissionRun.create({
         data: {
           monthKey: input.monthKey,
+          periodStart: input.periodStart ? new Date(input.periodStart) : null,
+          periodEnd: input.periodEnd ? new Date(input.periodEnd) : null,
           fxRateUsdToPkr: new Prisma.Decimal(input.fxRateUsdToPkr),
           status: 'draft',
           createdById: viewer.id,
@@ -253,16 +255,21 @@ export class CommissionRunsService {
     monthKey: string,
   ): Promise<void> {
     // The run's pinned FX rate converts per-project developer salaries
-    // (PKR) to USD for Upwork net-share projects.
+    // (PKR) to USD for Upwork net-share projects. The optional custom
+    // period overrides the calendar-month payout window.
     const run = await tx.commissionRun.findUniqueOrThrow({
       where: { id: runId },
-      select: { fxRateUsdToPkr: true },
+      select: { fxRateUsdToPkr: true, periodStart: true, periodEnd: true },
     });
     const projects = await this.fetchCalcProjectsTx(tx, monthKey, Number(run.fxRateUsdToPkr));
     const lineItemsToWrite: Prisma.CommissionLineItemCreateManyInput[] = [];
 
     for (const project of projects) {
-      const items = calcProjectLineItems(project, { monthKey });
+      const items = calcProjectLineItems(project, {
+        monthKey,
+        periodStart: run.periodStart,
+        periodEnd: run.periodEnd,
+      });
       for (const item of items) {
         lineItemsToWrite.push({
           runId,
