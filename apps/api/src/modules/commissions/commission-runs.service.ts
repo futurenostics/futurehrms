@@ -518,10 +518,29 @@ export class CommissionRunsService {
 
     const data: Prisma.CommissionLineItemUpdateInput = {};
     let changed = false;
-    if (input.leaveAdjustmentUsd !== undefined) {
-      data.leaveAdjustmentUsd = new Prisma.Decimal(input.leaveAdjustmentUsd);
+
+    // Leave-days model (External): working days + approved leaves →
+    // −calculated × leaves/workingDays. Takes precedence over a raw
+    // leaveAdjustmentUsd if both provided.
+    let newLeave = Number(existing.leaveAdjustmentUsd);
+    if (input.workingDaysInMonth != null || input.leaveDays != null) {
+      const workingDays = input.workingDaysInMonth ?? existing.workingDaysInMonth ?? null;
+      const leaves = input.leaveDays ?? existing.leaveDays ?? 0;
+      if (workingDays && workingDays > 0) {
+        const cappedLeaves = Math.min(Math.max(leaves, 0), workingDays);
+        const deduction = (Number(existing.calculatedAmountUsd) * cappedLeaves) / workingDays;
+        newLeave = roundUsd(-deduction);
+        data.leaveAdjustmentUsd = new Prisma.Decimal(newLeave);
+        data.workingDaysInMonth = workingDays;
+        data.leaveDays = cappedLeaves;
+        changed = true;
+      }
+    } else if (input.leaveAdjustmentUsd !== undefined) {
+      newLeave = input.leaveAdjustmentUsd;
+      data.leaveAdjustmentUsd = new Prisma.Decimal(newLeave);
       changed = true;
     }
+
     if (input.manualAdjustmentUsd !== undefined) {
       data.manualAdjustmentUsd = new Prisma.Decimal(input.manualAdjustmentUsd);
       changed = true;
@@ -532,12 +551,23 @@ export class CommissionRunsService {
     }
     if (input.isHeld !== undefined) {
       data.isHeld = input.isHeld;
+      if (input.isHeld) {
+        const reason = (input.holdReason ?? '').trim();
+        if (!reason) {
+          throw new BadRequestException('A hold reason is required when holding a line item.');
+        }
+        data.holdReason = reason;
+      } else {
+        data.holdReason = null;
+      }
+      changed = true;
+    } else if (input.holdReason !== undefined) {
+      data.holdReason = input.holdReason;
       changed = true;
     }
     if (!changed) return this.findOne(viewer, runId);
 
     // Recompute final.
-    const newLeave = input.leaveAdjustmentUsd ?? Number(existing.leaveAdjustmentUsd);
     const newManual = input.manualAdjustmentUsd ?? Number(existing.manualAdjustmentUsd);
     const finalAmountUsd = computeFinal({
       calculatedAmountUsd: Number(existing.calculatedAmountUsd),

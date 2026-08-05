@@ -415,7 +415,27 @@ function KpiCard({
 
 function LineItemsTable({ run, canAdjust }: { run: CommissionRunDetail; canAdjust: boolean }) {
   const [addOpen, setAddOpen] = React.useState(false);
-  // Group line items by employee for the per-employee subtotal rendering.
+  // Category tabs (spec 6.1): External | Upwork | B2B, plus All.
+  const [categoryTab, setCategoryTab] = React.useState<CategoryTab>('all');
+
+  const counts = React.useMemo(() => {
+    const c: Record<CategoryTab, number> = { all: 0, external: 0, upwork: 0, b2b: 0 };
+    for (const li of run.lineItems) {
+      c.all += 1;
+      c[categoryOf(li.project.category.slug)] += 1;
+    }
+    return c;
+  }, [run.lineItems]);
+
+  const visibleItems = React.useMemo(
+    () =>
+      categoryTab === 'all'
+        ? run.lineItems
+        : run.lineItems.filter((li) => categoryOf(li.project.category.slug) === categoryTab),
+    [run.lineItems, categoryTab],
+  );
+
+  // Group visible line items by employee for the per-employee subtotal.
   const grouped = React.useMemo(() => {
     const byEmployee = new Map<
       string,
@@ -425,7 +445,7 @@ function LineItemsTable({ run, canAdjust }: { run: CommissionRunDetail; canAdjus
         subtotal: number;
       }
     >();
-    for (const li of run.lineItems) {
+    for (const li of visibleItems) {
       const entry = byEmployee.get(li.employeeId) ?? {
         employee: li.employee,
         items: [] as CommissionLineItemPublic[],
@@ -436,13 +456,29 @@ function LineItemsTable({ run, canAdjust }: { run: CommissionRunDetail; canAdjus
       byEmployee.set(li.employeeId, entry);
     }
     return Array.from(byEmployee.values()).sort((a, b) => b.subtotal - a.subtotal);
-  }, [run.lineItems]);
+  }, [visibleItems]);
 
   return (
     <div className="rounded-fn-sm border-fn-border bg-fn-bg-panel overflow-hidden border">
       <div className="border-fn-divider px-fn-5 py-fn-3_5 gap-fn-2 flex flex-wrap items-center border-b">
         <h2 className="text-fn-fg font-fn-semibold text-[14px]">Line items</h2>
-        <Badge tone="default">{run.lineItems.length} rows</Badge>
+        <div className="gap-fn-1 flex items-center">
+          {(['all', 'external', 'upwork', 'b2b'] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setCategoryTab(t)}
+              className={cn(
+                'rounded-fn-xs px-fn-2_5 py-fn-1 font-fn-medium cursor-pointer border text-[11.5px] transition-colors',
+                categoryTab === t
+                  ? 'border-fn-accent/30 bg-fn-accent-soft text-fn-accent-soft-fg'
+                  : 'border-fn-border bg-fn-bg-panel text-fn-fg-muted hover:border-fn-fg-faint',
+              )}
+            >
+              {CATEGORY_TAB_LABEL[t]} ({counts[t]})
+            </button>
+          ))}
+        </div>
         <span className="text-fn-fg-faint ml-auto text-[11.5px]">
           Grouped by person · sorted by total share desc
         </span>
@@ -483,7 +519,7 @@ function LineItemsTable({ run, canAdjust }: { run: CommissionRunDetail; canAdjus
                 <Th align="right">Revenue</Th>
                 <Th align="right">Rate</Th>
                 <Th align="center">Date</Th>
-                <Th align="right">Leave adj</Th>
+                <Th align="right">Leave (WD − L)</Th>
                 <Th align="right">Hold adj</Th>
                 <Th align="right">Final</Th>
               </tr>
@@ -564,10 +600,21 @@ function LineItemRow({
   }
 
   async function toggleHold() {
+    // Releasing needs no reason; holding requires one (spec 6.2.2).
+    let holdReason: string | undefined;
+    if (!lineItem.isHeld) {
+      const reason = window.prompt('Reason for holding this project? (required)', '');
+      if (reason === null) return; // cancelled
+      if (reason.trim() === '') {
+        toast.error('A hold reason is required.');
+        return;
+      }
+      holdReason = reason.trim();
+    }
     try {
       await adjustMutation.mutateAsync({
         lineItemId: lineItem.id,
-        data: { isHeld: !lineItem.isHeld },
+        data: { isHeld: !lineItem.isHeld, holdReason },
       });
       toast.success(
         lineItem.isHeld ? 'Item un-held.' : 'Item held — will carry forward to next run.',
@@ -577,13 +624,11 @@ function LineItemRow({
     }
   }
 
-  async function adjustLeave(value: number) {
-    if (Number.isNaN(value)) return;
+  // Leave-days deduction (External): working days + approved leaves →
+  // −calculated × leaves/workingDays, computed server-side.
+  async function adjustLeaveDays(patch: { workingDaysInMonth?: number; leaveDays?: number }) {
     try {
-      await adjustMutation.mutateAsync({
-        lineItemId: lineItem.id,
-        data: { leaveAdjustmentUsd: value },
-      });
+      await adjustMutation.mutateAsync({ lineItemId: lineItem.id, data: patch });
     } catch (err) {
       toast.error((err as Error).message);
     }
@@ -686,18 +731,43 @@ function LineItemRow({
       <td className="px-fn-4 py-fn-2_5 text-fn-fg-faint text-center tabular-nums">
         {lineItem.monthFractionDisplay}
       </td>
-      <td className="px-fn-4 py-fn-2_5 text-right">
+      <td className="px-fn-4 py-fn-2_5 text-right" title={leaveTooltip(lineItem)}>
         {canAdjust ? (
-          <Input
-            type="number"
-            step="0.01"
-            defaultValue={lineItem.leaveAdjustmentUsd}
-            onBlur={(e) => {
-              const next = Number(e.target.value);
-              if (Math.abs(next - lineItem.leaveAdjustmentUsd) > 0.001) adjustLeave(next);
-            }}
-            className="h-fn-7 inline-block w-[80px] text-right tabular-nums"
-          />
+          <div className="gap-fn-1 flex items-center justify-end">
+            <Input
+              type="number"
+              min={0}
+              placeholder="WD"
+              defaultValue={lineItem.workingDaysInMonth ?? ''}
+              onBlur={(e) => {
+                const wd = Number(e.target.value);
+                if (wd > 0 && wd !== lineItem.workingDaysInMonth)
+                  adjustLeaveDays({ workingDaysInMonth: wd });
+              }}
+              className="h-fn-7 w-[46px] text-right tabular-nums"
+            />
+            <span className="text-fn-fg-faint text-[11px]">−</span>
+            <Input
+              type="number"
+              min={0}
+              placeholder="L"
+              defaultValue={lineItem.leaveDays ?? ''}
+              onBlur={(e) => {
+                const ld = Number(e.target.value);
+                if (!Number.isNaN(ld) && ld !== lineItem.leaveDays)
+                  adjustLeaveDays({ leaveDays: ld });
+              }}
+              className="h-fn-7 w-[42px] text-right tabular-nums"
+            />
+            <span
+              className={cn(
+                'w-[62px] text-[11.5px] tabular-nums',
+                lineItem.leaveAdjustmentUsd < 0 ? 'text-fn-danger-soft-fg' : 'text-fn-fg-faint',
+              )}
+            >
+              {lineItem.leaveAdjustmentUsd === 0 ? '—' : formatUsd(lineItem.leaveAdjustmentUsd)}
+            </span>
+          </div>
         ) : (
           <span
             className={cn(
@@ -1408,6 +1478,34 @@ const ROLE_LABELS: Record<string, string> = {
 };
 function roleLabel(role: string): string {
   return ROLE_LABELS[role] ?? role.replace(/_/g, ' ');
+}
+
+type CategoryTab = 'all' | 'external' | 'upwork' | 'b2b';
+
+const CATEGORY_TAB_LABEL: Record<CategoryTab, string> = {
+  all: 'All',
+  external: 'External',
+  upwork: 'Upwork',
+  b2b: 'B2B',
+};
+
+/** Map a project category slug to its top-level processing tab. */
+function categoryOf(slug: string): Exclude<CategoryTab, 'all'> {
+  if (slug === 'b2b') return 'b2b';
+  if (slug === 'upwork' || slug.startsWith('upwork-')) return 'upwork';
+  return 'external';
+}
+
+/** Formula tooltip for the leave-days deduction column. */
+function leaveTooltip(li: CommissionLineItemPublic): string {
+  if (!li.workingDaysInMonth) {
+    return 'Enter working days (WD) and approved leaves (L) to pro-rate: final = base × (WD − L) / WD';
+  }
+  const wd = li.workingDaysInMonth;
+  const ld = li.leaveDays ?? 0;
+  const eff = wd - ld;
+  const daily = li.calculatedAmountUsd / wd;
+  return `Base ${formatUsd(li.calculatedAmountUsd)} ÷ ${wd} WD = ${formatUsd(daily)}/day × ${eff} effective days (${wd} − ${ld}) = ${formatUsd(daily * eff)}`;
 }
 
 function formatUsd(value: number): string {

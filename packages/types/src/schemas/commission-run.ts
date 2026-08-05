@@ -157,9 +157,14 @@ export const commissionLineItemPublicSchema = z.object({
   monthFractionDenominator: z.number().int().nonnegative(),
   calculatedAmountUsd: z.number(),
   leaveAdjustmentUsd: z.number(),
+  /** Leave-days inputs (External): working days in month + approved leaves. */
+  workingDaysInMonth: z.number().int().nullable(),
+  leaveDays: z.number().int().nullable(),
   manualAdjustmentUsd: z.number(),
   manualAdjustmentNote: z.string().nullable(),
   isHeld: z.boolean(),
+  /** Mandatory reason when the line is held. */
+  holdReason: z.string().nullable(),
   carryForwardToRunId: z.string().nullable(),
   carryForwardFromRunId: z.string().nullable(),
   finalAmountUsd: z.number(),
@@ -179,9 +184,19 @@ export type CommissionRunDetail = z.infer<typeof commissionRunDetailSchema>;
 
 export const commissionLineItemAdjustSchema = z.object({
   leaveAdjustmentUsd: z.coerce.number().optional(),
+  /**
+   * Leave-days deduction inputs (External). When both are provided the
+   * server computes the leave adjustment as
+   *   −calculated × leaveDays / workingDays
+   * (pro-rated working-day model) and ignores any leaveAdjustmentUsd.
+   */
+  workingDaysInMonth: z.coerce.number().int().min(1).max(31).nullable().optional(),
+  leaveDays: z.coerce.number().int().min(0).max(31).nullable().optional(),
   manualAdjustmentUsd: z.coerce.number().optional(),
   manualAdjustmentNote: z.string().trim().max(500).nullable().optional(),
   isHeld: z.boolean().optional(),
+  /** Required (non-empty) when isHeld is set true. */
+  holdReason: z.string().trim().max(500).nullable().optional(),
 });
 export type CommissionLineItemAdjustInput = z.infer<typeof commissionLineItemAdjustSchema>;
 

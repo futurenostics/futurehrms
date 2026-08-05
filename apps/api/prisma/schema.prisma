@@ -643,8 +643,14 @@ model CommissionLineItem {
   // review. The audit-log middleware captures every PATCH on these
   // columns.
   leaveAdjustmentUsd   Decimal @default(0) @db.Decimal(12, 2)
+  // Leave-days deduction inputs (External projects, Module 4). When set,
+  // leaveAdjustmentUsd is derived as −calculated × leaveDays/workingDays.
+  workingDaysInMonth   Int?
+  leaveDays            Int?
   manualAdjustmentUsd  Decimal @default(0) @db.Decimal(12, 2)
   manualAdjustmentNote String?
+  // Mandatory reason captured when the line is held.
+  holdReason           String?
 
   // Held mid-run — the row's amount is moved to the next run as a
   // carry-forward line. We mark BOTH directions:
