@@ -357,7 +357,7 @@ export type ProjectListResponse = z.infer<typeof projectListResponseSchema>;
 export const projectCommissionPreviewSchema = z.object({
   /** Total pool USD for the project under its current contract. */
   commissionPoolUsd: z.number(),
-  poolMode: z.enum(['percentage', 'fixed', 'tiered']),
+  poolMode: poolModeSchema,
   poolValueDisplay: z.string(), // '24%' or '$2,400.00' or '8% (tier)'
   ruleVersion: z.string(),
   ruleStatus: z.string(),
