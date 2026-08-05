@@ -890,7 +890,7 @@ function LineItemRow({
       </td>
       <td className="px-fn-4 py-fn-2_5 text-right" title={leaveTooltip(lineItem)}>
         {canAdjust ? (
-          <div className="gap-fn-1 flex items-center justify-end">
+          <div className="gap-fn-1_5 flex items-center justify-end">
             <Input
               type="number"
               min={0}
@@ -901,7 +901,7 @@ function LineItemRow({
                 if (wd > 0 && wd !== lineItem.workingDaysInMonth)
                   adjustLeaveDays({ workingDaysInMonth: wd });
               }}
-              className="h-fn-7 w-[46px] text-right tabular-nums"
+              className="h-fn-7 w-[54px] text-center tabular-nums"
             />
             <span className="text-fn-fg-faint text-[11px]">−</span>
             <Input
@@ -914,7 +914,7 @@ function LineItemRow({
                 if (!Number.isNaN(ld) && ld !== lineItem.leaveDays)
                   adjustLeaveDays({ leaveDays: ld });
               }}
-              className="h-fn-7 w-[42px] text-right tabular-nums"
+              className="h-fn-7 w-[48px] text-center tabular-nums"
             />
             <span
               className={cn(
