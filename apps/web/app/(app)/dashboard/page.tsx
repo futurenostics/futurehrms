@@ -11,6 +11,7 @@ import {
   MyCommissionTrendWidget,
   MyCommissionWidget,
 } from '@/components/dashboard/commission-widgets';
+import { ManagementDashboard } from '@/components/dashboard/management-dashboard';
 
 export default function DashboardPage() {
   const { data: user } = useUser();
@@ -25,10 +26,14 @@ export default function DashboardPage() {
             Hello, {firstName}.
           </h1>
           <p className="text-fn-fg-muted text-[13px]">
-            Welcome to Futurenostics HRMS. The dashboard fills out as the modules land in subsequent
-            phases.
+            {perms.has('dashboard:view_management')
+              ? "A real-time snapshot of the company's financial and operational status."
+              : 'Welcome to Futurenostics HRMS.'}
           </p>
         </div>
+
+        {/* Module 7 — management dashboard (Super Admin / Finance Manager) */}
+        {perms.has('dashboard:view_management') && <ManagementDashboard />}
 
         {perms.has('employees:view_all') && (
           <div className="gap-fn-4 grid sm:grid-cols-2 lg:grid-cols-3">
