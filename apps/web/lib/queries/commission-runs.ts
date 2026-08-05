@@ -171,6 +171,24 @@ export function useReopenCommissionRun(id: string) {
   });
 }
 
+/* ---------- Disbursement (Module 4) ---------- */
+
+export function useDisburseCommissionRun(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<CommissionRunSummary>(`/api/commission-runs/${id}/disburse`, { method: 'POST' }),
+    onSuccess: () => invalidateRunQueries(qc, id),
+  });
+}
+
+export function useSendCommissionEmails(id: string) {
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<{ sent: number }>(`/api/commission-runs/${id}/send-emails`, { method: 'POST' }),
+  });
+}
+
 /* ---------- Analytics ---------- */
 
 export function useCommissionRunAnalytics(id: string | null | undefined, topN = 10) {

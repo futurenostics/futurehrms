@@ -60,9 +60,14 @@ export function toCommissionLineItemPublic(
     monthFractionDenominator: row.monthFractionDenominator,
     calculatedAmountUsd: Number(row.calculatedAmountUsd),
     leaveAdjustmentUsd: Number(row.leaveAdjustmentUsd),
+    workingDaysInMonth: row.workingDaysInMonth ?? null,
+    leaveDays: row.leaveDays ?? null,
     manualAdjustmentUsd: Number(row.manualAdjustmentUsd),
     manualAdjustmentNote: row.manualAdjustmentNote,
     isHeld: row.isHeld,
+    holdReason: row.holdReason ?? null,
+    periodRevenueUsd: row.periodRevenueUsd != null ? Number(row.periodRevenueUsd) : null,
+    paymentSource: (row.paymentSource as 'profile' | 'mastercard' | null) ?? null,
     carryForwardToRunId: row.carryForwardToRunId,
     carryForwardFromRunId: row.carryForwardFromRunId,
     finalAmountUsd: Number(row.finalAmountUsd),
@@ -109,6 +114,8 @@ export function toCommissionRunSummary(row: CommissionRunRowForMapping): Commiss
     rejectReason: row.rejectReason,
     lockedAt: row.lockedAt?.toISOString() ?? null,
     lockedById: row.lockedById,
+    disbursedAt: row.disbursedAt?.toISOString() ?? null,
+    disbursedById: row.disbursedById,
     notes: row.notes,
   };
 }

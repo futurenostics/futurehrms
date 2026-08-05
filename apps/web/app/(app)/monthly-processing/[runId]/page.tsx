@@ -24,6 +24,7 @@ import type {
   CommissionDisputePublic,
   CommissionLeaderboardRow,
   CommissionLineItemPublic,
+  CommissionPaymentSource,
   CommissionRollupRow,
   CommissionRunDetail,
   CommissionRunStatus,
@@ -33,6 +34,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Combobox } from '@/components/ui/combobox';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
@@ -49,11 +57,15 @@ import {
   useAdjustLineItem,
   useCommissionRun,
   useCommissionRunAnalytics,
+  useDisburseCommissionRun,
+  useLockCommissionRun,
   useRecalculateCommissionRun,
   useRejectCommissionRun,
   useRemoveLineItem,
+  useSendCommissionEmails,
   useSubmitCommissionRun,
 } from '@/lib/queries/commission-runs';
+import { downloadFile } from '@/lib/api-client';
 import { useProjectsList } from '@/lib/queries/projects';
 import { useEmployeesList } from '@/lib/queries/employees';
 import { useCommissionDisputes, useResolveDispute } from '@/lib/queries/commission-disputes';
@@ -127,6 +139,48 @@ export default function CommissionRunDetailPage() {
   const initialAction = searchParams.get('action');
   const [approveOpen, setApproveOpen] = React.useState(initialAction === 'approve');
 
+  // Post-approval / post-lock actions (Module 4).
+  const lockMut = useLockCommissionRun(runId ?? '');
+  const disburseMut = useDisburseCommissionRun(runId ?? '');
+  const sendEmailsMut = useSendCommissionEmails(runId ?? '');
+  const [payslipBusy, setPayslipBusy] = React.useState(false);
+
+  const handleLock = React.useCallback(() => {
+    lockMut.mutate(undefined, {
+      onSuccess: () => toast.success('Run locked for disbursement'),
+      onError: (e) => toast.error((e as Error).message),
+    });
+  }, [lockMut]);
+
+  const handleDisburse = React.useCallback(() => {
+    disburseMut.mutate(undefined, {
+      onSuccess: () => toast.success('Disbursed to payout portals'),
+      onError: (e) => toast.error((e as Error).message),
+    });
+  }, [disburseMut]);
+
+  const handleSendEmails = React.useCallback(() => {
+    sendEmailsMut.mutate(undefined, {
+      onSuccess: (r) => toast.success(`Payout emails sent to ${r.sent} recipient(s)`),
+      onError: (e) => toast.error((e as Error).message),
+    });
+  }, [sendEmailsMut]);
+
+  const handleDownloadPayslips = React.useCallback(async () => {
+    if (!runId) return;
+    setPayslipBusy(true);
+    try {
+      await downloadFile(
+        `/api/commission-runs/${runId}/payslips.pdf`,
+        `commission-payslips-${run?.monthKey ?? runId}.pdf`,
+      );
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setPayslipBusy(false);
+    }
+  }, [runId, run?.monthKey]);
+
   if (runQuery.isPending) {
     return <RunSkeleton />;
   }
@@ -169,6 +223,14 @@ export default function CommissionRunDetailPage() {
           onSubmit={() => setSubmitOpen(true)}
           onApprove={() => setApproveOpen(true)}
           onReject={() => setRejectOpen(true)}
+          onLock={handleLock}
+          onDisburse={handleDisburse}
+          onSendEmails={handleSendEmails}
+          onDownloadPayslips={handleDownloadPayslips}
+          locking={lockMut.isPending}
+          disbursing={disburseMut.isPending}
+          sendingEmails={sendEmailsMut.isPending}
+          payslipBusy={payslipBusy}
         />
 
         {/* KPI strip */}
@@ -179,6 +241,9 @@ export default function CommissionRunDetailPage() {
 
         {/* Line items table */}
         <LineItemsTable run={run} canAdjust={canAdjust && run.status === 'draft'} />
+
+        {/* Consolidated per-employee draft (spec 6.5) */}
+        <ConsolidatedDraft run={run} />
 
         {/* Disputes raised by employees on this run */}
         <DisputesSection runId={run.id} canManage={perms.has('commissions:manage_disputes')} />
@@ -214,6 +279,14 @@ function RunHeader({
   onSubmit,
   onApprove,
   onReject,
+  onLock,
+  onDisburse,
+  onSendEmails,
+  onDownloadPayslips,
+  locking,
+  disbursing,
+  sendingEmails,
+  payslipBusy,
 }: {
   run: CommissionRunDetail;
   canRecalc: boolean;
@@ -226,6 +299,14 @@ function RunHeader({
   onSubmit: () => void;
   onApprove: () => void;
   onReject: () => void;
+  onLock: () => void;
+  onDisburse: () => void;
+  onSendEmails: () => void;
+  onDownloadPayslips: () => void;
+  locking: boolean;
+  disbursing: boolean;
+  sendingEmails: boolean;
+  payslipBusy: boolean;
 }) {
   return (
     <div className="gap-fn-3 flex flex-wrap items-start justify-between">
@@ -286,9 +367,31 @@ function RunHeader({
           </>
         )}
         {run.status === 'approved' && canLock && (
-          <Button variant="secondary" disabled>
-            <Lock className="h-fn-4 w-fn-4" /> Lock (Phase 7)
+          <Button variant="secondary" onClick={onLock} disabled={locking}>
+            <Lock className="h-fn-4 w-fn-4" /> {locking ? 'Locking…' : 'Lock run'}
           </Button>
+        )}
+        {run.status === 'locked' && (
+          <>
+            <Button variant="ghost" size="md" onClick={onDownloadPayslips} disabled={payslipBusy}>
+              <Download className="h-fn-4 w-fn-4" /> {payslipBusy ? 'Preparing…' : 'Payslips (PDF)'}
+            </Button>
+            {canLock && (
+              <>
+                <Button variant="secondary" onClick={onSendEmails} disabled={sendingEmails}>
+                  <Send className="h-fn-4 w-fn-4" /> {sendingEmails ? 'Sending…' : 'Send emails'}
+                </Button>
+                <Button onClick={onDisburse} disabled={disbursing || run.disbursedAt !== null}>
+                  <Check className="h-fn-4 w-fn-4" />{' '}
+                  {run.disbursedAt
+                    ? 'Disbursed'
+                    : disbursing
+                      ? 'Disbursing…'
+                      : 'Disburse to portals'}
+                </Button>
+              </>
+            )}
+          </>
         )}
         {run.status === 'rejected' && canRecalc && (
           <Button variant="secondary" onClick={onRecalculate}>
@@ -316,6 +419,12 @@ function MetaStrip({ run }: { run: CommissionRunDetail }) {
         <>
           <Sep />
           <Meta label="Approved">{formatRelative(run.approvedAt)}</Meta>
+        </>
+      )}
+      {run.disbursedAt && (
+        <>
+          <Sep />
+          <Meta label="Disbursed">{formatRelative(run.disbursedAt)}</Meta>
         </>
       )}
       {run.rejectedAt && run.rejectReason && (
@@ -415,7 +524,27 @@ function KpiCard({
 
 function LineItemsTable({ run, canAdjust }: { run: CommissionRunDetail; canAdjust: boolean }) {
   const [addOpen, setAddOpen] = React.useState(false);
-  // Group line items by employee for the per-employee subtotal rendering.
+  // Category tabs (spec 6.1): External | Upwork | B2B, plus All.
+  const [categoryTab, setCategoryTab] = React.useState<CategoryTab>('all');
+
+  const counts = React.useMemo(() => {
+    const c: Record<CategoryTab, number> = { all: 0, external: 0, upwork: 0, b2b: 0 };
+    for (const li of run.lineItems) {
+      c.all += 1;
+      c[categoryOf(li.project.category.slug)] += 1;
+    }
+    return c;
+  }, [run.lineItems]);
+
+  const visibleItems = React.useMemo(
+    () =>
+      categoryTab === 'all'
+        ? run.lineItems
+        : run.lineItems.filter((li) => categoryOf(li.project.category.slug) === categoryTab),
+    [run.lineItems, categoryTab],
+  );
+
+  // Group visible line items by employee for the per-employee subtotal.
   const grouped = React.useMemo(() => {
     const byEmployee = new Map<
       string,
@@ -425,7 +554,7 @@ function LineItemsTable({ run, canAdjust }: { run: CommissionRunDetail; canAdjus
         subtotal: number;
       }
     >();
-    for (const li of run.lineItems) {
+    for (const li of visibleItems) {
       const entry = byEmployee.get(li.employeeId) ?? {
         employee: li.employee,
         items: [] as CommissionLineItemPublic[],
@@ -436,13 +565,29 @@ function LineItemsTable({ run, canAdjust }: { run: CommissionRunDetail; canAdjus
       byEmployee.set(li.employeeId, entry);
     }
     return Array.from(byEmployee.values()).sort((a, b) => b.subtotal - a.subtotal);
-  }, [run.lineItems]);
+  }, [visibleItems]);
 
   return (
     <div className="rounded-fn-sm border-fn-border bg-fn-bg-panel overflow-hidden border">
       <div className="border-fn-divider px-fn-5 py-fn-3_5 gap-fn-2 flex flex-wrap items-center border-b">
         <h2 className="text-fn-fg font-fn-semibold text-[14px]">Line items</h2>
-        <Badge tone="default">{run.lineItems.length} rows</Badge>
+        <div className="gap-fn-1 flex items-center">
+          {(['all', 'external', 'upwork', 'b2b'] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setCategoryTab(t)}
+              className={cn(
+                'rounded-fn-xs px-fn-2_5 py-fn-1 font-fn-medium cursor-pointer border text-[11.5px] transition-colors',
+                categoryTab === t
+                  ? 'border-fn-accent/30 bg-fn-accent-soft text-fn-accent-soft-fg'
+                  : 'border-fn-border bg-fn-bg-panel text-fn-fg-muted hover:border-fn-fg-faint',
+              )}
+            >
+              {CATEGORY_TAB_LABEL[t]} ({counts[t]})
+            </button>
+          ))}
+        </div>
         <span className="text-fn-fg-faint ml-auto text-[11.5px]">
           Grouped by person · sorted by total share desc
         </span>
@@ -483,7 +628,7 @@ function LineItemsTable({ run, canAdjust }: { run: CommissionRunDetail; canAdjus
                 <Th align="right">Revenue</Th>
                 <Th align="right">Rate</Th>
                 <Th align="center">Date</Th>
-                <Th align="right">Leave adj</Th>
+                <Th align="right">Leave (WD − L)</Th>
                 <Th align="right">Hold adj</Th>
                 <Th align="right">Final</Th>
               </tr>
@@ -553,6 +698,7 @@ function LineItemRow({
   // also carry a zero fraction, so exclude them from the manual case.
   const isClawback = lineItem.isClawback;
   const isManual = !isClawback && lineItem.monthFractionNumerator === 0;
+  const isUpwork = categoryOf(lineItem.project.category.slug) === 'upwork';
 
   async function remove() {
     try {
@@ -564,10 +710,21 @@ function LineItemRow({
   }
 
   async function toggleHold() {
+    // Releasing needs no reason; holding requires one (spec 6.2.2).
+    let holdReason: string | undefined;
+    if (!lineItem.isHeld) {
+      const reason = window.prompt('Reason for holding this project? (required)', '');
+      if (reason === null) return; // cancelled
+      if (reason.trim() === '') {
+        toast.error('A hold reason is required.');
+        return;
+      }
+      holdReason = reason.trim();
+    }
     try {
       await adjustMutation.mutateAsync({
         lineItemId: lineItem.id,
-        data: { isHeld: !lineItem.isHeld },
+        data: { isHeld: !lineItem.isHeld, holdReason },
       });
       toast.success(
         lineItem.isHeld ? 'Item un-held.' : 'Item held — will carry forward to next run.',
@@ -577,13 +734,24 @@ function LineItemRow({
     }
   }
 
-  async function adjustLeave(value: number) {
-    if (Number.isNaN(value)) return;
+  // Leave-days deduction (External): working days + approved leaves →
+  // −calculated × leaves/workingDays, computed server-side.
+  async function adjustLeaveDays(patch: { workingDaysInMonth?: number; leaveDays?: number }) {
     try {
-      await adjustMutation.mutateAsync({
-        lineItemId: lineItem.id,
-        data: { leaveAdjustmentUsd: value },
-      });
+      await adjustMutation.mutateAsync({ lineItemId: lineItem.id, data: patch });
+    } catch (err) {
+      toast.error((err as Error).message);
+    }
+  }
+
+  // Upwork processing (spec 6.3): manual period revenue + payout source.
+  async function adjustUpwork(patch: {
+    periodRevenueUsd?: number;
+    paymentSource?: CommissionPaymentSource;
+  }) {
+    try {
+      await adjustMutation.mutateAsync({ lineItemId: lineItem.id, data: patch });
+      toast.success('Upwork inputs updated.');
     } catch (err) {
       toast.error((err as Error).message);
     }
@@ -677,8 +845,42 @@ function LineItemRow({
           )}
         </div>
       </td>
-      <td className="px-fn-4 py-fn-2_5 text-fn-fg-muted text-right tabular-nums">
-        {formatUsd(lineItem.baseRevenueUsd)}
+      <td className="px-fn-4 py-fn-2_5 text-right">
+        {canAdjust && isUpwork && !isClawback ? (
+          <div className="gap-fn-1 flex flex-col items-end">
+            <Input
+              type="number"
+              min={0}
+              step="0.01"
+              placeholder="Revenue"
+              title="Actual Upwork revenue for the period (USD)"
+              defaultValue={lineItem.periodRevenueUsd ?? lineItem.baseRevenueUsd}
+              onBlur={(e) => {
+                const v = Number(e.target.value);
+                const current = lineItem.periodRevenueUsd ?? lineItem.baseRevenueUsd;
+                if (!Number.isNaN(v) && v >= 0 && v !== current)
+                  adjustUpwork({ periodRevenueUsd: v });
+              }}
+              className="h-fn-7 w-[92px] text-right tabular-nums"
+            />
+            <Select
+              value={lineItem.paymentSource ?? undefined}
+              onValueChange={(s) => adjustUpwork({ paymentSource: s as CommissionPaymentSource })}
+            >
+              <SelectTrigger variant="compact" className="w-[92px]">
+                <SelectValue placeholder="Paid via" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="profile">Profile</SelectItem>
+                <SelectItem value="mastercard">Mastercard</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        ) : (
+          <span className="text-fn-fg-muted tabular-nums">
+            {formatUsd(lineItem.baseRevenueUsd)}
+          </span>
+        )}
       </td>
       <td className="px-fn-4 py-fn-2_5 text-fn-fg font-fn-medium text-right tabular-nums">
         {formatUsd(lineItem.calculatedAmountUsd)}
@@ -686,18 +888,43 @@ function LineItemRow({
       <td className="px-fn-4 py-fn-2_5 text-fn-fg-faint text-center tabular-nums">
         {lineItem.monthFractionDisplay}
       </td>
-      <td className="px-fn-4 py-fn-2_5 text-right">
+      <td className="px-fn-4 py-fn-2_5 text-right" title={leaveTooltip(lineItem)}>
         {canAdjust ? (
-          <Input
-            type="number"
-            step="0.01"
-            defaultValue={lineItem.leaveAdjustmentUsd}
-            onBlur={(e) => {
-              const next = Number(e.target.value);
-              if (Math.abs(next - lineItem.leaveAdjustmentUsd) > 0.001) adjustLeave(next);
-            }}
-            className="h-fn-7 inline-block w-[80px] text-right tabular-nums"
-          />
+          <div className="gap-fn-1_5 flex items-center justify-end">
+            <Input
+              type="number"
+              min={0}
+              placeholder="WD"
+              defaultValue={lineItem.workingDaysInMonth ?? ''}
+              onBlur={(e) => {
+                const wd = Number(e.target.value);
+                if (wd > 0 && wd !== lineItem.workingDaysInMonth)
+                  adjustLeaveDays({ workingDaysInMonth: wd });
+              }}
+              className="h-fn-7 w-[54px] text-center tabular-nums"
+            />
+            <span className="text-fn-fg-faint text-[11px]">−</span>
+            <Input
+              type="number"
+              min={0}
+              placeholder="L"
+              defaultValue={lineItem.leaveDays ?? ''}
+              onBlur={(e) => {
+                const ld = Number(e.target.value);
+                if (!Number.isNaN(ld) && ld !== lineItem.leaveDays)
+                  adjustLeaveDays({ leaveDays: ld });
+              }}
+              className="h-fn-7 w-[48px] text-center tabular-nums"
+            />
+            <span
+              className={cn(
+                'w-[62px] text-[11.5px] tabular-nums',
+                lineItem.leaveAdjustmentUsd < 0 ? 'text-fn-danger-soft-fg' : 'text-fn-fg-faint',
+              )}
+            >
+              {lineItem.leaveAdjustmentUsd === 0 ? '—' : formatUsd(lineItem.leaveAdjustmentUsd)}
+            </span>
+          </div>
         ) : (
           <span
             className={cn(
@@ -1408,6 +1635,159 @@ const ROLE_LABELS: Record<string, string> = {
 };
 function roleLabel(role: string): string {
   return ROLE_LABELS[role] ?? role.replace(/_/g, ' ');
+}
+
+/* ───────────────────────── Consolidated draft ───────────────────────── */
+
+function ConsolidatedDraft({ run }: { run: CommissionRunDetail }) {
+  // Salary is looked up from the employees list (gated by view_salary);
+  // shown as a reference column only — NOT added to the commission total.
+  const employeesQuery = useEmployeesList({ limit: 500 });
+  const salaryByEmployee = React.useMemo(() => {
+    const m = new Map<string, number | null>();
+    for (const e of employeesQuery.data?.items ?? []) m.set(e.id, e.salaryPkr ?? null);
+    return m;
+  }, [employeesQuery.data]);
+
+  const fx = run.fxRateUsdToPkr;
+  const rows = React.useMemo(() => {
+    const byEmp = new Map<
+      string,
+      {
+        employee: CommissionLineItemPublic['employee'];
+        external: number;
+        commAllow: number;
+        tlReward: number;
+        upwork: number;
+        total: number;
+      }
+    >();
+    for (const li of run.lineItems) {
+      const e = byEmp.get(li.employeeId) ?? {
+        employee: li.employee,
+        external: 0,
+        commAllow: 0,
+        tlReward: 0,
+        upwork: 0,
+        total: 0,
+      };
+      const amt = li.finalAmountUsd;
+      if (categoryOf(li.project.category.slug) === 'upwork') e.upwork += amt;
+      else if (li.roleName === 'communicator') e.commAllow += amt;
+      else if (li.roleName === 'team_lead') e.tlReward += amt;
+      else e.external += amt;
+      e.total += amt;
+      byEmp.set(li.employeeId, e);
+    }
+    return Array.from(byEmp.values()).sort((a, b) => b.total - a.total);
+  }, [run.lineItems]);
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="rounded-fn-sm border-fn-border bg-fn-bg-panel overflow-hidden border">
+      <div className="border-fn-divider px-fn-5 py-fn-3_5 gap-fn-2 flex flex-wrap items-center border-b">
+        <h2 className="text-fn-fg font-fn-semibold text-[14px]">Consolidated draft</h2>
+        <Badge tone="default">{rows.length} employees</Badge>
+        <span className="text-fn-fg-faint ml-auto text-[11.5px]">
+          Commission payout in USD · salary + PKR shown for reference only
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-[12.5px]">
+          <thead>
+            <tr className="border-fn-divider text-fn-fg-faint border-b text-left">
+              <Th align="left">#</Th>
+              <Th align="left">Employee</Th>
+              <Th align="right">External</Th>
+              <Th align="right">Comm allow.</Th>
+              <Th align="right">TL reward</Th>
+              <Th align="right">Upwork</Th>
+              <Th align="right">Commission total</Th>
+              <Th align="right">Salary (ref)</Th>
+              <Th align="right">Approx PKR</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => {
+              const salaryUsd = (salaryByEmployee.get(r.employee.id) ?? null) as number | null;
+              return (
+                <tr key={r.employee.id} className="border-fn-divider border-t">
+                  <td className="px-fn-4 py-fn-2_5 text-fn-fg-faint tabular-nums">{i + 1}</td>
+                  <td className="px-fn-4 py-fn-2_5">
+                    <div className="flex flex-col">
+                      <span className="text-fn-fg font-fn-medium">{r.employee.fullName}</span>
+                      <span className="text-fn-fg-faint font-mono text-[10.5px]">
+                        {r.employee.eid}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-fn-4 py-fn-2_5 text-fn-fg-muted text-right tabular-nums">
+                    {money(r.external)}
+                  </td>
+                  <td className="px-fn-4 py-fn-2_5 text-fn-fg-muted text-right tabular-nums">
+                    {money(r.commAllow)}
+                  </td>
+                  <td className="px-fn-4 py-fn-2_5 text-fn-fg-muted text-right tabular-nums">
+                    {money(r.tlReward)}
+                  </td>
+                  <td className="px-fn-4 py-fn-2_5 text-fn-fg-muted text-right tabular-nums">
+                    {money(r.upwork)}
+                  </td>
+                  <td className="px-fn-4 py-fn-2_5 text-fn-fg font-fn-semibold text-right tabular-nums">
+                    {formatUsd(r.total)}
+                  </td>
+                  <td className="px-fn-4 py-fn-2_5 text-fn-fg-faint text-right tabular-nums">
+                    {salaryUsd != null ? money(salaryUsd) : '—'}
+                  </td>
+                  <td className="px-fn-4 py-fn-2_5 text-fn-fg-faint text-right tabular-nums">
+                    ~{formatPkr(r.total * fx)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/** Compact USD (no cents-forcing) for dense consolidated cells; '—' for zero. */
+function money(v: number): string {
+  return v === 0 ? '—' : formatUsd(v);
+}
+
+function formatPkr(v: number): string {
+  return `PKR ${Math.round(v).toLocaleString('en-PK')}`;
+}
+
+type CategoryTab = 'all' | 'external' | 'upwork' | 'b2b';
+
+const CATEGORY_TAB_LABEL: Record<CategoryTab, string> = {
+  all: 'All',
+  external: 'External',
+  upwork: 'Upwork',
+  b2b: 'B2B',
+};
+
+/** Map a project category slug to its top-level processing tab. */
+function categoryOf(slug: string): Exclude<CategoryTab, 'all'> {
+  if (slug === 'b2b') return 'b2b';
+  if (slug === 'upwork' || slug.startsWith('upwork-')) return 'upwork';
+  return 'external';
+}
+
+/** Formula tooltip for the leave-days deduction column. */
+function leaveTooltip(li: CommissionLineItemPublic): string {
+  if (!li.workingDaysInMonth) {
+    return 'Enter working days (WD) and approved leaves (L) to pro-rate: final = base × (WD − L) / WD';
+  }
+  const wd = li.workingDaysInMonth;
+  const ld = li.leaveDays ?? 0;
+  const eff = wd - ld;
+  const daily = li.calculatedAmountUsd / wd;
+  return `Base ${formatUsd(li.calculatedAmountUsd)} ÷ ${wd} WD = ${formatUsd(daily)}/day × ${eff} effective days (${wd} − ${ld}) = ${formatUsd(daily * eff)}`;
 }
 
 function formatUsd(value: number): string {

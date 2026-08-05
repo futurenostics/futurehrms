@@ -595,6 +595,11 @@ model CommissionRun {
   rejectReason String?
   lockedAt     DateTime?
   lockedById   String?
+  // Post-lock disbursement (Module 4). Stamped when HR pushes the
+  // locked run out to the payout portals; gates the "Send emails" /
+  // payslip actions and shows "Disbursed on …" in the UI.
+  disbursedAt   DateTime?
+  disbursedById String?
 
   // The typed-phrase confirmation from PNG 10 — captured for audit.
   approvalConfirmationPhrase String?
@@ -643,8 +648,22 @@ model CommissionLineItem {
   // review. The audit-log middleware captures every PATCH on these
   // columns.
   leaveAdjustmentUsd   Decimal @default(0) @db.Decimal(12, 2)
+  // Leave-days deduction inputs (External projects, Module 4). When set,
+  // leaveAdjustmentUsd is derived as −calculated × leaveDays/workingDays.
+  workingDaysInMonth   Int?
+  leaveDays            Int?
   manualAdjustmentUsd  Decimal @default(0) @db.Decimal(12, 2)
   manualAdjustmentNote String?
+  // Mandatory reason captured when the line is held.
+  holdReason           String?
+
+  // Upwork processing inputs (Module 4). Upwork revenue isn't
+  // auto-pulled, so HR enters the actual period revenue at processing
+  // time; when set it overrides baseRevenueUsd and the calculated
+  // amount is re-derived linearly. paymentSource records whether the
+  // payout came via the Upwork Profile or the linked Mastercard.
+  periodRevenueUsd     Decimal? @db.Decimal(12, 2)
+  paymentSource        String?
 
   // Held mid-run — the row's amount is moved to the next run as a
   // carry-forward line. We mark BOTH directions:
