@@ -180,6 +180,9 @@ export default function CommissionRunDetailPage() {
         {/* Line items table */}
         <LineItemsTable run={run} canAdjust={canAdjust && run.status === 'draft'} />
 
+        {/* Consolidated per-employee draft (spec 6.5) */}
+        <ConsolidatedDraft run={run} />
+
         {/* Disputes raised by employees on this run */}
         <DisputesSection runId={run.id} canManage={perms.has('commissions:manage_disputes')} />
       </div>
@@ -1478,6 +1481,131 @@ const ROLE_LABELS: Record<string, string> = {
 };
 function roleLabel(role: string): string {
   return ROLE_LABELS[role] ?? role.replace(/_/g, ' ');
+}
+
+/* ───────────────────────── Consolidated draft ───────────────────────── */
+
+function ConsolidatedDraft({ run }: { run: CommissionRunDetail }) {
+  // Salary is looked up from the employees list (gated by view_salary);
+  // shown as a reference column only — NOT added to the commission total.
+  const employeesQuery = useEmployeesList({ limit: 500 });
+  const salaryByEmployee = React.useMemo(() => {
+    const m = new Map<string, number | null>();
+    for (const e of employeesQuery.data?.items ?? []) m.set(e.id, e.salaryPkr ?? null);
+    return m;
+  }, [employeesQuery.data]);
+
+  const fx = run.fxRateUsdToPkr;
+  const rows = React.useMemo(() => {
+    const byEmp = new Map<
+      string,
+      {
+        employee: CommissionLineItemPublic['employee'];
+        external: number;
+        commAllow: number;
+        tlReward: number;
+        upwork: number;
+        total: number;
+      }
+    >();
+    for (const li of run.lineItems) {
+      const e = byEmp.get(li.employeeId) ?? {
+        employee: li.employee,
+        external: 0,
+        commAllow: 0,
+        tlReward: 0,
+        upwork: 0,
+        total: 0,
+      };
+      const amt = li.finalAmountUsd;
+      if (categoryOf(li.project.category.slug) === 'upwork') e.upwork += amt;
+      else if (li.roleName === 'communicator') e.commAllow += amt;
+      else if (li.roleName === 'team_lead') e.tlReward += amt;
+      else e.external += amt;
+      e.total += amt;
+      byEmp.set(li.employeeId, e);
+    }
+    return Array.from(byEmp.values()).sort((a, b) => b.total - a.total);
+  }, [run.lineItems]);
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="rounded-fn-sm border-fn-border bg-fn-bg-panel overflow-hidden border">
+      <div className="border-fn-divider px-fn-5 py-fn-3_5 gap-fn-2 flex flex-wrap items-center border-b">
+        <h2 className="text-fn-fg font-fn-semibold text-[14px]">Consolidated draft</h2>
+        <Badge tone="default">{rows.length} employees</Badge>
+        <span className="text-fn-fg-faint ml-auto text-[11.5px]">
+          Commission payout in USD · salary + PKR shown for reference only
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-[12.5px]">
+          <thead>
+            <tr className="border-fn-divider text-fn-fg-faint border-b text-left">
+              <Th align="left">#</Th>
+              <Th align="left">Employee</Th>
+              <Th align="right">External</Th>
+              <Th align="right">Comm allow.</Th>
+              <Th align="right">TL reward</Th>
+              <Th align="right">Upwork</Th>
+              <Th align="right">Commission total</Th>
+              <Th align="right">Salary (ref)</Th>
+              <Th align="right">Approx PKR</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => {
+              const salaryUsd = (salaryByEmployee.get(r.employee.id) ?? null) as number | null;
+              return (
+                <tr key={r.employee.id} className="border-fn-divider border-t">
+                  <td className="px-fn-4 py-fn-2_5 text-fn-fg-faint tabular-nums">{i + 1}</td>
+                  <td className="px-fn-4 py-fn-2_5">
+                    <div className="flex flex-col">
+                      <span className="text-fn-fg font-fn-medium">{r.employee.fullName}</span>
+                      <span className="text-fn-fg-faint font-mono text-[10.5px]">
+                        {r.employee.eid}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-fn-4 py-fn-2_5 text-fn-fg-muted text-right tabular-nums">
+                    {money(r.external)}
+                  </td>
+                  <td className="px-fn-4 py-fn-2_5 text-fn-fg-muted text-right tabular-nums">
+                    {money(r.commAllow)}
+                  </td>
+                  <td className="px-fn-4 py-fn-2_5 text-fn-fg-muted text-right tabular-nums">
+                    {money(r.tlReward)}
+                  </td>
+                  <td className="px-fn-4 py-fn-2_5 text-fn-fg-muted text-right tabular-nums">
+                    {money(r.upwork)}
+                  </td>
+                  <td className="px-fn-4 py-fn-2_5 text-fn-fg font-fn-semibold text-right tabular-nums">
+                    {formatUsd(r.total)}
+                  </td>
+                  <td className="px-fn-4 py-fn-2_5 text-fn-fg-faint text-right tabular-nums">
+                    {salaryUsd != null ? money(salaryUsd) : '—'}
+                  </td>
+                  <td className="px-fn-4 py-fn-2_5 text-fn-fg-faint text-right tabular-nums">
+                    ~{formatPkr(r.total * fx)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/** Compact USD (no cents-forcing) for dense consolidated cells; '—' for zero. */
+function money(v: number): string {
+  return v === 0 ? '—' : formatUsd(v);
+}
+
+function formatPkr(v: number): string {
+  return `PKR ${Math.round(v).toLocaleString('en-PK')}`;
 }
 
 type CategoryTab = 'all' | 'external' | 'upwork' | 'b2b';
