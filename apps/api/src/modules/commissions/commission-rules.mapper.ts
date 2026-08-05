@@ -6,8 +6,10 @@ import type {
   CommissionRulePublic,
   CommissionRuleStatus,
   DesignationAmounts,
+  DurationMatrix,
   PoolMode,
   RevenueBrackets,
+  RoleAmounts,
   RolePercentages,
 } from '@futurenostics/types';
 
@@ -44,6 +46,8 @@ export function toCommissionRulePublic(row: CommissionRuleRowForMapping): Commis
     perPersonCapUsd: row.perPersonCapUsd != null ? Number(row.perPersonCapUsd) : null,
     revenueBrackets: (row.revenueBrackets as RevenueBrackets | null) ?? null,
     designationAmounts: (row.designationAmounts as DesignationAmounts | null) ?? null,
+    roleAmounts: (row.roleAmounts as RoleAmounts | null) ?? null,
+    durationMatrix: (row.durationMatrix as DurationMatrix | null) ?? null,
     rolePercentages: row.rolePercentages as RolePercentages,
     disbursementSchedule: (row.disbursementSchedule as Record<string, unknown> | null) ?? null,
     effectiveFrom: row.effectiveFrom.toISOString(),

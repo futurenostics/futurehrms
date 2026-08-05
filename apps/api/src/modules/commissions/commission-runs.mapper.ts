@@ -88,6 +88,8 @@ export function toCommissionRunSummary(row: CommissionRunRowForMapping): Commiss
     id: row.id,
     monthKey: row.monthKey,
     monthLabel: monthLabel(row.monthKey),
+    periodStart: row.periodStart?.toISOString() ?? null,
+    periodEnd: row.periodEnd?.toISOString() ?? null,
     status: row.status as CommissionRunStatus,
     fxRateUsdToPkr: Number(row.fxRateUsdToPkr),
     totalDisbursementUsd: Math.round(totalDisbursementUsd * 100) / 100,

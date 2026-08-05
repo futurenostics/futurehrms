@@ -20,6 +20,10 @@ export const poolModeSchema = z.enum([
   'net_revenue_share',
   /** B2B: no shared pool — each assignee earns a fixed amount by designation. */
   'designation_fixed',
+  /** Eng External: no shared pool — each assignee earns a fixed amount by role. */
+  'role_fixed',
+  /** BD External: (sub-type × role) matrix of time-limited fixed amounts. */
+  'duration_matrix',
 ]);
 export type PoolMode = z.infer<typeof poolModeSchema>;
 
@@ -43,6 +47,51 @@ export const designationAmountsSchema = z
     }
   });
 export type DesignationAmounts = z.infer<typeof designationAmountsSchema>;
+
+/** One role → fixed monthly amount row for `poolMode='role_fixed'`. */
+export const roleAmountSchema = z.object({
+  role: z.string().trim().min(1).max(40),
+  amountUsd: z.coerce.number().min(0).max(99_999_999.99),
+});
+export type RoleAmount = z.infer<typeof roleAmountSchema>;
+
+export const roleAmountsSchema = z
+  .array(roleAmountSchema)
+  .min(1, 'At least one role amount required')
+  .superRefine((rows, ctx) => {
+    const seen = new Set<string>();
+    for (const r of rows) {
+      if (seen.has(r.role)) {
+        ctx.addIssue({ code: 'custom', message: `Duplicate role: ${r.role}` });
+      }
+      seen.add(r.role);
+    }
+  });
+export type RoleAmounts = z.infer<typeof roleAmountsSchema>;
+
+/** One (sub-type × role) cell of the BD-External duration matrix. */
+export const durationMatrixRowSchema = z.object({
+  subType: z.string().trim().min(1).max(40),
+  role: z.string().trim().min(1).max(40),
+  amountUsd: z.coerce.number().min(0).max(99_999_999.99),
+  durationMonths: z.coerce.number().int().min(1).max(120),
+});
+export type DurationMatrixRow = z.infer<typeof durationMatrixRowSchema>;
+
+export const durationMatrixSchema = z
+  .array(durationMatrixRowSchema)
+  .min(1, 'At least one matrix row required')
+  .superRefine((rows, ctx) => {
+    const seen = new Set<string>();
+    for (const r of rows) {
+      const key = `${r.subType}|${r.role}`;
+      if (seen.has(key)) {
+        ctx.addIssue({ code: 'custom', message: `Duplicate row: ${r.subType} × ${r.role}` });
+      }
+      seen.add(key);
+    }
+  });
+export type DurationMatrix = z.infer<typeof durationMatrixSchema>;
 
 /**
  * A single revenue bracket for `poolMode='tiered'`. `maxUsd=null`
@@ -138,6 +187,10 @@ const commissionRuleBaseSchema = z.object({
   revenueBrackets: revenueBracketsSchema.nullable().optional(),
   /** Designation → amount ladder for `poolMode='designation_fixed'`; null otherwise. */
   designationAmounts: designationAmountsSchema.nullable().optional(),
+  /** Role → amount ladder for `poolMode='role_fixed'`; null otherwise. */
+  roleAmounts: roleAmountsSchema.nullable().optional(),
+  /** (sub-type × role) matrix for `poolMode='duration_matrix'`; null otherwise. */
+  durationMatrix: durationMatrixSchema.nullable().optional(),
   rolePercentages: rolePercentagesSchema,
   disbursementSchedule: z.record(z.string(), z.unknown()).nullable().optional(),
   effectiveFrom: z.string().min(1).optional(),
@@ -157,6 +210,8 @@ function commissionRuleRefine(
     poolMode?: PoolMode;
     revenueBrackets?: RevenueBrackets | null;
     designationAmounts?: DesignationAmounts | null;
+    roleAmounts?: RoleAmounts | null;
+    durationMatrix?: DurationMatrix | null;
     status?: CommissionRuleStatus;
     perPersonFloorUsd?: number | null;
     perPersonCapUsd?: number | null;
@@ -212,6 +267,41 @@ function commissionRuleRefine(
       path: ['designationAmounts'],
     });
   }
+
+  if (input.poolMode === 'role_fixed') {
+    if (input.status !== 'pending' && (!input.roleAmounts || input.roleAmounts.length === 0)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Role-fixed rules require at least one role amount',
+        path: ['roleAmounts'],
+      });
+    }
+  } else if (input.poolMode !== undefined && input.roleAmounts) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'Role amounts only apply to role-fixed rules',
+      path: ['roleAmounts'],
+    });
+  }
+
+  if (input.poolMode === 'duration_matrix') {
+    if (
+      input.status !== 'pending' &&
+      (!input.durationMatrix || input.durationMatrix.length === 0)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Duration-matrix rules require at least one matrix row',
+        path: ['durationMatrix'],
+      });
+    }
+  } else if (input.poolMode !== undefined && input.durationMatrix) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'Duration matrix only applies to duration-matrix rules',
+      path: ['durationMatrix'],
+    });
+  }
 }
 
 export const commissionRuleCreateSchema =
@@ -248,6 +338,8 @@ export const commissionRulePublicSchema = z.object({
   perPersonCapUsd: z.number().nullable(),
   revenueBrackets: revenueBracketsSchema.nullable(),
   designationAmounts: designationAmountsSchema.nullable(),
+  roleAmounts: roleAmountsSchema.nullable(),
+  durationMatrix: durationMatrixSchema.nullable(),
   rolePercentages: rolePercentagesSchema,
   disbursementSchedule: z.record(z.string(), z.unknown()).nullable(),
   effectiveFrom: z.string(),

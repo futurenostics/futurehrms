@@ -346,12 +346,17 @@ function CreateRunDialog({
   const [monthKey, setMonthKey] = React.useState(currentMonthKey());
   const [fxRate, setFxRate] = React.useState('0.0035');
   const [notes, setNotes] = React.useState('');
+  // Optional custom processing window (Upwork custom date-range).
+  const [periodStart, setPeriodStart] = React.useState('');
+  const [periodEnd, setPeriodEnd] = React.useState('');
 
   React.useEffect(() => {
     if (open) {
       setMonthKey(currentMonthKey());
       setFxRate('0.0035');
       setNotes('');
+      setPeriodStart('');
+      setPeriodEnd('');
     }
   }, [open]);
 
@@ -360,6 +365,8 @@ function CreateRunDialog({
       const created = await createMutation.mutateAsync({
         monthKey,
         fxRateUsdToPkr: Number(fxRate),
+        periodStart: periodStart || undefined,
+        periodEnd: periodEnd || undefined,
         notes: notes || undefined,
       });
       toast.success(
@@ -402,6 +409,22 @@ function CreateRunDialog({
             />
             <span className="text-fn-fg-faint text-[11.5px]">
               Pinned to the run. Display-only in Phase 2; Phase 7 payslips read it.
+            </span>
+          </div>
+          <div className="gap-fn-1_5 flex flex-col">
+            <label className="text-fn-fg font-fn-medium text-[12.5px]">
+              Custom processing period (optional)
+            </label>
+            <div className="gap-fn-2 grid grid-cols-2">
+              <Input
+                type="date"
+                value={periodStart}
+                onChange={(e) => setPeriodStart(e.target.value)}
+              />
+              <Input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
+            </div>
+            <span className="text-fn-fg-faint text-[11.5px]">
+              For Upwork custom date-range billing. Leave blank to use the whole month.
             </span>
           </div>
           <div className="gap-fn-1_5 flex flex-col">

@@ -486,6 +486,17 @@ model CommissionRule {
   // for all other pool modes.
   designationAmounts Json?
 
+  // Role → fixed monthly amount ladder for poolMode='role_fixed'
+  // (Engineering External). JSON array: [{ role, amountUsd }]
+  // Each assignee earns the amount matching their role. Null otherwise.
+  roleAmounts Json?
+
+  // (sub-type × role) matrix for poolMode='duration_matrix' (BD
+  // External). JSON array: [{ subType, role, amountUsd, durationMonths }]
+  // Pays amountUsd/month for the first durationMonths calendar months
+  // from project start, then auto-stops. Null otherwise.
+  durationMatrix Json?
+
   // Projects whose revenueUsd is below this threshold get no line
   // items in the monthly run. 0 = no threshold (the default).
   minProjectRevenueUsd Decimal @default(0) @db.Decimal(12, 2)
@@ -550,6 +561,12 @@ model CommissionRun {
 
   // 'YYYY-MM' — the month the run is FOR (not when created).
   monthKey String
+
+  // Optional custom processing window (Upwork custom date-range). When
+  // both are set, the calc engine uses them as the payout window
+  // instead of monthKey's calendar-month bounds. Null = full month.
+  periodStart DateTime?
+  periodEnd   DateTime?
 
   // Pinned FX rate for downstream PKR conversion. Display-only in
   // Phase 2; Phase 7 reads it to mint payslips.

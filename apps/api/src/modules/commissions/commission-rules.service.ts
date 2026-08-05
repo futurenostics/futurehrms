@@ -260,6 +260,14 @@ export class CommissionRulesService {
           input.poolMode === 'designation_fixed' && input.designationAmounts
             ? (input.designationAmounts as unknown as Prisma.InputJsonValue)
             : Prisma.DbNull,
+        roleAmounts:
+          input.poolMode === 'role_fixed' && input.roleAmounts
+            ? (input.roleAmounts as unknown as Prisma.InputJsonValue)
+            : Prisma.DbNull,
+        durationMatrix:
+          input.poolMode === 'duration_matrix' && input.durationMatrix
+            ? (input.durationMatrix as unknown as Prisma.InputJsonValue)
+            : Prisma.DbNull,
         rolePercentages: input.rolePercentages as unknown as Prisma.InputJsonValue,
         disbursementSchedule:
           (input.disbursementSchedule as Prisma.InputJsonValue | undefined) ?? Prisma.DbNull,
@@ -322,6 +330,22 @@ export class CommissionRulesService {
     } else if (input.poolMode !== undefined && input.poolMode !== 'designation_fixed') {
       // Switching away from designation_fixed clears any stale ladder.
       data.designationAmounts = Prisma.DbNull;
+    }
+    if (input.roleAmounts !== undefined) {
+      data.roleAmounts = input.roleAmounts
+        ? (input.roleAmounts as unknown as Prisma.InputJsonValue)
+        : Prisma.DbNull;
+    } else if (input.poolMode !== undefined && input.poolMode !== 'role_fixed') {
+      // Switching away from role_fixed clears any stale ladder.
+      data.roleAmounts = Prisma.DbNull;
+    }
+    if (input.durationMatrix !== undefined) {
+      data.durationMatrix = input.durationMatrix
+        ? (input.durationMatrix as unknown as Prisma.InputJsonValue)
+        : Prisma.DbNull;
+    } else if (input.poolMode !== undefined && input.poolMode !== 'duration_matrix') {
+      // Switching away from duration_matrix clears any stale matrix.
+      data.durationMatrix = Prisma.DbNull;
     }
     if (input.rolePercentages !== undefined) {
       this.validateRolePercentages(

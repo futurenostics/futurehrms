@@ -20,6 +20,8 @@ import { describe, expect, it } from 'vitest';
 import {
   calcProjectLineItems,
   coerceDesignationAmounts,
+  coerceDurationMatrix,
+  coerceRoleAmounts,
   coerceRevenueBrackets,
   computeTotalPool,
   computeFinal,
@@ -560,5 +562,193 @@ describe('coerceDesignationAmounts', () => {
     expect(coerceDesignationAmounts('nope')).toBeNull();
     expect(coerceDesignationAmounts([{ designation: 'ATL' }])).toBeNull();
     expect(coerceDesignationAmounts([{ amountUsd: 5 }])).toBeNull();
+  });
+});
+
+/* ---------- Engineering External: role_fixed ---------- */
+
+describe('role_fixed (Engineering External)', () => {
+  const RULE = {
+    poolMode: 'role_fixed' as const,
+    poolValue: 0,
+    minProjectRevenueUsd: 0,
+    roleAmounts: [
+      { role: 'winner', amountUsd: 500 },
+      { role: 'communicator', amountUsd: 300 },
+      { role: 'team_lead', amountUsd: 100 },
+    ],
+  };
+
+  it('pays each assignee the fixed amount for their role; unknown role → 0', () => {
+    const project = makeProject({
+      revenueUsd: 0,
+      startDate: new Date('2026-05-01T00:00:00Z'),
+      expectedCompletionDate: null,
+      rule: RULE,
+      assignments: [
+        { employeeId: 'a', roleName: 'winner', percentage: 0 },
+        { employeeId: 'b', roleName: 'communicator', percentage: 0 },
+        { employeeId: 'c', roleName: 'team_lead', percentage: 0 },
+        { employeeId: 'd', roleName: 'eligible_team', percentage: 0 },
+      ],
+    });
+    const items = calcProjectLineItems(project, { monthKey: '2026-05' });
+    const byId = Object.fromEntries(items.map((i) => [i.employeeId, i.calculatedAmountUsd]));
+    expect(byId).toEqual({ a: 500, b: 300, c: 100, d: 0 });
+  });
+
+  it('prorates role amounts across a multi-month project', () => {
+    const project = makeProject({
+      revenueUsd: 0,
+      startDate: new Date('2026-05-01T00:00:00Z'),
+      expectedCompletionDate: new Date('2026-06-30T00:00:00Z'),
+      rule: RULE,
+      assignments: [{ employeeId: 'a', roleName: 'winner', percentage: 0 }],
+    });
+    const items = calcProjectLineItems(project, { monthKey: '2026-05' });
+    // 500 * (31/61) = 254.098… → 254.1
+    expect(items[0].calculatedAmountUsd).toBe(254.1);
+  });
+
+  it('does not build a shared pool for role_fixed', () => {
+    expect(computeTotalPool(RULE, 100_000)).toBe(0);
+  });
+});
+
+describe('coerceRoleAmounts', () => {
+  it('parses a well-formed array', () => {
+    expect(coerceRoleAmounts([{ role: 'winner', amountUsd: 500 }])).toEqual([
+      { role: 'winner', amountUsd: 500 },
+    ]);
+  });
+  it('returns null on malformed input', () => {
+    expect(coerceRoleAmounts('nope')).toBeNull();
+    expect(coerceRoleAmounts([{ role: 'winner' }])).toBeNull();
+    expect(coerceRoleAmounts([{ amountUsd: 5 }])).toBeNull();
+  });
+});
+
+/* ---------- BD External: duration_matrix ---------- */
+
+describe('duration_matrix (BD External)', () => {
+  const RULE = {
+    poolMode: 'duration_matrix' as const,
+    poolValue: 0,
+    minProjectRevenueUsd: 0,
+    durationMatrix: [
+      { subType: 'full_time', role: 'associate', amountUsd: 50, durationMonths: 6 },
+      { subType: 'full_time', role: 'manager', amountUsd: 30, durationMonths: 6 },
+      { subType: 'part_time', role: 'associate', amountUsd: 50, durationMonths: 2 },
+    ],
+  };
+
+  function bd(monthKey: string) {
+    const project = makeProject({
+      revenueUsd: 0,
+      subType: 'full_time',
+      startDate: new Date('2026-01-01T00:00:00Z'),
+      expectedCompletionDate: null,
+      rule: RULE,
+      assignments: [
+        { employeeId: 'assoc', roleName: 'associate', percentage: 0 },
+        { employeeId: 'mgr', roleName: 'manager', percentage: 0 },
+        { employeeId: 'other', roleName: 'winner', percentage: 0 }, // not in matrix
+      ],
+    });
+    const items = calcProjectLineItems(project, { monthKey });
+    return Object.fromEntries(items.map((i) => [i.employeeId, i.calculatedAmountUsd]));
+  }
+
+  it('pays the matrix amount for months within the duration', () => {
+    expect(bd('2026-01')).toEqual({ assoc: 50, mgr: 30, other: 0 }); // month 1
+    expect(bd('2026-06')).toEqual({ assoc: 50, mgr: 30, other: 0 }); // month 6
+  });
+
+  it('auto-stops after the duration expires', () => {
+    expect(bd('2026-07')).toEqual({ assoc: 0, mgr: 0, other: 0 }); // month 7 > 6
+  });
+
+  it('pays nothing before the project start month', () => {
+    const project = makeProject({
+      revenueUsd: 0,
+      subType: 'full_time',
+      startDate: new Date('2026-03-01T00:00:00Z'),
+      expectedCompletionDate: null,
+      rule: RULE,
+      assignments: [{ employeeId: 'assoc', roleName: 'associate', percentage: 0 }],
+    });
+    expect(calcProjectLineItems(project, { monthKey: '2026-02' })).toEqual([]);
+  });
+
+  it('shorter duration for a different sub-type', () => {
+    const project = makeProject({
+      revenueUsd: 0,
+      subType: 'part_time',
+      startDate: new Date('2026-01-01T00:00:00Z'),
+      expectedCompletionDate: null,
+      rule: RULE,
+      assignments: [{ employeeId: 'assoc', roleName: 'associate', percentage: 0 }],
+    });
+    expect(calcProjectLineItems(project, { monthKey: '2026-02' })[0].calculatedAmountUsd).toBe(50); // month 2 <= 2
+    expect(calcProjectLineItems(project, { monthKey: '2026-03' })[0].calculatedAmountUsd).toBe(0); // month 3 > 2
+  });
+
+  it('does not build a shared pool', () => {
+    expect(computeTotalPool(RULE, 100_000)).toBe(0);
+  });
+});
+
+describe('coerceDurationMatrix', () => {
+  it('parses a well-formed matrix', () => {
+    expect(
+      coerceDurationMatrix([
+        { subType: 'full_time', role: 'associate', amountUsd: 50, durationMonths: 6 },
+      ]),
+    ).toEqual([{ subType: 'full_time', role: 'associate', amountUsd: 50, durationMonths: 6 }]);
+  });
+  it('returns null on malformed input', () => {
+    expect(coerceDurationMatrix('nope')).toBeNull();
+    expect(coerceDurationMatrix([{ subType: 'x', role: 'y', amountUsd: 5 }])).toBeNull();
+    expect(coerceDurationMatrix([{ role: 'y', amountUsd: 5, durationMonths: 6 }])).toBeNull();
+  });
+});
+
+/* ---------- Custom processing period (Upwork date-range) ---------- */
+
+describe('custom processing period', () => {
+  it('uses the custom window instead of the calendar month', () => {
+    const project = makeProject({
+      revenueUsd: 10_000,
+      startDate: new Date('2026-05-01T00:00:00Z'),
+      expectedCompletionDate: new Date('2026-07-31T00:00:00Z'),
+      rule: { poolMode: 'percentage', poolValue: 24, minProjectRevenueUsd: 0 },
+      assignments: [{ employeeId: 'e1', roleName: 'winner', percentage: 100 }],
+    });
+    // Period spans the whole 92-day project → full pool, denominator 92.
+    const items = calcProjectLineItems(project, {
+      monthKey: '2026-05',
+      periodStart: new Date('2026-05-01T00:00:00Z'),
+      periodEnd: new Date('2026-07-31T00:00:00Z'),
+    });
+    expect(items[0].calculatedAmountUsd).toBe(2_400);
+    expect(items[0].monthFractionDenominator).toBe(92);
+  });
+
+  it('net-share over a custom window pays the winner their % of net', () => {
+    const project = makeProject({
+      revenueUsd: 10_000,
+      developerSalaryUsd: 3_000,
+      startDate: new Date('2026-05-01T00:00:00Z'),
+      expectedCompletionDate: new Date('2026-05-31T00:00:00Z'),
+      rule: { poolMode: 'net_revenue_share', poolValue: 0, minProjectRevenueUsd: 0 },
+      assignments: [{ employeeId: 'bd', roleName: 'winner', percentage: 20 }],
+    });
+    const items = calcProjectLineItems(project, {
+      monthKey: '2026-05',
+      periodStart: new Date('2026-05-01T00:00:00Z'),
+      periodEnd: new Date('2026-05-31T00:00:00Z'),
+    });
+    // net 7,000 × 20% = 1,400 (full window overlap).
+    expect(items[0].calculatedAmountUsd).toBe(1_400);
   });
 });
