@@ -154,8 +154,12 @@ export class EmployeesController {
   }
 
   @Get(':id/assigned-projects')
-  async assignedProjects(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
-    return this.employees.assignedProjects(user, id);
+  async assignedProjects(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Query('scope') scope?: string,
+  ) {
+    return this.employees.assignedProjects(user, id, scope === 'all' ? 'all' : 'active');
   }
 
   /* ---------- Writes ---------- */

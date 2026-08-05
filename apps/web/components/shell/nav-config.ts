@@ -13,6 +13,7 @@ import {
   Settings,
   Shield,
   Star,
+  UserCircle,
   Users,
 } from 'lucide-react';
 
@@ -55,7 +56,10 @@ export interface NavGroup {
 export const navGroups: NavGroup[] = [
   {
     label: 'Workspace',
-    items: [{ key: 'dashboard', label: 'Dashboard', icon: Home, href: '/dashboard' }],
+    items: [
+      { key: 'dashboard', label: 'Dashboard', icon: Home, href: '/dashboard' },
+      { key: 'portal', label: 'My Portal', icon: UserCircle, href: '/portal' },
+    ],
   },
   {
     label: 'HR Core',

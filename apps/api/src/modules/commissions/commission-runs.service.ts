@@ -45,7 +45,10 @@ import {
   type CommissionRunStatus,
   type CommissionRunSubmitInput,
   type CommissionRunSummary,
+  type CommissionTypeBreakdown,
   type EmployeeCommissionBreakdown,
+  type EmployeeCommissionHistory,
+  type EmployeeCommissionHistoryRow,
   type EmployeeCommissionTrend,
 } from '@futurenostics/types';
 import type { AuthenticatedUser } from '../../core/auth/types';
@@ -72,6 +75,50 @@ import {
   toCommissionRunDetail,
   toCommissionRunSummary,
 } from './commission-runs.mapper';
+
+/* ---------- Portal type-breakdown helpers (§8.2) ---------- */
+
+type LineForType = {
+  finalAmountUsd: number;
+  roleName: string;
+  project: { category: { slug: string } };
+};
+
+/**
+ * Bucket a line item into one of the four portal commission types.
+ * Documented rule (see commissionTypeBreakdownSchema): Upwork category →
+ * upwork; team_lead role → TL reward; eligible_team role → allowance;
+ * everything else → external.
+ */
+function commissionTypeOf(li: LineForType): keyof CommissionTypeBreakdown {
+  const slug = li.project.category.slug;
+  if (slug === 'upwork' || slug.startsWith('upwork-')) return 'upwork';
+  if (li.roleName === 'team_lead') return 'tlReward';
+  if (li.roleName === 'eligible_team') return 'allowance';
+  return 'external';
+}
+
+function typeBreakdownOf(items: LineForType[]): CommissionTypeBreakdown {
+  const t = { external: 0, allowance: 0, tlReward: 0, upwork: 0 };
+  for (const li of items) t[commissionTypeOf(li)] += li.finalAmountUsd;
+  return {
+    external: roundUsd(t.external),
+    allowance: roundUsd(t.allowance),
+    tlReward: roundUsd(t.tlReward),
+    upwork: roundUsd(t.upwork),
+  };
+}
+
+/** The last `monthsBack` month keys, newest first, as 'YYYY-MM'. */
+function recentMonthKeys(monthsBack: number): string[] {
+  const now = new Date();
+  const keys: string[] = [];
+  for (let i = 0; i < monthsBack; i++) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    keys.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`);
+  }
+  return keys;
+}
 
 @Injectable()
 export class CommissionRunsService {
@@ -1295,9 +1342,113 @@ export class CommissionRunsService {
       monthKey,
       monthLabel: monthLabel(monthKey),
       totalUsd,
+      typeBreakdown: typeBreakdownOf(lineItems),
+      fxRateUsdToPkr: run ? Number(run.fxRateUsdToPkr) : null,
       lineItems,
       runId: run?.id ?? null,
       runStatus: (run?.status as CommissionRunStatus | undefined) ?? null,
+    };
+  }
+
+  /**
+   * 12-month (default) commission history for the §8.2 portal table —
+   * each row split into External / Allowance / TL Reward / Upwork plus
+   * the run status. Self or `view_all_breakdowns`.
+   */
+  async employeeCommissionHistory(
+    viewer: AuthenticatedUser,
+    employeeId: string,
+    monthsBack: number,
+  ): Promise<EmployeeCommissionHistory> {
+    if (
+      viewer.employeeId !== employeeId &&
+      !viewer.permissions.includes('commissions:view_all_breakdowns')
+    ) {
+      throw new ForbiddenException('commissions:view_all_breakdowns required');
+    }
+
+    const monthKeys = recentMonthKeys(monthsBack);
+    const runs = await prisma.commissionRun.findMany({
+      where: { monthKey: { in: monthKeys } },
+      include: {
+        lineItems: {
+          where: { employeeId },
+          include: {
+            project: { include: { category: true } },
+            employee: { include: { department: true, designation: true } },
+          },
+        },
+      },
+    });
+    const byMonth = new Map(runs.map((r) => [r.monthKey, r]));
+
+    const rows: EmployeeCommissionHistoryRow[] = monthKeys.map((monthKey) => {
+      const run = byMonth.get(monthKey);
+      const items = run?.lineItems.map(toCommissionLineItemPublic) ?? [];
+      const t = typeBreakdownOf(items);
+      return {
+        monthKey,
+        monthLabel: monthLabel(monthKey),
+        external: t.external,
+        allowance: t.allowance,
+        tlReward: t.tlReward,
+        upwork: t.upwork,
+        total: roundUsd(items.reduce((s, li) => s + li.finalAmountUsd, 0)),
+        status: (run?.status as CommissionRunStatus | undefined) ?? null,
+      };
+    });
+
+    return { employeeId, rows };
+  }
+
+  /**
+   * Per-employee payslip for one month as a ReportData (rendered to PDF
+   * by the controller). Only available once the month's run is approved
+   * or locked. Self or `view_all_breakdowns`.
+   */
+  async buildEmployeePayslip(
+    viewer: AuthenticatedUser,
+    employeeId: string,
+    monthKey: string,
+  ): Promise<{ filename: string; data: import('../../core/reports/report-formats').ReportData }> {
+    const breakdown = await this.employeeBreakdown(viewer, employeeId, monthKey);
+    if (!breakdown.runStatus || !['approved', 'locked'].includes(breakdown.runStatus)) {
+      throw new BadRequestException('Payslip is only available once the month is approved');
+    }
+
+    const employee = await prisma.employee.findUnique({
+      where: { id: employeeId },
+      include: { department: true, designation: true },
+    });
+    const fx = breakdown.fxRateUsdToPkr ?? 0;
+    const t = breakdown.typeBreakdown;
+
+    const rows = [
+      { item: 'External Commission', usd: t.external.toFixed(2) },
+      { item: 'Commission Allowance', usd: t.allowance.toFixed(2) },
+      { item: 'TL Reward', usd: t.tlReward.toFixed(2) },
+      { item: 'Upwork Commission', usd: t.upwork.toFixed(2) },
+      { item: 'Total', usd: breakdown.totalUsd.toFixed(2) },
+      {
+        item: 'Approx PKR (@ ' + fx + ')',
+        usd: fx ? Math.round(breakdown.totalUsd * fx).toLocaleString('en-US') : '—',
+      },
+    ];
+
+    return {
+      filename: `payslip-${employee?.eid ?? employeeId}-${monthKey}.pdf`,
+      data: {
+        title: `Commission Payslip — ${breakdown.monthLabel}`,
+        subtitle: `${employee?.fullName ?? employeeId} · ${employee?.eid ?? ''} · ${
+          employee?.designation?.name ?? ''
+        } · Status: ${breakdown.runStatus}`,
+        columns: [
+          { key: 'item', header: 'Component', weight: 2 },
+          { key: 'usd', header: 'Amount (USD)', align: 'right', weight: 1 },
+        ],
+        rows,
+        generatedAt: new Date(),
+      },
     };
   }
 

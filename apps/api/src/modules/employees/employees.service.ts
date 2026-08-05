@@ -169,6 +169,7 @@ export class EmployeesService {
   async assignedProjects(
     viewer: AuthenticatedUser,
     id: string,
+    scope: 'active' | 'all' = 'active',
   ): Promise<
     Array<{
       projectId: string;
@@ -178,6 +179,11 @@ export class EmployeesService {
       roleName: string;
       percentage: number;
       revenueUsd: number;
+      startDate: string;
+      categoryName: string;
+      categorySlug: string;
+      /** This employee's total commission earned on the project (all runs). */
+      commissionUsd: number;
     }>
   > {
     const employee = await prisma.employee.findUnique({
@@ -187,21 +193,47 @@ export class EmployeesService {
     if (!employee) throw new NotFoundException('Employee not found');
     assertEmployeeReadable(viewer, { id: employee.id, departmentId: employee.departmentId });
 
+    // `active` keeps the legacy filter; `all` includes completed/archived
+    // for the portal's inactive-projects view.
+    const statusFilter =
+      scope === 'active' ? { status: { in: ['active', 'in_billing', 'on_hold'] } } : {};
+
     const rows = await prisma.projectAssignment.findMany({
       where: {
         employeeId: id,
         removedAt: null,
-        project: { deletedAt: null, status: { in: ['active', 'in_billing', 'on_hold'] } },
+        project: { deletedAt: null, ...statusFilter },
       },
       select: {
         roleName: true,
         percentage: true,
         project: {
-          select: { id: true, name: true, clientName: true, status: true, revenueUsd: true },
+          select: {
+            id: true,
+            name: true,
+            clientName: true,
+            status: true,
+            revenueUsd: true,
+            startDate: true,
+            category: { select: { name: true, slug: true } },
+          },
         },
       },
       orderBy: { project: { name: 'asc' } },
     });
+
+    // Per-project commission earned by this employee across all runs.
+    const commissionByProject = new Map<string, number>();
+    if (rows.length) {
+      const grouped = await prisma.commissionLineItem.groupBy({
+        by: ['projectId'],
+        where: { employeeId: id, projectId: { in: rows.map((r) => r.project.id) } },
+        _sum: { finalAmountUsd: true },
+      });
+      for (const g of grouped) {
+        commissionByProject.set(g.projectId, Number(g._sum.finalAmountUsd ?? 0));
+      }
+    }
 
     return rows.map((r) => ({
       projectId: r.project.id,
@@ -211,6 +243,10 @@ export class EmployeesService {
       roleName: r.roleName,
       percentage: Number(r.percentage),
       revenueUsd: Number(r.project.revenueUsd),
+      startDate: r.project.startDate.toISOString(),
+      categoryName: r.project.category?.name ?? '—',
+      categorySlug: r.project.category?.slug ?? '',
+      commissionUsd: Math.round((commissionByProject.get(r.project.id) ?? 0) * 100) / 100,
     }));
   }
 
