@@ -15,9 +15,10 @@ import type {
   CommissionRunSubmitInput,
   CommissionRunSummary,
   EmployeeCommissionBreakdown,
+  EmployeeCommissionHistory,
   EmployeeCommissionTrend,
 } from '@futurenostics/types';
-import { apiFetch } from '@/lib/api-client';
+import { apiFetch, downloadFile } from '@/lib/api-client';
 
 const KEY = {
   list: (q: Partial<CommissionRunListQuery>) => ['commission-runs', 'list', q] as const,
@@ -26,6 +27,8 @@ const KEY = {
     ['employees', employeeId, 'commission-breakdown', month] as const,
   employeeTrend: (employeeId: string, monthsBack: number) =>
     ['employees', employeeId, 'commission-trend', monthsBack] as const,
+  employeeHistory: (employeeId: string, monthsBack: number) =>
+    ['employees', employeeId, 'commission-history', monthsBack] as const,
   analytics: (id: string, topN: number) => ['commission-runs', 'analytics', id, topN] as const,
   trend: (monthsBack: number) => ['commission-runs', 'trend', monthsBack] as const,
 };
@@ -235,6 +238,29 @@ export function useEmployeeCommissionTrend(employeeId: string | null | undefined
       ),
     enabled: Boolean(employeeId),
   });
+}
+
+/** §8.2 portal table — month-by-month type-split commission history. */
+export function useEmployeeCommissionHistory(
+  employeeId: string | null | undefined,
+  monthsBack = 12,
+) {
+  return useQuery<EmployeeCommissionHistory>({
+    queryKey: KEY.employeeHistory(employeeId ?? '', monthsBack),
+    queryFn: () =>
+      apiFetch<EmployeeCommissionHistory>(
+        `/api/employees/${employeeId}/commission-history?monthsBack=${monthsBack}`,
+      ),
+    enabled: Boolean(employeeId),
+  });
+}
+
+/** Download the PDF payslip for an approved/locked month. */
+export async function downloadPayslip(employeeId: string, monthKey: string): Promise<void> {
+  await downloadFile(
+    `/api/employees/${employeeId}/payslip.pdf?month=${monthKey}`,
+    `payslip-${monthKey}.pdf`,
+  );
 }
 
 function invalidateRunQueries(qc: QueryClient, id?: string): void {

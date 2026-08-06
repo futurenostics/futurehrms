@@ -319,13 +319,26 @@ export interface AssignedProject {
   roleName: string;
   percentage: number;
   revenueUsd: number;
+  startDate: string;
+  categoryName: string;
+  categorySlug: string;
+  commissionUsd: number;
 }
 
-/** Active projects an employee is assigned to — for the read-only portal view. */
-export function useEmployeeAssignedProjects(id: string | null | undefined) {
+/**
+ * Projects an employee is assigned to — for the read-only portal view.
+ * `scope='active'` (default) returns only active/in-billing/on-hold
+ * projects; `scope='all'` also includes completed/archived for the
+ * portal's inactive-projects view.
+ */
+export function useEmployeeAssignedProjects(
+  id: string | null | undefined,
+  scope: 'active' | 'all' = 'active',
+) {
   return useQuery<AssignedProject[]>({
-    queryKey: ['employees', id, 'assigned-projects'],
-    queryFn: () => apiFetch<AssignedProject[]>(`/api/employees/${id}/assigned-projects`),
+    queryKey: ['employees', id, 'assigned-projects', scope],
+    queryFn: () =>
+      apiFetch<AssignedProject[]>(`/api/employees/${id}/assigned-projects?scope=${scope}`),
     enabled: Boolean(id),
   });
 }

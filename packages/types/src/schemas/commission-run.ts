@@ -257,17 +257,58 @@ export type CommissionRunRejectInput = z.infer<typeof commissionRunRejectSchema>
 
 /* ---------- Per-employee breakdown ---------- */
 
+/**
+ * Commission split by the four self-service portal buckets (§8.2).
+ * Derived from each line item's project category + role:
+ *   - upwork:     project category slug starts with 'upwork'
+ *   - tlReward:   roleName 'team_lead'
+ *   - allowance:  roleName 'eligible_team' (broad-team commission allowance)
+ *   - external:   everything else (external / B2B winner + communicator)
+ */
+export const commissionTypeBreakdownSchema = z.object({
+  external: z.number(),
+  allowance: z.number(),
+  tlReward: z.number(),
+  upwork: z.number(),
+});
+export type CommissionTypeBreakdown = z.infer<typeof commissionTypeBreakdownSchema>;
+
 export const employeeCommissionBreakdownSchema = z.object({
   employeeId: z.string(),
   monthKey: z.string(),
   monthLabel: z.string(),
   totalUsd: z.number(),
+  /** Split into the portal's External / Allowance / TL Reward / Upwork buckets. */
+  typeBreakdown: commissionTypeBreakdownSchema,
+  /** Run FX rate (USD→PKR) — for the portal's USD-salary conversion. Null when no run. */
+  fxRateUsdToPkr: z.number().nullable(),
   lineItems: z.array(commissionLineItemPublicSchema),
   /** Source run — `null` when the month has no run yet. */
   runId: z.string().nullable(),
   runStatus: commissionRunStatusSchema.nullable(),
 });
 export type EmployeeCommissionBreakdown = z.infer<typeof employeeCommissionBreakdownSchema>;
+
+/* ---------- Per-employee commission history (§8.2 table) ---------- */
+
+export const employeeCommissionHistoryRowSchema = z.object({
+  monthKey: z.string(),
+  monthLabel: z.string(),
+  external: z.number(),
+  allowance: z.number(),
+  tlReward: z.number(),
+  upwork: z.number(),
+  total: z.number(),
+  /** Run status for the month, or null when no run exists. */
+  status: commissionRunStatusSchema.nullable(),
+});
+export type EmployeeCommissionHistoryRow = z.infer<typeof employeeCommissionHistoryRowSchema>;
+
+export const employeeCommissionHistorySchema = z.object({
+  employeeId: z.string(),
+  rows: z.array(employeeCommissionHistoryRowSchema),
+});
+export type EmployeeCommissionHistory = z.infer<typeof employeeCommissionHistorySchema>;
 
 export const employeeCommissionTrendPointSchema = z.object({
   monthKey: z.string(),
