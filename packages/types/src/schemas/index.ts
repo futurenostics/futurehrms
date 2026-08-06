@@ -11,4 +11,5 @@ export * from './project';
 export * from './commission-rule';
 export * from './commission-run';
 export * from './commission-dispute';
+export * from './reminder-task';
 export * from './report';

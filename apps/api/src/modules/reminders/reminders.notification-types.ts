@@ -102,4 +102,26 @@ export const REMINDERS_NOTIFICATION_TYPES: NotificationTypeDefinition[] = [
     linkTemplate: '/employees/{{employeeId}}',
     module: 'reminders',
   },
+  {
+    key: 'reminders.increment-eligibility',
+    name: 'Increment eligibility',
+    description: 'Fires when an employee is due for a salary review / increment.',
+    severity: 'info',
+    defaultChannels: ['in_app', 'email'],
+    titleTemplate: 'Increment review due: {{fullName}}',
+    bodyTemplate:
+      '{{fullName}} is due for a salary review. Assess increment eligibility and record the outcome.',
+    linkTemplate: '/employees/{{employeeId}}',
+    module: 'reminders',
+  },
+  {
+    key: 'reminders.birthday-digest',
+    name: 'Monthly birthday sheet',
+    description: 'Monthly digest to HR listing every employee birthday in the current month.',
+    severity: 'info',
+    defaultChannels: ['in_app', 'email'],
+    titleTemplate: '🎂 Birthdays in {{monthLabel}} ({{birthdayCount}})',
+    bodyTemplate: 'Employee birthdays this month: {{birthdayList}}',
+    module: 'reminders',
+  },
 ];

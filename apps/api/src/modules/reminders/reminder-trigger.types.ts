@@ -71,6 +71,12 @@ export const cronTriggerSpecSchema = z.object({
         withinDays: z.coerce.number().int().positive().max(365),
       }),
       z.object({ kind: z.literal('work-anniversary') }),
+      /**
+       * Aggregate "monthly birthday sheet": one digest notification to
+       * the resolved recipients (HR) listing everyone with a birthday
+       * this month. Unlike `birthday`, it does NOT fire per employee.
+       */
+      z.object({ kind: z.literal('birthday-digest') }),
       z.object({ kind: z.literal('custom'), spec: z.record(z.string(), z.unknown()) }),
     ])
     .optional()

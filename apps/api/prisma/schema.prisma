@@ -892,10 +892,53 @@ model ReminderRule {
   deletedAt         DateTime?
 
   reminders Reminder[]
+  tasks     ReminderTask[]
 
   @@index([key, status])
   @@index([status, triggerType])
   @@index([notificationType])
+}
+
+/// A follow-up task spawned when a task-generating reminder fires
+/// (e.g. "Complete probation evaluation for X"). Unlike a Reminder —
+/// which is a one-shot notification — a task has a due date and an
+/// open/completed lifecycle, and the scheduler re-notifies the assignee
+/// on a follow-up cadence until it's completed or cancelled. Completing
+/// a task logs an acknowledgment (audit + `reminder.task.completed`).
+model ReminderTask {
+  id               String   @id @default(cuid())
+  ruleId           String
+  rule             ReminderRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  /// Denormalised so follow-up sends don't need to re-read the rule.
+  notificationType String
+  /// Who must complete the task (the reminder's resolved recipient).
+  assigneeUserId   String
+  /// Polymorphic subject the task is about (usually an employee).
+  sourceType       String?
+  sourceId         String?
+  title            String
+  description      String?
+  dueDate          DateTime
+  /// Re-notify the assignee this often (days) while the task is open.
+  followUpEveryDays Int     @default(3)
+  status           String   @default("open") // open | completed | cancelled
+  /// True once dueDate has passed while still open — the "overdue flag".
+  overdue          Boolean  @default(false)
+  followUpCount    Int      @default(0)
+  lastFollowUpAt   DateTime?
+  completedAt      DateTime?
+  completedById    String?
+  completionNote   String?
+  cancelledAt      DateTime?
+  cancelledById    String?
+  cancelReason     String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([status, dueDate])
+  @@index([assigneeUserId, status])
+  @@index([ruleId, status])
+  @@index([sourceType, sourceId])
 }
 
 /// A scheduled reminder instance — one row per (rule × target × scheduledFor).
