@@ -12,3 +12,4 @@ export * from './commission-rule';
 export * from './commission-run';
 export * from './commission-dispute';
 export * from './report';
+export * from './dashboard';

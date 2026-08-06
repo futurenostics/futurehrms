@@ -22,6 +22,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { RemindersModule } from './modules/reminders/reminders.module';
 import { ApprovalsModule } from './modules/approvals/approvals.module';
 import { ReportsModule } from './modules/reports/reports.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -45,6 +46,7 @@ import { HealthController } from './health.controller';
     RemindersModule,
     ApprovalsModule,
     ReportsModule,
+    DashboardModule,
   ],
   controllers: [HealthController],
   providers: [
