@@ -172,6 +172,15 @@ export const ENTITIES: EntityDef[] = [
       },
       {
         entity: 'employee',
+        path: 'employee.salaryEffectiveDate',
+        label: 'Salary effective date',
+        type: 'date',
+        // Anniversary so "12 months after the last increment" reminders
+        // (increment eligibility) can be expressed.
+        dateRole: 'anniversary',
+      },
+      {
+        entity: 'employee',
         path: 'employee.probationEndDate',
         label: 'Probation end date',
         type: 'date',

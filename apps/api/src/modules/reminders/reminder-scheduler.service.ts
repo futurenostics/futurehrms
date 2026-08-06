@@ -50,6 +50,7 @@ import { deriveScanTargets, evaluateConditions } from './reminder-conditions.eva
 import { buildConditionContexts } from './reminder-condition-context';
 import { cronMatches } from './cron-matcher';
 import { DEFAULT_TZ, isWithinQuietHours, nextQuietEnd } from './tz-utils';
+import { renderTaskTitle, taskSpecFor } from './reminder-task-specs';
 import {
   fetchSourcesForKind as scanForKind,
   isScannableKind as isKnownScanKind,
@@ -70,6 +71,7 @@ const TZ = 'Asia/Karachi';
 // (attempt 1 → wait 15m, attempt 2 → 1h, …); the final step is
 // reused if attempts somehow exceed the table length.
 const MAX_ATTEMPTS = 5;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const RETRY_BACKOFF_MS = [
   15 * 60 * 1000, // 15 minutes
   60 * 60 * 1000, // 1 hour
@@ -143,7 +145,12 @@ export class ReminderSchedulerService implements OnApplicationBootstrap, OnModul
       this.fireDueReminders(),
       this.evaluateCronRules(),
     ]);
-    this.logger.log(`reminder tick — done: fired=${fired}, scheduled=${scheduled}`);
+    // Follow-ups run after firing so tasks opened this tick aren't
+    // immediately nudged (their cadence clock starts now).
+    const followUps = await this.processTaskFollowUps();
+    this.logger.log(
+      `reminder tick — done: fired=${fired}, scheduled=${scheduled}, followUps=${followUps}`,
+    );
     return { fired, scheduled };
   }
 
@@ -299,6 +306,144 @@ export class ReminderSchedulerService implements OnApplicationBootstrap, OnModul
       },
       { actorId: 'system:reminders' },
     );
+
+    // Task-generating reminders (probation / internship / reviews /
+    // increment) open a follow-up task the assignee must complete. The
+    // scheduler re-notifies until it's done (see processTaskFollowUps).
+    await this.maybeCreateTask(reminder);
+  }
+
+  /**
+   * If the fired reminder's notification type is a task kind, open one
+   * follow-up task per (rule, subject, assignee) — deduped against any
+   * already-open task so repeated fires don't pile up duplicates.
+   */
+  private async maybeCreateTask(reminder: Reminder & { rule: ReminderRule }): Promise<void> {
+    const spec = taskSpecFor(reminder.rule.notificationType);
+    if (!spec) return;
+
+    const existing = await prisma.reminderTask.findFirst({
+      where: {
+        ruleId: reminder.ruleId,
+        assigneeUserId: reminder.recipientUserId,
+        sourceType: reminder.sourceType,
+        sourceId: reminder.sourceId,
+        status: 'open',
+      },
+      select: { id: true },
+    });
+    if (existing) return;
+
+    const name = await this.subjectName(reminder.sourceType, reminder.sourceId, reminder.payload);
+    const now = new Date();
+    await prisma.reminderTask.create({
+      data: {
+        ruleId: reminder.ruleId,
+        notificationType: reminder.rule.notificationType,
+        assigneeUserId: reminder.recipientUserId,
+        sourceType: reminder.sourceType,
+        sourceId: reminder.sourceId,
+        title: renderTaskTitle(spec.titleTemplate, name),
+        description: reminder.rule.description ?? null,
+        dueDate: new Date(now.getTime() + spec.dueInDays * DAY_MS),
+        followUpEveryDays: spec.followUpEveryDays,
+      },
+    });
+  }
+
+  /** Resolve a display name for the task subject (employee today). */
+  private async subjectName(
+    sourceType: string | null,
+    sourceId: string | null,
+    payload: Prisma.JsonValue | null,
+  ): Promise<string> {
+    const fromPayload = (payload as { fullName?: string } | null)?.fullName;
+    if (fromPayload) return fromPayload;
+    if (sourceType === 'employee' && sourceId) {
+      const e = await prisma.employee.findUnique({
+        where: { id: sourceId },
+        select: { fullName: true },
+      });
+      if (e) return e.fullName;
+    }
+    return '';
+  }
+
+  /* ---------- Task follow-ups (auto-remind until completion) ---------- */
+
+  /**
+   * Walk open tasks; flag overdue ones, and re-notify the assignee once
+   * a follow-up interval has elapsed since the last nudge (or since the
+   * task was created). This is the spec's "if a form is uncompleted by
+   * its due date, send reminder emails automatically until completion."
+   */
+  async processTaskFollowUps(): Promise<number> {
+    const now = new Date();
+    const open = await prisma.reminderTask.findMany({
+      where: { status: 'open' },
+      take: 500,
+    });
+
+    let sent = 0;
+    for (const task of open) {
+      const isOverdue = now > task.dueDate;
+      const since = task.lastFollowUpAt ?? task.createdAt;
+      const dueForNudge = now.getTime() - since.getTime() >= task.followUpEveryDays * DAY_MS;
+
+      if (!dueForNudge) {
+        // Still keep the overdue flag fresh for the HR queue.
+        if (isOverdue && !task.overdue) {
+          await prisma.reminderTask.update({
+            where: { id: task.id },
+            data: { overdue: true },
+          });
+        }
+        continue;
+      }
+
+      // Only nudge live assignees; a deactivated user can't act on it.
+      const user = await prisma.user.findUnique({
+        where: { id: task.assigneeUserId },
+        select: { id: true, isActive: true, deletedAt: true },
+      });
+      if (!user || !user.isActive || user.deletedAt) continue;
+
+      const name = await this.subjectName(task.sourceType, task.sourceId, null);
+      try {
+        await this.notifications.send({
+          recipientUserId: task.assigneeUserId,
+          typeKey: task.notificationType,
+          payload: {
+            fullName: name,
+            taskId: task.id,
+            followUp: true,
+            overdue: isOverdue,
+          },
+          source:
+            task.sourceType && task.sourceId
+              ? { type: task.sourceType, id: task.sourceId }
+              : undefined,
+          actorId: 'system:reminders',
+        });
+        await prisma.reminderTask.update({
+          where: { id: task.id },
+          data: {
+            followUpCount: { increment: 1 },
+            lastFollowUpAt: now,
+            overdue: isOverdue,
+          },
+        });
+        this.events.emit(
+          'reminder.task.followed_up',
+          { taskId: task.id, ruleId: task.ruleId, overdue: isOverdue },
+          { actorId: 'system:reminders' },
+        );
+        sent += 1;
+      } catch (err) {
+        this.logger.warn(`task follow-up ${task.id} failed: ${(err as Error).message}`);
+      }
+    }
+    return sent;
   }
 
   /* ---------- Cron-rule evaluation ---------- */
@@ -331,6 +476,13 @@ export class ReminderSchedulerService implements OnApplicationBootstrap, OnModul
 
   private async runCronQuery(rule: ReminderRule, spec: CronTriggerSpec): Promise<number> {
     const now = new Date();
+
+    // Aggregate "monthly birthday sheet" — one digest to HR, not one
+    // reminder per employee. Handled up front and returns early.
+    if (spec.query?.kind === 'birthday-digest') {
+      return this.scheduleBirthdayDigest(rule, now);
+    }
+
     let sources: ResolverSource[] = [];
     let payloadTag: Record<string, unknown> = {};
 
@@ -435,6 +587,62 @@ export class ReminderSchedulerService implements OnApplicationBootstrap, OnModul
       scheduled += recipients.length;
     }
     return scheduled;
+  }
+
+  /**
+   * Build the "monthly birthday sheet" and schedule one digest reminder
+   * per resolved recipient (HR). Employees are matched by the local
+   * month of dateOfBirth == the current month; the formatted list rides
+   * in the payload for the digest notification template.
+   */
+  private async scheduleBirthdayDigest(rule: ReminderRule, now: Date): Promise<number> {
+    const month = now.getMonth() + 1; // 1-12, local server time
+    const employees = await prisma.employee.findMany({
+      where: {
+        deletedAt: null,
+        dateOfBirth: { not: null },
+        ...(rule.departmentId ? { departmentId: rule.departmentId } : {}),
+      },
+      select: { fullName: true, dateOfBirth: true },
+    });
+    const monthly = employees
+      .filter((e) => e.dateOfBirth && e.dateOfBirth.getMonth() + 1 === month)
+      .sort((a, b) => a.dateOfBirth!.getDate() - b.dateOfBirth!.getDate());
+
+    const monthLabel = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    const birthdayList =
+      monthly.length === 0
+        ? 'No birthdays this month.'
+        : monthly
+            .map(
+              (e) =>
+                `${e.dateOfBirth!.toLocaleString('en-US', { month: 'short', day: 'numeric' })} — ${e.fullName}`,
+            )
+            .join('; ');
+
+    const recipients = await this.resolvers.resolveMany(readRecipientEntries(rule), rule, null);
+    if (recipients.length === 0) return 0;
+
+    await prisma.reminder.createMany({
+      data: recipients.map((recipientUserId) => ({
+        ruleId: rule.id,
+        recipientUserId,
+        sourceType: null,
+        sourceId: null,
+        scheduledFor: now,
+        status: 'scheduled' as const,
+        payload: { monthLabel, birthdayCount: monthly.length, birthdayList } as never,
+        dedupeKey: computeReminderDedupeKey({
+          ruleId: rule.id,
+          recipientUserId,
+          sourceType: null,
+          sourceId: null,
+          scheduledFor: now,
+        }),
+      })),
+      skipDuplicates: true,
+    });
+    return recipients.length;
   }
 
   /**

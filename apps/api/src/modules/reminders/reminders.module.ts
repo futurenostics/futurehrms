@@ -5,6 +5,7 @@ import { RegistryService } from '../../core/registry/registry.service';
 import { RecipientResolverRegistry } from './recipient-resolver';
 import { ReminderRulesService } from './reminder-rules.service';
 import { ReminderSchedulerService } from './reminder-scheduler.service';
+import { ReminderTasksService } from './reminder-tasks.service';
 import { RemindersController } from './reminders.controller';
 import { RemindersReadService } from './reminders-read.service';
 import { TriggerEvaluatorService } from './trigger-evaluator.service';
@@ -29,6 +30,7 @@ import { REMINDERS_NOTIFICATION_TYPES } from './reminders.notification-types';
   providers: [
     ReminderRulesService,
     RemindersReadService,
+    ReminderTasksService,
     RecipientResolverRegistry,
     TriggerEvaluatorService,
     ReminderSchedulerService,

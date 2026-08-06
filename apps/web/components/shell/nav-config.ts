@@ -6,6 +6,7 @@ import {
   Building2,
   Calculator,
   CheckSquare,
+  ClipboardCheck,
   CreditCard,
   Home,
   Network,
@@ -105,6 +106,13 @@ export const navGroups: NavGroup[] = [
         icon: BellRing,
         href: '/reminder-rules',
         requires: 'reminders:view_rules',
+      },
+      {
+        key: 'reminder-tasks',
+        label: 'Reminder Tasks',
+        icon: ClipboardCheck,
+        href: '/reminder-tasks',
+        requires: 'reminders:view_tasks',
       },
       {
         key: 'evaluations',

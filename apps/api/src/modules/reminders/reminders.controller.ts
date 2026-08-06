@@ -14,9 +14,15 @@ import { z } from 'zod';
 import { CurrentUser } from '../../core/auth/decorators/current-user.decorator';
 import { RequirePermission } from '../../core/auth/decorators/require-permission.decorator';
 import type { AuthenticatedUser } from '../../core/auth/types';
+import {
+  reminderTaskCancelSchema,
+  reminderTaskCompleteSchema,
+  reminderTaskListQuerySchema,
+} from '@futurenostics/types';
 import { ReminderRulesService } from './reminder-rules.service';
 import { RemindersReadService } from './reminders-read.service';
 import { ReminderSchedulerService } from './reminder-scheduler.service';
+import { ReminderTasksService } from './reminder-tasks.service';
 import { RecipientResolverRegistry } from './recipient-resolver';
 import { ConditionPreviewService } from './condition-preview.service';
 import { triggerSpecSchema } from './reminder-trigger.types';
@@ -110,6 +116,7 @@ export class RemindersController {
     private readonly rules: ReminderRulesService,
     private readonly read: RemindersReadService,
     private readonly scheduler: ReminderSchedulerService,
+    private readonly tasks: ReminderTasksService,
     private readonly resolvers: RecipientResolverRegistry,
     private readonly preview: ConditionPreviewService,
   ) {}
@@ -308,5 +315,44 @@ export class RemindersController {
   @HttpCode(HttpStatus.OK)
   async runNow() {
     return this.scheduler.tickHandler();
+  }
+
+  /* ---------- Follow-up tasks (HR pending-task queue) ---------- */
+
+  /**
+   * List reminder tasks. `?mine=true` (or lacking view_tasks) scopes to
+   * the caller's own tasks; the full HR queue needs `reminders:view_tasks`.
+   */
+  @Get('reminder-tasks')
+  async listTasks(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() rawQuery: Record<string, unknown>,
+  ) {
+    const query = reminderTaskListQuerySchema.parse(rawQuery);
+    return this.tasks.list(user, query);
+  }
+
+  /** Mark a task complete — logs the acknowledgment and stops follow-ups. */
+  @Post('reminder-tasks/:id/complete')
+  @HttpCode(HttpStatus.OK)
+  async completeTask(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const input = reminderTaskCompleteSchema.parse(body ?? {});
+    return this.tasks.complete(user, id, input);
+  }
+
+  @Post('reminder-tasks/:id/cancel')
+  @RequirePermission('reminders:complete_tasks')
+  @HttpCode(HttpStatus.OK)
+  async cancelTask(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const input = reminderTaskCancelSchema.parse(body);
+    return this.tasks.cancel(user, id, input);
   }
 }

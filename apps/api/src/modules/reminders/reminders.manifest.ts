@@ -41,6 +41,14 @@ export const remindersManifest: ModuleManifest = {
       description:
         'Reserved for future custom-resolver registration. Phase 3 ships built-in resolvers only.',
     },
+    {
+      action: 'view_tasks',
+      description: 'View the full reminder-task queue (all assignees), not just your own',
+    },
+    {
+      action: 'complete_tasks',
+      description: 'Complete or cancel any reminder task (not only your own)',
+    },
   ],
   navItems: [
     {
@@ -51,6 +59,14 @@ export const remindersManifest: ModuleManifest = {
       group: 'Reminders & Reviews',
       order: 10,
     },
+    {
+      label: 'Reminder Tasks',
+      path: '/reminder-tasks',
+      icon: 'ClipboardCheck',
+      requires: 'reminders:view_tasks',
+      group: 'Reminders & Reviews',
+      order: 15,
+    },
   ],
   scheduledJobs: [
     {
@@ -60,7 +76,7 @@ export const remindersManifest: ModuleManifest = {
     },
   ],
   eventSubscriptions: [{ event: '**', handler: 'onAnyEvent' }],
-  auditedEntities: ['ReminderRule', 'Reminder'],
+  auditedEntities: ['ReminderRule', 'Reminder', 'ReminderTask'],
   defaultRolePermissions: [
     { roleSlug: 'employee', actions: [] },
     { roleSlug: 'team_lead', actions: ['view_rules'] },
@@ -75,6 +91,8 @@ export const remindersManifest: ModuleManifest = {
         'archive_rule',
         'view_scheduled',
         'trigger_test',
+        'view_tasks',
+        'complete_tasks',
       ],
     },
     { roleSlug: 'finance_manager', actions: ['view_rules'] },
