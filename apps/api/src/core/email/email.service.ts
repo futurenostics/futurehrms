@@ -3,6 +3,13 @@ import { createTransport, type Transporter } from 'nodemailer';
 import { Resend } from 'resend';
 import { AppConfigService } from '../../config/app.config';
 
+export interface EmailAttachment {
+  filename: string;
+  content: Buffer;
+  /** MIME type, e.g. 'application/pdf'. Optional — providers sniff otherwise. */
+  contentType?: string;
+}
+
 export interface EmailMessage {
   to: string | string[];
   subject: string;
@@ -10,6 +17,7 @@ export interface EmailMessage {
   text?: string;
   from?: string;
   replyTo?: string;
+  attachments?: EmailAttachment[];
 }
 
 /**
@@ -61,6 +69,14 @@ export class EmailService {
         html: message.html,
         ...(message.text ? { text: message.text } : {}),
         ...(message.replyTo ? { replyTo: message.replyTo } : {}),
+        ...(message.attachments
+          ? {
+              attachments: message.attachments.map((a) => ({
+                filename: a.filename,
+                content: a.content,
+              })),
+            }
+          : {}),
       });
       this.logger.log(`email sent via resend: ${message.subject}`);
       return;
@@ -76,6 +92,11 @@ export class EmailService {
       html: message.html,
       text: message.text,
       replyTo: message.replyTo,
+      attachments: message.attachments?.map((a) => ({
+        filename: a.filename,
+        content: a.content,
+        contentType: a.contentType,
+      })),
     });
     this.logger.log(`email sent via smtp: ${message.subject}`);
   }
