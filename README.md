@@ -17,8 +17,8 @@ pnpm install
 # 3. Spin up local services (Postgres, Redis, MinIO, Mailpit)
 pnpm dev:services
 
-# 4. Create your local env from the example
-cp .env.example .env.local
+# 4. Create your env from the example (single file for native + Docker)
+cp .env.example .env
 #   then fill in JWT_ACCESS_SECRET and JWT_REFRESH_SECRET with:
 #   openssl rand -base64 64 | tr -d '\n'
 
@@ -26,8 +26,8 @@ cp .env.example .env.local
 pnpm db:migrate
 pnpm db:seed
 
-# 6. Start both apps
-pnpm dev
+# 6. Start both apps (dev:local sources .env into your shell first)
+pnpm dev:local
 #   → web at http://localhost:3000
 #   → api at http://localhost:4000
 #   → mailpit UI at http://localhost:8025
@@ -35,8 +35,23 @@ pnpm dev
 ```
 
 The seed creates a super-admin user with the credentials from
-`SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` in your `.env.local`. Sign in on
+`SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` in your `.env`. Sign in on
 `http://localhost:3000/login` to land on the dashboard.
+
+## Run with Docker (alternative)
+
+Prefer not to install Node/pnpm locally? With **Docker Desktop** running, copy
+the env (`cp .env.example .env`) and start the whole stack — apps and backing
+services — in one command:
+
+```sh
+docker compose up          # web :3000 · api :4000 · mailpit :8025 · minio :9101
+```
+
+The API container waits for Postgres, then runs migrations and the (idempotent)
+seed automatically. Source edits hot-reload in both apps via a bind mount, so no
+rebuild is needed for day-to-day work. Stop with `docker compose down` (add `-v`
+to also wipe the database).
 
 ## Repo layout
 

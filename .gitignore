@@ -12,12 +12,11 @@ out/
 .playwright-mcp/
 *.tsbuildinfo
 
-# Environment
+# Environment (.env is the single source of truth; never commit it)
 .env
 .env.local
 .env.*.local
 !.env.example
-docker-compose.override.yml
 
 # Prisma
 apps/api/prisma/migrations/dev.db*

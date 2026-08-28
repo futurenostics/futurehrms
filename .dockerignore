@@ -1,0 +1,52 @@
+# =============================================================================
+# Files kept OUT of the Docker build context (what gets sent to the daemon on
+# build). Smaller context = faster builds. Most important line: never copy the
+# host's node_modules — they hold macOS-native binaries that break on Linux.
+# =============================================================================
+
+# Dependencies (reinstalled inside the image for the correct platform)
+node_modules
+**/node_modules
+.pnpm-store
+
+# Build output / caches (regenerated during the image build)
+dist
+**/dist
+.next
+**/.next
+.turbo
+**/.turbo
+out
+**/out
+*.tsbuildinfo
+
+# Git metadata
+.git
+.gitignore
+.github
+
+# Secrets: never bake real env files into an image (keep the example template)
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Test artifacts / reports
+coverage
+**/coverage
+playwright-report
+test-results
+**/tests/.auth
+
+# Docs, logs, OS + editor cruft
+docs
+*.log
+.DS_Store
+Thumbs.db
+.vscode
+.idea
+
+# Docker files themselves (not needed inside the image)
+Dockerfile
+.dockerignore
+docker-compose*.yml
