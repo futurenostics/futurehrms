@@ -1,17 +1,81 @@
+# =============================================================================
+# Full local dev stack. `docker compose up` runs everything except `studio`
+# (behind the `tools` profile). Requires a `.env` file (copy from .env.example):
+# it's the single source of truth for host ports + all secrets/config.
+#
+# How env flows into the app containers:
+#   • env_file: .env      → injects EVERY variable from .env (secrets, keys,
+#                            buckets, expiries …). Nothing sensitive is written
+#                            in this committed file.
+#   • environment: {...}  → overrides ONLY the values that must differ inside
+#                            the container network (DB/Redis/MinIO/SMTP hosts)
+#                            plus a couple of runtime flags. `environment` wins
+#                            over `env_file`, so these take precedence.
+# =============================================================================
+
+# --- Reusable blocks (YAML anchors) ------------------------------------------
+# `&name` defines an anchor; `<<: *name` merges it into a service below.
+
+# Shared by api / web / studio. Merged into each service's `environment:`.
+# CI=true → pnpm is non-interactive (no TTY in containers).
+# npm_config_store_dir → pnpm writes downloads to the named `pnpm-store` volume
+# instead of a throwaway path under /app (which is a bind mount).
+x-node-env: &node-env
+  CI: 'true'
+  npm_config_store_dir: /pnpm-store
+
+# Shared build + hot-reload volume setup for every Node app (api/web/studio).
+x-node-app: &node-app
+  build:
+    context: .
+    dockerfile: Dockerfile
+    target: dev
+  restart: unless-stopped
+  env_file: .env
+  # Bind-mount the repo for hot reload; the bare paths are anonymous volumes
+  # that keep node_modules / build dirs container-owned (so macOS-native
+  # binaries never shadow the Linux ones).
+  volumes:
+    - .:/app
+    # Shared pnpm package cache. Survives `docker compose down` (not `down -v`).
+    - pnpm-store:/pnpm-store
+    - /app/node_modules
+    - /app/apps/api/node_modules
+    - /app/apps/web/node_modules
+    - /app/packages/config/node_modules
+    - /app/packages/db/node_modules
+    - /app/packages/email/node_modules
+    - /app/packages/storage/node_modules
+    - /app/packages/types/node_modules
+    - /app/packages/ui/node_modules
+    - /app/apps/web/.next
+    - /app/.turbo
+
+# Container-network overrides. These four values are the ONLY ones that differ
+# between native and Docker: inside the compose network the services resolve by
+# name (postgres/redis/minio/mailpit), not via localhost:<host port>. The
+# password is interpolated from .env so it's never hardcoded here.
+x-container-net: &container-net
+  DATABASE_URL: postgresql://${POSTGRES_USER:-hrms}:${POSTGRES_PASSWORD:-hrms_dev_password}@postgres:5432/${POSTGRES_DB:-hrms_dev}
+  REDIS_URL: redis://redis:6379
+  S3_ENDPOINT: http://minio:9000
+  SMTP_HOST: mailpit
+
 services:
+  # --- Backing services (databases / infra) ----------------------------------
   postgres:
     image: postgres:16-alpine
     container_name: fn-hrms-postgres
     ports:
-      - '5432:5432'
+      - '${POSTGRES_HOST_PORT:-5432}:5432'
     environment:
-      POSTGRES_USER: hrms
-      POSTGRES_PASSWORD: hrms_dev_password
-      POSTGRES_DB: hrms_dev
+      POSTGRES_USER: ${POSTGRES_USER:-hrms}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hrms_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-hrms_dev}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U hrms -d hrms_dev']
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-hrms} -d ${POSTGRES_DB:-hrms_dev}']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -21,7 +85,7 @@ services:
     image: redis:7-alpine
     container_name: fn-hrms-redis
     ports:
-      - '6379:6379'
+      - '${REDIS_HOST_PORT:-6379}:6379'
     volumes:
       - redis-data:/data
     healthcheck:
@@ -35,11 +99,12 @@ services:
     image: minio/minio:latest
     container_name: fn-hrms-minio
     ports:
-      - '9000:9000'
-      - '9001:9001'
+      - '${MINIO_HOST_PORT:-9000}:9000'
+      - '${MINIO_CONSOLE_HOST_PORT:-9001}:9001'
     environment:
-      MINIO_ROOT_USER: minio_admin
-      MINIO_ROOT_PASSWORD: minio_dev_password
+      # MinIO root creds ARE the S3 creds the app uses — sourced from one place.
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minio_admin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minio_dev_password}
     command: server /data --console-address ":9001"
     volumes:
       - minio-data:/data
@@ -50,7 +115,7 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # One-shot container that creates required buckets on startup, then exits.
+  # Creates the required buckets on startup, then exits.
   minio-bootstrap:
     image: minio/mc:latest
     container_name: fn-hrms-minio-bootstrap
@@ -59,11 +124,11 @@ services:
         condition: service_started
     entrypoint: >
       /bin/sh -c "
-      until /usr/bin/mc alias set local http://minio:9000 minio_admin minio_dev_password; do echo 'waiting for minio...'; sleep 2; done;
-      /usr/bin/mc mb --ignore-existing local/fn-hrms-documents;
-      /usr/bin/mc mb --ignore-existing local/fn-hrms-template-assets;
-      /usr/bin/mc anonymous set none local/fn-hrms-documents;
-      /usr/bin/mc anonymous set none local/fn-hrms-template-assets;
+      until /usr/bin/mc alias set local http://minio:9000 ${S3_ACCESS_KEY:-minio_admin} ${S3_SECRET_KEY:-minio_dev_password}; do echo 'waiting for minio...'; sleep 2; done;
+      /usr/bin/mc mb --ignore-existing local/${DOCUMENTS_BUCKET:-fn-hrms-documents};
+      /usr/bin/mc mb --ignore-existing local/${TEMPLATES_BUCKET:-fn-hrms-template-assets};
+      /usr/bin/mc anonymous set none local/${DOCUMENTS_BUCKET:-fn-hrms-documents};
+      /usr/bin/mc anonymous set none local/${TEMPLATES_BUCKET:-fn-hrms-template-assets};
       echo 'MinIO buckets ready.';
       "
     restart: 'no'
@@ -72,8 +137,8 @@ services:
     image: axllent/mailpit:latest
     container_name: fn-hrms-mailpit
     ports:
-      - '1025:1025'
-      - '8025:8025'
+      - '${MAILPIT_SMTP_HOST_PORT:-1025}:1025'
+      - '${MAILPIT_UI_HOST_PORT:-8025}:8025'
     environment:
       MP_MAX_MESSAGES: 5000
       MP_DATABASE: /data/mailpit.db
@@ -81,8 +146,71 @@ services:
       - mailpit-data:/data
     restart: unless-stopped
 
+  # --- Application services --------------------------------------------------
+  # api runs the DB bootstrap (migrate + seed) via the entrypoint before starting.
+  api:
+    <<: *node-app
+    container_name: fn-hrms-api
+    environment:
+      # env_file already supplied every var; override only the network hosts…
+      <<: [*container-net, *node-env]
+      # …and the runtime flags specific to this container.
+      NODE_ENV: development
+      PORT: 4000
+      # CORS origin must match where the browser loads web from. Native web is
+      # always :3000, but Docker publishes it on WEB_HOST_PORT — so track that.
+      APP_URL: http://localhost:${WEB_HOST_PORT:-3000}
+      RUN_MIGRATIONS: 'true'
+      RUN_SEED: ${RUN_SEED:-true}
+      NEXT_PUBLIC_API_URL: http://localhost:${API_HOST_PORT:-4000}
+    ports:
+      - '${API_HOST_PORT:-4000}:4000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    command: pnpm --filter @futurenostics/api dev
+
+  # web is the Next.js dev server; waits for api to start first.
+  web:
+    <<: *node-app
+    container_name: fn-hrms-web
+    environment:
+      <<: *node-env
+      NODE_ENV: development
+      PORT: 3000
+      # Baked into the browser bundle → must be the HOST-reachable API URL.
+      NEXT_PUBLIC_API_URL: http://localhost:${API_HOST_PORT:-4000}
+    ports:
+      - '${WEB_HOST_PORT:-3000}:3000'
+    depends_on:
+      api:
+        condition: service_started
+    command: pnpm --filter @futurenostics/web dev
+
+  # Prisma Studio DB browser. Optional (profile `tools`): start it explicitly
+  # with `docker compose --profile tools up studio`, then open :5555.
+  # --hostname 0.0.0.0 exposes it through the published port; --browser none
+  # stops it trying to open a browser inside the container.
+  studio:
+    <<: *node-app
+    container_name: fn-hrms-studio
+    profiles: ['tools']
+    environment:
+      <<: [*container-net, *node-env]
+    ports:
+      - '${STUDIO_HOST_PORT:-5555}:5555'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: pnpm --filter @futurenostics/api exec prisma studio --port 5555 --hostname 0.0.0.0 --browser none
+
 volumes:
   postgres-data:
   redis-data:
   minio-data:
   mailpit-data:
+  pnpm-store:
