@@ -1,9 +1,22 @@
+import { createElement } from 'react';
+import { render } from '@react-email/render';
+import { NotificationEmail, type NotificationEmailProps } from './notification-email';
+
+export { NotificationEmail };
+export type { NotificationEmailProps };
+
 /**
- * React Email templates.
+ * Renders the notification email to HTML + a plain-text fallback.
  *
- * Phase 0 is empty — the auth flow doesn't email anyone. Future modules
- * (commission disbursement, HR reminders, evaluation invites) export
- * their templates from here so the core EmailService can render them
- * by name.
+ * The plain-text version is auto-derived from the rendered HTML
+ * (`render(..., { plainText: true })`) rather than hand-written — one
+ * fewer copy of the copy to keep in sync compared to the old
+ * hand-written renderHtml()/textFallback() pair in EmailChannel.
  */
-export const templates: Record<string, never> = {};
+export async function renderNotificationEmail(
+  props: NotificationEmailProps,
+): Promise<{ html: string; text: string }> {
+  const element = createElement(NotificationEmail, props);
+  const [html, text] = await Promise.all([render(element), render(element, { plainText: true })]);
+  return { html, text };
+}
