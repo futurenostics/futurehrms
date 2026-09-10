@@ -21,6 +21,7 @@ import { CommissionsModule } from './modules/commissions/commissions.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { RemindersModule } from './modules/reminders/reminders.module';
 import { ApprovalsModule } from './modules/approvals/approvals.module';
+import { AttendanceModule } from './modules/attendance/attendance.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { HealthController } from './health.controller';
@@ -45,6 +46,7 @@ import { HealthController } from './health.controller';
     NotificationsModule,
     RemindersModule,
     ApprovalsModule,
+    AttendanceModule,
     ReportsModule,
     DashboardModule,
   ],
