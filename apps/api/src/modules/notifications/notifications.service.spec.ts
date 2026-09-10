@@ -7,10 +7,11 @@
  * drive send / list / mutations without depending on any real module's
  * registered types.
  *
- * EmailChannel is stubbed — the in-app path is what needs correctness
- * coverage here; email is a dumb hand-off already covered by its own
- * render-path logic. Stubbing also keeps this suite from depending on
- * Mailpit being up, unlike every other integration spec in this repo.
+ * EmailChannel and SlackChannel are both stubbed — the in-app path is
+ * what needs correctness coverage here; email/Slack are dumb hand-offs
+ * already covered by their own send-path logic. Stubbing also keeps
+ * this suite from depending on Mailpit or a real Slack workspace being
+ * available, unlike every other integration spec in this repo.
  *
  * Each test creates its own pair of users + a run-scoped type key, then
  * cleans up via `type.startsWith('test-notif-')` — every row created
@@ -34,10 +35,13 @@ import {
 import { NotificationPreferencesService } from './notification-preferences.service';
 import { InAppChannel } from './channels/in-app.channel';
 import type { EmailChannel } from './channels/email.channel';
+import type { SlackChannel } from './channels/slack.channel';
 
 const TEST_RUN_ID = randomUUID().slice(0, 8);
 const TYPE_WITH_EMAIL = `test-notif-email-${TEST_RUN_ID}`;
 const TYPE_IN_APP_ONLY = `test-notif-inapp-${TEST_RUN_ID}`;
+const TYPE_WITH_SLACK_DM = `test-notif-slack-dm-${TEST_RUN_ID}`;
+const TYPE_WITH_SLACK_CHANNEL = `test-notif-slack-channel-${TEST_RUN_ID}`;
 
 function makeType(overrides: Partial<NotificationTypeDefinition>): NotificationTypeDefinition {
   const base: NotificationTypeDefinition = {
@@ -57,6 +61,7 @@ let service: NotificationsService;
 let registry: NotificationTypesRegistry;
 let prefs: NotificationPreferencesService;
 let emailStub: { send: ReturnType<typeof vi.fn> };
+let slackStub: { send: ReturnType<typeof vi.fn> };
 
 let recipient: AuthenticatedUser;
 let otherUser: AuthenticatedUser;
@@ -69,12 +74,14 @@ beforeAll(async () => {
   prefs = new NotificationPreferencesService();
   const inApp = new InAppChannel();
   emailStub = { send: vi.fn().mockResolvedValue({ messageId: null }) };
+  slackStub = { send: vi.fn().mockResolvedValue({ ok: true }) };
 
   service = new NotificationsService(
     registry,
     prefs,
     inApp,
     emailStub as unknown as EmailChannel,
+    slackStub as unknown as SlackChannel,
     events,
     audit,
   );
@@ -82,6 +89,16 @@ beforeAll(async () => {
   registry.registerMany([
     makeType({ key: TYPE_WITH_EMAIL, defaultChannels: ['in_app', 'email'] }),
     makeType({ key: TYPE_IN_APP_ONLY, defaultChannels: ['in_app'] }),
+    makeType({
+      key: TYPE_WITH_SLACK_DM,
+      defaultChannels: ['in_app', 'slack'],
+      slackDelivery: 'dm',
+    }),
+    makeType({
+      key: TYPE_WITH_SLACK_CHANNEL,
+      defaultChannels: ['in_app', 'slack'],
+      slackDelivery: 'channel',
+    }),
   ]);
 
   const recipientRow = await prisma.user.create({
@@ -111,6 +128,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   emailStub.send.mockClear();
+  slackStub.send.mockClear();
   await prisma.notification.deleteMany({ where: { type: { startsWith: 'test-notif-' } } });
   await prisma.notificationPreference.deleteMany({
     where: { type: { startsWith: 'test-notif-' } },
@@ -236,6 +254,54 @@ describe('NotificationsService.send — channel resolution', () => {
     const { id } = await service.send({ recipientUserId: recipient.id, typeKey: TYPE_WITH_EMAIL });
     const row = await prisma.notification.findUniqueOrThrow({ where: { id } });
     expect(row.status).toBe('unread');
+  });
+});
+
+/* ----------------------- send: Slack delivery mode ----------------------- */
+
+describe('NotificationsService.send — Slack delivery mode', () => {
+  it('calls SlackChannel when the type includes slack', async () => {
+    const { id } = await service.send({
+      recipientUserId: recipient.id,
+      typeKey: TYPE_WITH_SLACK_DM,
+    });
+    expect(slackStub.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recipientUserId: recipient.id,
+        type: expect.objectContaining({ key: TYPE_WITH_SLACK_DM, slackDelivery: 'dm' }),
+      }),
+    );
+    const row = await prisma.notification.findUniqueOrThrow({ where: { id } });
+    expect(row.channel).toBe('in_app');
+  });
+
+  it('does not call SlackChannel when the type has no slack default', async () => {
+    await service.send({ recipientUserId: recipient.id, typeKey: TYPE_IN_APP_ONLY });
+    expect(slackStub.send).not.toHaveBeenCalled();
+  });
+
+  it('passes slackDelivery: channel through to SlackChannel for channel-mode types', async () => {
+    await service.send({ recipientUserId: recipient.id, typeKey: TYPE_WITH_SLACK_CHANNEL });
+    expect(slackStub.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: expect.objectContaining({ key: TYPE_WITH_SLACK_CHANNEL, slackDelivery: 'channel' }),
+      }),
+    );
+  });
+
+  it('excludes slack when the user has explicitly disabled it for that type', async () => {
+    await prefs.upsert({
+      userId: recipient.id,
+      type: TYPE_WITH_SLACK_DM,
+      channel: 'slack',
+      enabled: false,
+    });
+    const { channels } = await service.send({
+      recipientUserId: recipient.id,
+      typeKey: TYPE_WITH_SLACK_DM,
+    });
+    expect(channels).not.toContain('slack');
+    expect(slackStub.send).not.toHaveBeenCalled();
   });
 });
 

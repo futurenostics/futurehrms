@@ -1,7 +1,9 @@
 import { Module, type OnModuleInit } from '@nestjs/common';
 import { EmailModule } from '../../core/email/email.module';
+import { SlackModule } from '../../core/slack/slack.module';
 import { RegistryService } from '../../core/registry/registry.service';
 import { EmailChannel } from './channels/email.channel';
+import { SlackChannel } from './channels/slack.channel';
 import { InAppChannel } from './channels/in-app.channel';
 import { NotificationPreferencesService } from './notification-preferences.service';
 import { NotificationTypesRegistry } from './notification-types.registry';
@@ -19,7 +21,7 @@ import { CustomNotificationTypesService } from './custom-notification-types.serv
  * `.send(...)` for domain events.
  */
 @Module({
-  imports: [EmailModule],
+  imports: [EmailModule, SlackModule],
   controllers: [NotificationsController],
   providers: [
     NotificationTypesRegistry,
@@ -27,6 +29,7 @@ import { CustomNotificationTypesService } from './custom-notification-types.serv
     CustomNotificationTypesService,
     InAppChannel,
     EmailChannel,
+    SlackChannel,
     NotificationsService,
   ],
   exports: [

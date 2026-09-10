@@ -51,6 +51,11 @@ export const envSchema = z.object({
   SMTP_FROM: z.string().default('Futurenostics HRMS <no-reply@futurenostics.local>'),
   RESEND_API_KEY: z.string().optional().default(''),
 
+  // Slack — optional. Leave both blank to skip Slack delivery entirely
+  // (the channel becomes a no-op instead of failing).
+  SLACK_BOT_TOKEN: z.string().optional().default(''),
+  SLACK_ANNOUNCEMENTS_CHANNEL_ID: z.string().optional().default(''),
+
   // Seed
   SEED_ADMIN_EMAIL: z.string().email().default('admin@futurenostics.local'),
   SEED_ADMIN_PASSWORD: z.string().min(8).default('ChangeMe!Now123'),

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { prisma } from '@futurenostics/db';
 import { renderNotificationEmail } from '@futurenostics/email';
+import { AppConfigService } from '../../../config/app.config';
 import { EmailService } from '../../../core/email/email.service';
 import type { NotificationTypeDefinition } from '../notification-types.registry';
 
@@ -32,7 +33,10 @@ export interface EmailSendInput {
 export class EmailChannel {
   private readonly logger = new Logger(EmailChannel.name);
 
-  constructor(private readonly email: EmailService) {}
+  constructor(
+    private readonly email: EmailService,
+    private readonly config: AppConfigService,
+  ) {}
 
   async send(notificationId: string, input: EmailSendInput): Promise<{ messageId: string | null }> {
     const user = await prisma.user.findUnique({
@@ -49,7 +53,7 @@ export class EmailChannel {
       recipientName,
       title: input.title,
       body: input.body,
-      link: input.link,
+      link: toAbsoluteUrl(input.link, this.config.env.APP_URL),
     });
 
     try {
@@ -75,4 +79,15 @@ export class EmailChannel {
       return { messageId: null };
     }
   }
+}
+
+/**
+ * Notification link templates produce app-relative paths (`/dashboard`),
+ * not full URLs — the email button needs an absolute href to work at
+ * all. Same fix applied in slack.channel.ts.
+ */
+function toAbsoluteUrl(link: string | null, appUrl: string): string | null {
+  if (!link) return null;
+  if (/^https?:\/\//.test(link)) return link;
+  return `${appUrl.replace(/\/$/, '')}${link.startsWith('/') ? '' : '/'}${link}`;
 }
