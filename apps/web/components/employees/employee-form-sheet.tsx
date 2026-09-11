@@ -246,6 +246,17 @@ export function EmployeeFormSheet({
     [firstName, lastName].filter(Boolean).join(' ').trim() ||
     (mode === 'edit' ? (employee?.fullName ?? '') : '');
 
+  // computedFullName is derived for display, but the schema validates
+  // the form's actual `fullName` field — nothing wrote this back into
+  // form state, so it stayed at its empty default forever and every
+  // create-employee submission failed validation before any request
+  // was made. Keep the two in sync as first/last name change.
+  React.useEffect(() => {
+    if (form.getValues('fullName') !== computedFullName) {
+      form.setValue('fullName', computedFullName, { shouldValidate: true, shouldDirty: true });
+    }
+  }, [computedFullName, form]);
+
   // Filter designations / status / manager option lists.
   const filteredDesignations = React.useMemo(() => {
     if (!refs.data || !watch.departmentId) return [];
@@ -468,7 +479,12 @@ export function EmployeeFormSheet({
                   autoComplete="family-name"
                 />
               </Field>
-              <Field label="Pronouns" hint="Optional" fieldKey="pronouns">
+              <Field
+                label="Pronouns"
+                hint="Optional"
+                error={form.formState.errors.pronouns?.message}
+                fieldKey="pronouns"
+              >
                 <Input
                   value={watch.pronouns ?? ''}
                   onChange={(e) =>
@@ -477,7 +493,11 @@ export function EmployeeFormSheet({
                   placeholder="he / him · she / her · they / them"
                 />
               </Field>
-              <Field label="Date of birth" fieldKey="dateOfBirth">
+              <Field
+                label="Date of birth"
+                error={form.formState.errors.dateOfBirth?.message}
+                fieldKey="dateOfBirth"
+              >
                 <Input
                   type="date"
                   value={dateValue(watch.dateOfBirth)}
@@ -488,7 +508,7 @@ export function EmployeeFormSheet({
                   }
                 />
               </Field>
-              <Field label="Gender" fieldKey="gender">
+              <Field label="Gender" error={form.formState.errors.gender?.message} fieldKey="gender">
                 <Combobox
                   options={GENDER_OPTIONS.map((g) => ({
                     value: g.value || '__none__',
@@ -586,7 +606,13 @@ export function EmployeeFormSheet({
                   placeholder="+92 …"
                 />
               </Field>
-              <Field label="Address" hint="Area, city" fullWidth fieldKey="address">
+              <Field
+                label="Address"
+                hint="Area, city"
+                fullWidth
+                error={form.formState.errors.address?.message}
+                fieldKey="address"
+              >
                 <Textarea
                   rows={3}
                   value={watch.address ?? ''}
@@ -639,7 +665,12 @@ export function EmployeeFormSheet({
                 />
               </Field>
 
-              <Field label="Reports to (manager)" fullWidth fieldKey="managerId">
+              <Field
+                label="Reports to (manager)"
+                fullWidth
+                error={form.formState.errors.managerId?.message}
+                fieldKey="managerId"
+              >
                 <ManagerPicker
                   value={watch.managerId ?? null}
                   selfId={employee?.id}
@@ -647,7 +678,14 @@ export function EmployeeFormSheet({
                 />
               </Field>
 
-              <Field label="Status" required hint="Lifecycle stage" fullWidth fieldKey="statusId">
+              <Field
+                label="Status"
+                required
+                hint="Lifecycle stage"
+                fullWidth
+                error={form.formState.errors.statusId?.message}
+                fieldKey="statusId"
+              >
                 <StatusPillBar
                   options={statusPills.map((s) => ({ id: s.id, slug: s.slug, name: s.name }))}
                   value={watch.statusId}
@@ -657,7 +695,12 @@ export function EmployeeFormSheet({
                 />
               </Field>
 
-              <Field label="Joining date" required fieldKey="joinDate">
+              <Field
+                label="Joining date"
+                required
+                error={form.formState.errors.joinDate?.message}
+                fieldKey="joinDate"
+              >
                 <Input
                   type="date"
                   value={dateValue(watch.joinDate)}
@@ -673,6 +716,7 @@ export function EmployeeFormSheet({
                 <Field
                   label="Probation ends"
                   hint="Auto-set 90d from joining"
+                  error={form.formState.errors.probationEndDate?.message}
                   fieldKey="probationEndDate"
                 >
                   <Input
@@ -689,7 +733,11 @@ export function EmployeeFormSheet({
                 </Field>
               )}
               {showInternshipEnd && (
-                <Field label="Internship ends" fieldKey="internshipEndDate">
+                <Field
+                  label="Internship ends"
+                  error={form.formState.errors.internshipEndDate?.message}
+                  fieldKey="internshipEndDate"
+                >
                   <Input
                     type="date"
                     value={dateValue(watch.internshipEndDate)}
@@ -704,7 +752,11 @@ export function EmployeeFormSheet({
                 </Field>
               )}
 
-              <Field label="Contract type" fieldKey="contractType">
+              <Field
+                label="Contract type"
+                error={form.formState.errors.contractType?.message}
+                fieldKey="contractType"
+              >
                 <Combobox
                   options={CONTRACT_OPTIONS.map((c) => ({
                     value: c,
@@ -722,6 +774,7 @@ export function EmployeeFormSheet({
               <Field
                 label="Employment record"
                 hint="On-roll · Off-roll · Intern"
+                error={form.formState.errors.employmentRecord?.message}
                 fieldKey="employmentRecord"
               >
                 <Combobox
@@ -739,7 +792,12 @@ export function EmployeeFormSheet({
                 />
               </Field>
 
-              <Field label="Timezone" hint="Reminders + quiet hours use this" fieldKey="timezone">
+              <Field
+                label="Timezone"
+                hint="Reminders + quiet hours use this"
+                error={form.formState.errors.timezone?.message}
+                fieldKey="timezone"
+              >
                 <Combobox
                   options={TIMEZONE_OPTIONS}
                   value={watch.timezone ?? ''}
@@ -750,6 +808,7 @@ export function EmployeeFormSheet({
               <Field
                 label="Quiet hours start"
                 hint="Reminders in this window defer"
+                error={form.formState.errors.quietHoursStart?.message}
                 fieldKey="quietHoursStart"
               >
                 <Input
@@ -760,7 +819,11 @@ export function EmployeeFormSheet({
                   }
                 />
               </Field>
-              <Field label="Quiet hours end" fieldKey="quietHoursEnd">
+              <Field
+                label="Quiet hours end"
+                error={form.formState.errors.quietHoursEnd?.message}
+                fieldKey="quietHoursEnd"
+              >
                 <Input
                   type="time"
                   value={watch.quietHoursEnd ?? ''}
@@ -799,7 +862,11 @@ export function EmployeeFormSheet({
                     className="tabular-nums"
                   />
                 </Field>
-                <Field label="Effective from" fieldKey="salaryEffectiveDate">
+                <Field
+                  label="Effective from"
+                  error={form.formState.errors.salaryEffectiveDate?.message}
+                  fieldKey="salaryEffectiveDate"
+                >
                   <Input
                     type="date"
                     value={dateValue(watch.salaryEffectiveDate)}
@@ -832,7 +899,11 @@ export function EmployeeFormSheet({
                 </Field>
                 {watch.eligibleForCommissions && (
                   <>
-                    <Field label="Payoneer email" fieldKey="payoneerEmail">
+                    <Field
+                      label="Payoneer email"
+                      error={form.formState.errors.payoneerEmail?.message}
+                      fieldKey="payoneerEmail"
+                    >
                       <Input
                         type="email"
                         value={watch.payoneerEmail ?? ''}
@@ -844,7 +915,11 @@ export function EmployeeFormSheet({
                         placeholder="aliya@futurenostics.com"
                       />
                     </Field>
-                    <Field label="Commission rate" fieldKey="commissionRate">
+                    <Field
+                      label="Commission rate"
+                      error={form.formState.errors.commissionRate?.message}
+                      fieldKey="commissionRate"
+                    >
                       <Combobox
                         options={COMMISSION_RATE_OPTIONS}
                         value={watch.commissionRate ?? ''}
@@ -867,7 +942,11 @@ export function EmployeeFormSheet({
                 description="Required for salary deposits."
                 anchor="bank"
               >
-                <Field label="Bank" fieldKey="bankName">
+                <Field
+                  label="Bank"
+                  error={form.formState.errors.bankName?.message}
+                  fieldKey="bankName"
+                >
                   <Combobox
                     options={BANK_OPTIONS}
                     value={watch.bankName ?? ''}
@@ -877,7 +956,11 @@ export function EmployeeFormSheet({
                     placeholder="Select bank"
                   />
                 </Field>
-                <Field label="Branch" fieldKey="bankBranch">
+                <Field
+                  label="Branch"
+                  error={form.formState.errors.bankBranch?.message}
+                  fieldKey="bankBranch"
+                >
                   <Input
                     value={watch.bankBranch ?? ''}
                     onChange={(e) =>
@@ -886,7 +969,12 @@ export function EmployeeFormSheet({
                     placeholder="e.g. DHA Karachi"
                   />
                 </Field>
-                <Field label="IBAN / Account number" fullWidth fieldKey="iban">
+                <Field
+                  label="IBAN / Account number"
+                  fullWidth
+                  error={form.formState.errors.iban?.message}
+                  fieldKey="iban"
+                >
                   <Input
                     value={watch.iban ?? ''}
                     onChange={(e) =>
@@ -906,7 +994,10 @@ export function EmployeeFormSheet({
               description="Required by HR · only used in emergencies."
               anchor="emergency"
             >
-              <Field label="Full name">
+              <Field
+                label="Full name"
+                error={form.formState.errors.emergencyContact?.name?.message}
+              >
                 <Input
                   value={watch.emergencyContact?.name ?? ''}
                   onChange={(e) =>
@@ -919,7 +1010,10 @@ export function EmployeeFormSheet({
                   placeholder="e.g. Ayesha Saeed"
                 />
               </Field>
-              <Field label="Relationship">
+              <Field
+                label="Relationship"
+                error={form.formState.errors.emergencyContact?.relationship?.message}
+              >
                 <Combobox
                   options={[
                     { value: 'spouse', label: 'Spouse' },
@@ -939,7 +1033,7 @@ export function EmployeeFormSheet({
                   placeholder="Spouse · Parent · …"
                 />
               </Field>
-              <Field label="Phone">
+              <Field label="Phone" error={form.formState.errors.emergencyContact?.phone?.message}>
                 <Input
                   value={watch.emergencyContact?.phone ?? ''}
                   onChange={(e) =>
@@ -961,7 +1055,12 @@ export function EmployeeFormSheet({
               description="System role decides what they see in the app."
               anchor="access"
             >
-              <Field label="System role" fullWidth fieldKey="systemRole">
+              <Field
+                label="System role"
+                fullWidth
+                error={form.formState.errors.systemRole?.message}
+                fieldKey="systemRole"
+              >
                 <SystemRoleCard
                   value={(watch.systemRole as SystemRole | undefined) ?? 'employee'}
                   onChange={(v) => form.setValue('systemRole', v, { shouldDirty: true })}
