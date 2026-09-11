@@ -47,8 +47,24 @@ export const attendanceManifest: ModuleManifest = {
       description: 'Create and edit attendance policies and company holidays',
     },
   ],
-  navItems: [],
-  dashboardWidgets: [],
+  navItems: [
+    {
+      label: 'Attendance',
+      path: '/settings/attendance',
+      icon: 'Clock',
+      requires: 'attendance:manage_shifts',
+      group: 'Settings',
+      order: 40,
+    },
+  ],
+  dashboardWidgets: [
+    {
+      key: 'attendance.punch_widget',
+      title: 'Check In / Check Out',
+      requires: 'attendance:punch',
+      order: 5,
+    },
+  ],
   auditedEntities: [
     'AttendanceRecord',
     'AttendanceCorrectionRequest',
