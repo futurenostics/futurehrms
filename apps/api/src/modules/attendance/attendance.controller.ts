@@ -6,6 +6,7 @@ import type { AuthenticatedUser } from '../../core/auth/types';
 import { ShiftsService } from './shifts.service';
 import { ShiftAssignmentsService } from './shift-assignments.service';
 import { HolidaysService } from './holidays.service';
+import { PunchesService } from './punches.service';
 
 const timeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'must be HH:mm 24-hour format');
 
@@ -60,13 +61,36 @@ const listHolidaysQuerySchema = z.object({
   to: z.string().datetime().optional(),
 });
 
+const punchSchema = z.object({
+  punchType: z.enum(['in', 'out']),
+  // 'mobile' | 'biometric' | 'geo_fence' are reserved for when those
+  // clients exist — this endpoint only accepts web/manual for now.
+  source: z.enum(['web', 'manual']).optional(),
+});
+
 @Controller('attendance')
 export class AttendanceController {
   constructor(
     private readonly shifts: ShiftsService,
     private readonly shiftAssignments: ShiftAssignmentsService,
     private readonly holidays: HolidaysService,
+    private readonly punches: PunchesService,
   ) {}
+
+  /* ---------- Punch capture ---------- */
+
+  @Get('today')
+  @RequirePermission('attendance:punch')
+  async today(@CurrentUser() user: AuthenticatedUser) {
+    return { record: await this.punches.getToday(user) };
+  }
+
+  @Post('punch')
+  @RequirePermission('attendance:punch')
+  async punch(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
+    const input = punchSchema.parse(body);
+    return this.punches.punch(user, input);
+  }
 
   /* ---------- Shifts ---------- */
 
