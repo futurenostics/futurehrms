@@ -51,6 +51,9 @@ const TALLY_ORDER: Array<AttendanceRecordPublic['status']> = [
   'half_day',
   'absent',
   'on_leave',
+  'weekend',
+  'holiday',
+  'remote',
 ];
 
 export function PortalAttendanceTab({ employeeId }: PortalAttendanceTabProps) {

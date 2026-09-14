@@ -65,6 +65,13 @@ export const attendanceManifest: ModuleManifest = {
       order: 5,
     },
   ],
+  scheduledJobs: [
+    {
+      name: 'attendance.end-of-day-backfill',
+      cron: '0 1 * * *',
+      handler: 'handle',
+    },
+  ],
   auditedEntities: [
     'AttendanceRecord',
     'AttendanceCorrectionRequest',

@@ -8,6 +8,7 @@ import { ShiftAssignmentsService } from './shift-assignments.service';
 import { HolidaysService } from './holidays.service';
 import { PunchesService } from './punches.service';
 import { AttendanceRecordsService } from './attendance-records.service';
+import { AttendanceEndOfDayService } from './attendance-end-of-day.service';
 
 const timeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'must be HH:mm 24-hour format');
 
@@ -78,6 +79,12 @@ const listAttendanceRecordsQuerySchema = z.object({
   employeeId: z.string().optional(),
 });
 
+const runEndOfDaySchema = z.object({
+  // Defaults to yesterday (Asia/Karachi) when omitted — pass an
+  // explicit date to catch up a day the scheduler missed.
+  date: z.string().datetime().optional(),
+});
+
 @Controller('attendance')
 export class AttendanceController {
   constructor(
@@ -86,6 +93,7 @@ export class AttendanceController {
     private readonly holidays: HolidaysService,
     private readonly punches: PunchesService,
     private readonly records: AttendanceRecordsService,
+    private readonly endOfDay: AttendanceEndOfDayService,
   ) {}
 
   /* ---------- Punch capture ---------- */
@@ -117,6 +125,24 @@ export class AttendanceController {
       to: new Date(query.to),
       employeeId: query.employeeId,
     });
+  }
+
+  /* ---------- End-of-day backfill ---------- */
+
+  // Manual trigger — mirrors reminders' `/reminders/run-now`. Runs the
+  // same idempotent logic the nightly cron uses; safe to call
+  // repeatedly for the same date. Gated on manage_policies since this
+  // creates real absence/weekend/holiday records, not just a read.
+  @Post('end-of-day/run-now')
+  @RequirePermission('attendance:manage_policies')
+  async runEndOfDayNow(@Body() body: unknown) {
+    const { date } = runEndOfDaySchema.parse(body ?? {});
+    if (date) {
+      const d = new Date(date);
+      const targetDate = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+      return this.endOfDay.backfillDate(targetDate);
+    }
+    return this.endOfDay.handle();
   }
 
   /* ---------- Shifts ---------- */

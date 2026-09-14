@@ -34,13 +34,9 @@ import {
   toPublicAttendanceRecord,
   type AttendanceRecordPublic,
 } from './attendance-record.mapper';
+import { resolveActivePolicy, resolveActiveShift } from './attendance-resolution';
 
 const DEBOUNCE_MS = 2 * 60 * 1000;
-
-const DEFAULT_POLICY = {
-  workingHoursPerDay: 8,
-  maxOvertimeHoursDaily: null as number | null,
-};
 
 export type PunchType = 'in' | 'out';
 
@@ -204,55 +200,4 @@ export class PunchesService {
 
     return toPublicAttendanceRecord(row);
   }
-}
-
-async function resolveActiveShift(
-  employeeId: string,
-  departmentId: string,
-  date: Date,
-): Promise<{
-  id: string;
-  startTime: string;
-  endTime: string;
-  gracePeriodMinutes: number;
-  halfDayThresholdMinutes: number;
-  breakDurationMinutes: number;
-  overtimeType: string;
-  overtimeThresholdMinutes: number;
-} | null> {
-  const assignment = await prisma.shiftAssignment.findFirst({
-    where: {
-      AND: [
-        { OR: [{ employeeId }, { departmentId }] },
-        { validFrom: { lte: date } },
-        { OR: [{ validTo: null }, { validTo: { gte: date } }] },
-      ],
-    },
-    orderBy: { priority: 'desc' },
-    include: { shift: true },
-  });
-  return assignment?.shift ?? null;
-}
-
-async function resolveActivePolicy(
-  employeeId: string,
-  departmentId: string,
-): Promise<{ workingHoursPerDay: number; maxOvertimeHoursDaily: number | null }> {
-  const policy = await prisma.attendancePolicy.findFirst({
-    where: {
-      isActive: true,
-      OR: [
-        { scopeType: 'individual', scopeId: employeeId },
-        { scopeType: 'department', scopeId: departmentId },
-        { scopeType: 'global' },
-      ],
-    },
-    orderBy: { priority: 'desc' },
-  });
-  if (!policy) return DEFAULT_POLICY;
-  return {
-    workingHoursPerDay: Number(policy.workingHoursPerDay),
-    maxOvertimeHoursDaily:
-      policy.maxOvertimeHoursDaily != null ? Number(policy.maxOvertimeHoursDaily) : null,
-  };
 }
