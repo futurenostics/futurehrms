@@ -6,18 +6,26 @@ import { ShiftsService } from './shifts.service';
 import { ShiftAssignmentsService } from './shift-assignments.service';
 import { HolidaysService } from './holidays.service';
 import { PunchesService } from './punches.service';
+import { AttendanceRecordsService } from './attendance-records.service';
 
 /**
  * Attendance module.
  *
- * This phase adds punch capture + the rule engine on top of the
+ * This phase adds punch capture + the rule engine + scoped record
+ * listing (attendance.scope.ts's first real caller) on top of the
  * config CRUD (Shift/ShiftAssignment/Holiday/AttendancePolicy). The
  * correction-request approval-type registration is still next (see
  * the docstring in attendance.manifest.ts for the full phasing).
  */
 @Module({
   controllers: [AttendanceController],
-  providers: [ShiftsService, ShiftAssignmentsService, HolidaysService, PunchesService],
+  providers: [
+    ShiftsService,
+    ShiftAssignmentsService,
+    HolidaysService,
+    PunchesService,
+    AttendanceRecordsService,
+  ],
 })
 export class AttendanceModule implements OnModuleInit {
   constructor(private readonly registry: RegistryService) {}

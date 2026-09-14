@@ -104,6 +104,7 @@ const KEY = {
   shifts: () => ['attendance', 'shifts'] as const,
   assignments: (q: ShiftAssignmentListQuery) => ['attendance', 'shift-assignments', q] as const,
   holidays: () => ['attendance', 'holidays'] as const,
+  records: (q: ListAttendanceRecordsQuery) => ['attendance', 'records', q] as const,
 };
 
 function invalidateAttendance(qc: ReturnType<typeof useQueryClient>) {
@@ -125,6 +126,28 @@ export function usePunch() {
     mutationFn: (input) =>
       apiFetch('/api/attendance/punch', { method: 'POST', body: JSON.stringify(input) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY.today() }),
+  });
+}
+
+/* ────────────────────────── records ────────────────────────── */
+
+export interface ListAttendanceRecordsQuery {
+  from: string;
+  to: string;
+  employeeId?: string;
+}
+
+export interface AttendanceRecordsList {
+  items: AttendanceRecordPublic[];
+  tallies: Record<string, number>;
+}
+
+export function useAttendanceRecords(query: ListAttendanceRecordsQuery) {
+  const params = new URLSearchParams({ from: query.from, to: query.to });
+  if (query.employeeId) params.set('employeeId', query.employeeId);
+  return useQuery<AttendanceRecordsList>({
+    queryKey: KEY.records(query),
+    queryFn: () => apiFetch(`/api/attendance/records?${params.toString()}`),
   });
 }
 

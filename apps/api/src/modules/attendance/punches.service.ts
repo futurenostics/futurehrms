@@ -23,13 +23,17 @@ import { prisma } from '@futurenostics/db';
 import type { Prisma } from '@prisma/client';
 import type { AuthenticatedUser } from '../../core/auth/types';
 import { AuditService } from '../../core/audit/audit.service';
-import { wallClock, DEFAULT_TZ } from '../reminders/tz-utils';
 import {
   buildPenaltyFlags,
   calculateOvertimeHours,
   calculateWorkingHours,
   classifyPunchStatus,
 } from './attendance-rule-engine';
+import {
+  localMidnightUtc,
+  toPublicAttendanceRecord,
+  type AttendanceRecordPublic,
+} from './attendance-record.mapper';
 
 const DEBOUNCE_MS = 2 * 60 * 1000;
 
@@ -45,19 +49,7 @@ export interface PunchInput {
   source?: string;
 }
 
-export interface AttendanceRecordPublic {
-  id: string;
-  employeeId: string;
-  date: string;
-  shiftId: string | null;
-  checkIn: string | null;
-  checkOut: string | null;
-  status: string;
-  workingHours: number;
-  overtimeHours: number;
-  overtimeStatus: string;
-  penaltyFlags: unknown;
-}
+export type { AttendanceRecordPublic };
 
 @Injectable()
 export class PunchesService {
@@ -72,7 +64,7 @@ export class PunchesService {
     const row = await prisma.attendanceRecord.findUnique({
       where: { employeeId_date: { employeeId: viewer.employeeId, date: recordDate } },
     });
-    return row ? toPublic(row) : null;
+    return row ? toPublicAttendanceRecord(row) : null;
   }
 
   async punch(viewer: AuthenticatedUser, input: PunchInput): Promise<AttendanceRecordPublic> {
@@ -210,14 +202,8 @@ export class PunchesService {
       actorId: viewer.id,
     });
 
-    return toPublic(row);
+    return toPublicAttendanceRecord(row);
   }
-}
-
-/** The record date is the punch's calendar day in the org's local timezone, stored as UTC midnight. */
-function localMidnightUtc(instant: Date, tz: string = DEFAULT_TZ): Date {
-  const wc = wallClock(instant, tz);
-  return new Date(Date.UTC(wc.year, wc.month - 1, wc.day));
 }
 
 async function resolveActiveShift(
@@ -268,33 +254,5 @@ async function resolveActivePolicy(
     workingHoursPerDay: Number(policy.workingHoursPerDay),
     maxOvertimeHoursDaily:
       policy.maxOvertimeHoursDaily != null ? Number(policy.maxOvertimeHoursDaily) : null,
-  };
-}
-
-function toPublic(row: {
-  id: string;
-  employeeId: string;
-  date: Date;
-  shiftId: string | null;
-  checkIn: Date | null;
-  checkOut: Date | null;
-  status: string;
-  workingHours: Prisma.Decimal;
-  overtimeHours: Prisma.Decimal;
-  overtimeStatus: string;
-  penaltyFlags: unknown;
-}): AttendanceRecordPublic {
-  return {
-    id: row.id,
-    employeeId: row.employeeId,
-    date: row.date.toISOString(),
-    shiftId: row.shiftId,
-    checkIn: row.checkIn?.toISOString() ?? null,
-    checkOut: row.checkOut?.toISOString() ?? null,
-    status: row.status,
-    workingHours: Number(row.workingHours),
-    overtimeHours: Number(row.overtimeHours),
-    overtimeStatus: row.overtimeStatus,
-    penaltyFlags: row.penaltyFlags,
   };
 }

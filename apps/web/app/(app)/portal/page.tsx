@@ -18,7 +18,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { EmployeeAvatar } from '@/components/employees/employee-avatar';
+import { PortalAttendanceTab } from '@/components/attendance/portal-attendance-tab';
 import { useUser } from '@/hooks/use-user';
+import { usePermissions } from '@/hooks/use-permissions';
 import {
   useEmployee,
   useEmployeeAssignedProjects,
@@ -43,7 +45,9 @@ const CURRENT_MONTH = (() => {
 
 export default function SelfServicePortalPage() {
   const { data: user, isPending: userLoading } = useUser();
+  const perms = usePermissions();
   const employeeId = user?.employeeId ?? null;
+  const canViewAttendance = perms.has('attendance:view_own');
 
   const employeeQuery = useEmployee(employeeId ?? '');
   const employee = employeeQuery.data;
@@ -104,6 +108,7 @@ export default function SelfServicePortalPage() {
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="history">Commission History</TabsTrigger>
             <TabsTrigger value="projects">My Projects</TabsTrigger>
+            {canViewAttendance && <TabsTrigger value="attendance">Attendance</TabsTrigger>}
           </TabsList>
 
           {/* ─────────── Overview ─────────── */}
@@ -191,6 +196,13 @@ export default function SelfServicePortalPage() {
           <TabsContent value="projects" className="mt-fn-5">
             <MyProjectsTab loading={projects.isPending} projects={projects.data ?? []} />
           </TabsContent>
+
+          {/* ─────────── Attendance ─────────── */}
+          {canViewAttendance && (
+            <TabsContent value="attendance" className="mt-fn-5">
+              <PortalAttendanceTab employeeId={employeeId} />
+            </TabsContent>
+          )}
         </Tabs>
       </div>
     </AppShell>

@@ -4,43 +4,21 @@ import * as React from 'react';
 import { Clock, LogIn, LogOut } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
-import { Badge, type BadgeTone } from '@/components/ui/badge';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { usePunch, usePunchToday, type PunchStatus } from '@/lib/queries/attendance';
+import { usePunch, usePunchToday } from '@/lib/queries/attendance';
+import {
+  ATTENDANCE_STATUS_LABEL,
+  ATTENDANCE_STATUS_TONE,
+  attendanceTimeLabel,
+} from '@/components/attendance/status';
 
 /**
  * Dashboard widget — Check In / Check Out. Registered via the
  * attendance manifest's `dashboardWidgets` (key
  * 'attendance.punch_widget'); gated by `attendance:punch`.
  */
-
-const STATUS_TONE: Record<PunchStatus, BadgeTone> = {
-  present: 'success',
-  late: 'warning',
-  half_day: 'warning',
-  absent: 'danger',
-  on_leave: 'info',
-  holiday: 'default',
-  weekend: 'default',
-  remote: 'accent',
-};
-
-const STATUS_LABEL: Record<PunchStatus, string> = {
-  present: 'Present',
-  late: 'Late',
-  half_day: 'Half day',
-  absent: 'Absent',
-  on_leave: 'On leave',
-  holiday: 'Holiday',
-  weekend: 'Weekend',
-  remote: 'Remote',
-};
-
-function timeLabel(iso: string | null): string {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-}
 
 export function PunchWidget() {
   const { data, isLoading, isError } = usePunchToday();
@@ -74,8 +52,10 @@ export function PunchWidget() {
               Today&rsquo;s attendance
             </span>
             {!isLoading && !isError && (
-              <Badge tone={record ? STATUS_TONE[record.status] : 'default'}>
-                {record ? (STATUS_LABEL[record.status] ?? record.status) : 'Not checked in'}
+              <Badge tone={record ? ATTENDANCE_STATUS_TONE[record.status] : 'default'}>
+                {record
+                  ? (ATTENDANCE_STATUS_LABEL[record.status] ?? record.status)
+                  : 'Not checked in'}
               </Badge>
             )}
           </div>
@@ -88,7 +68,8 @@ export function PunchWidget() {
             </div>
           ) : (
             <div className="text-fn-fg-muted text-[12.5px] tabular-nums">
-              In {timeLabel(record?.checkIn ?? null)} · Out {timeLabel(record?.checkOut ?? null)}
+              In {attendanceTimeLabel(record?.checkIn ?? null)} · Out{' '}
+              {attendanceTimeLabel(record?.checkOut ?? null)}
             </div>
           )}
 

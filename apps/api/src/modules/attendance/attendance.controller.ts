@@ -7,6 +7,7 @@ import { ShiftsService } from './shifts.service';
 import { ShiftAssignmentsService } from './shift-assignments.service';
 import { HolidaysService } from './holidays.service';
 import { PunchesService } from './punches.service';
+import { AttendanceRecordsService } from './attendance-records.service';
 
 const timeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'must be HH:mm 24-hour format');
 
@@ -68,6 +69,15 @@ const punchSchema = z.object({
   source: z.enum(['web', 'manual']).optional(),
 });
 
+const listAttendanceRecordsQuerySchema = z.object({
+  from: z.string().datetime(),
+  to: z.string().datetime(),
+  // Narrows within whatever the caller's scope already allows — a
+  // view_own-only caller passing someone else's id just gets an empty
+  // result, not a 403 (the scope where-clause AND's this in).
+  employeeId: z.string().optional(),
+});
+
 @Controller('attendance')
 export class AttendanceController {
   constructor(
@@ -75,6 +85,7 @@ export class AttendanceController {
     private readonly shiftAssignments: ShiftAssignmentsService,
     private readonly holidays: HolidaysService,
     private readonly punches: PunchesService,
+    private readonly records: AttendanceRecordsService,
   ) {}
 
   /* ---------- Punch capture ---------- */
@@ -90,6 +101,22 @@ export class AttendanceController {
   async punch(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
     const input = punchSchema.parse(body);
     return this.punches.punch(user, input);
+  }
+
+  /* ---------- Records ---------- */
+
+  @Get('records')
+  @RequirePermission('attendance:view_own')
+  async listRecords(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() rawQuery: Record<string, unknown>,
+  ) {
+    const query = listAttendanceRecordsQuerySchema.parse(rawQuery);
+    return this.records.list(user, {
+      from: new Date(query.from),
+      to: new Date(query.to),
+      employeeId: query.employeeId,
+    });
   }
 
   /* ---------- Shifts ---------- */
