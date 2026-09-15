@@ -18,6 +18,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { EmployeeAvatar } from '@/components/employees/employee-avatar';
+import { OpdClaimsPanel } from '@/components/opd/opd-claims-panel';
+import { OPD_COPY } from '@/components/opd/opd-copy';
 import { useUser } from '@/hooks/use-user';
 import {
   useEmployee,
@@ -104,6 +106,7 @@ export default function SelfServicePortalPage() {
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="history">Commission History</TabsTrigger>
             <TabsTrigger value="projects">My Projects</TabsTrigger>
+            <TabsTrigger value="opd">{OPD_COPY.portalTab}</TabsTrigger>
           </TabsList>
 
           {/* ─────────── Overview ─────────── */}
@@ -190,6 +193,10 @@ export default function SelfServicePortalPage() {
           {/* ─────────── My Projects (§8.3) ─────────── */}
           <TabsContent value="projects" className="mt-fn-5">
             <MyProjectsTab loading={projects.isPending} projects={projects.data ?? []} />
+          </TabsContent>
+
+          <TabsContent value="opd" className="mt-fn-5">
+            <OpdClaimsPanel mine />
           </TabsContent>
         </Tabs>
       </div>

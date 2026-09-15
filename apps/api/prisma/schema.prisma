@@ -257,6 +257,7 @@ model Employee {
   projectAssignments    ProjectAssignment[]
   commissionLineItems   CommissionLineItem[]
   commissionDisputes    CommissionDispute[]
+  opdClaims             OpdClaim[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -1115,4 +1116,64 @@ model ApprovalDecision {
 
   @@index([approvalId, decidedAt])
   @@index([decidedById])
+}
+
+// ---------- OPD medical reimbursement ----------
+//
+// Employee files a claim with prescription image + amounts. Finance
+// approves/rejects via the generic Approvals inbox (kind `opd-claim`).
+// Status timestamps are dual-written from ApprovalType side effects so
+// the portal and detail page can read without joining Approval. Actor
+// user ids live on Approval / ApprovalDecision, not on this row.
+
+model OpdClaim {
+  id         String   @id @default(cuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  /// Human-readable id e.g. MC-2026-00124
+  claimNumber String @unique
+
+  /// draft | pending_approval | returned | approved | rejected | cancelled
+  status String @default("draft")
+
+  /// ipd | doctor_consultation | diagnostics_laboratory | medicines_supplies | dental | optical | prescription_controlled
+  category String
+
+  medicineCostPkr  Decimal @db.Decimal(14, 2)
+  claimedAmountPkr Decimal @db.Decimal(14, 2)
+
+  visitDate DateTime?
+  notes     String?
+
+  documents OpdClaimDocument[]
+
+  submittedAt     DateTime?
+  approvedAt      DateTime?
+  approvalNote    String?
+  rejectedAt          DateTime?
+  rejectionReasonCode String?
+  rejectionComment    String?
+  rejectionReason     String?
+  returnReasonCode    String?
+  returnComment       String?
+  returnedAt          DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employeeId, status])
+  @@index([status, submittedAt])
+}
+
+model OpdClaimDocument {
+  id         String   @id @default(cuid())
+  claimId    String
+  claim      OpdClaim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  storageKey String
+  fileName   String
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  @@index([claimId])
 }

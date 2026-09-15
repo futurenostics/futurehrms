@@ -8,6 +8,7 @@ import {
   CheckSquare,
   ClipboardCheck,
   CreditCard,
+  HeartPulse,
   Home,
   Network,
   Scale,
@@ -67,6 +68,13 @@ export const navGroups: NavGroup[] = [
     items: [
       { key: 'employees', label: 'Employees', icon: Users, href: '/employees', count: 84 },
       { key: 'org', label: 'Org Chart', icon: Network, href: '/org-chart' },
+      {
+        key: 'opd',
+        label: 'Medical claims',
+        icon: HeartPulse,
+        href: '/opd',
+        requires: 'opd:view_all',
+      },
       {
         key: 'departments',
         label: 'Departments',

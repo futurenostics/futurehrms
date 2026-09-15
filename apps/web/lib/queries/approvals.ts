@@ -159,13 +159,19 @@ export function useApproveApproval() {
   });
 }
 
+export interface RejectInput {
+  reason: string;
+  reasonCode?: string;
+  comment?: string;
+}
+
 export function useRejectApproval() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+    mutationFn: ({ id, ...body }: { id: string } & RejectInput) =>
       apiFetch<ApprovalPublic>(`/api/approvals/${id}/reject`, {
         method: 'POST',
-        body: JSON.stringify({ reason }),
+        body: JSON.stringify(body),
       }),
     onSuccess: () => invalidate(qc),
   });
@@ -189,4 +195,5 @@ function invalidate(qc: QueryClient): void {
   // overtime state — invalidate the most obvious shared keys.
   qc.invalidateQueries({ queryKey: ['commission-runs'] });
   qc.invalidateQueries({ queryKey: ['notifications'] });
+  qc.invalidateQueries({ queryKey: ['opd-claims'] });
 }

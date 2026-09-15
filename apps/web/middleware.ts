@@ -22,6 +22,9 @@ const PROTECTED_PATHS = [
   '/hr',
   '/reports',
   '/settings',
+  '/approvals',
+  '/portal',
+  '/opd',
 ];
 
 const AUTH_PATHS = ['/login'];

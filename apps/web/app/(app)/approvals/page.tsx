@@ -4,7 +4,9 @@ import * as React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowRight, Check, Clock, Inbox, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
+import { formatOpdFinanceFeedback, type OpdFinanceReasonCode } from '@futurenostics/types';
 import { AppShell } from '@/components/shell/app-shell';
+import { OpdFinanceReasonFields } from '@/components/opd/opd-finance-reason-fields';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -355,9 +357,17 @@ function RejectReasonDialog({
   onClose: () => void;
 }) {
   const [reason, setReason] = React.useState('');
+  const [reasonCode, setReasonCode] = React.useState<OpdFinanceReasonCode | ''>('');
+  const [comment, setComment] = React.useState('');
   const reject = useRejectApproval();
+  const isOpdClaim = approval?.type === 'opd-claim';
+
   React.useEffect(() => {
-    if (!approval) setReason('');
+    if (!approval) {
+      setReason('');
+      setReasonCode('');
+      setComment('');
+    }
   }, [approval]);
 
   return (
@@ -371,18 +381,34 @@ function RejectReasonDialog({
             {approval?.metadata.requester?.name ?? approval?.submittedByEmail} ·{' '}
             {approval?.metadata.title}
           </div>
-          <label className="text-fn-fg font-fn-medium mt-fn-2 text-[12.5px]">
-            Reason <span className="text-fn-danger">*</span>
-            <span className="text-fn-fg-faint font-fn-regular ml-fn-1">
-              The requester will see this. Be specific.
-            </span>
-          </label>
-          <Textarea
-            rows={3}
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="e.g. The Saturday work wasn't pre-approved and the project lead has no record of the emergency."
-          />
+          {isOpdClaim ? (
+            <div className="mt-fn-2">
+              <OpdFinanceReasonFields
+                reasonCode={reasonCode}
+                onReasonCodeChange={setReasonCode}
+                comment={comment}
+                onCommentChange={setComment}
+                reasonLabel="Reason"
+                commentLabel="Comment (optional)"
+                commentPlaceholder="Add detail the employee will see on the claim."
+              />
+            </div>
+          ) : (
+            <>
+              <label className="text-fn-fg font-fn-medium mt-fn-2 text-[12.5px]">
+                Reason <span className="text-fn-danger">*</span>
+                <span className="text-fn-fg-faint font-fn-regular ml-fn-1">
+                  The requester will see this. Be specific.
+                </span>
+              </label>
+              <Textarea
+                rows={3}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="e.g. The Saturday work wasn't pre-approved and the project lead has no record of the emergency."
+              />
+            </>
+          )}
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>
@@ -390,11 +416,25 @@ function RejectReasonDialog({
           </Button>
           <Button
             variant="destructive"
-            disabled={!approval || reject.isPending || reason.trim().length === 0}
+            disabled={
+              !approval ||
+              reject.isPending ||
+              (isOpdClaim ? !reasonCode : reason.trim().length === 0)
+            }
             onClick={async () => {
               if (!approval) return;
               try {
-                await reject.mutateAsync({ id: approval.id, reason: reason.trim() });
+                if (isOpdClaim && reasonCode) {
+                  const built = formatOpdFinanceFeedback(reasonCode, comment);
+                  await reject.mutateAsync({
+                    id: approval.id,
+                    reason: built,
+                    reasonCode,
+                    comment: comment.trim() || undefined,
+                  });
+                } else {
+                  await reject.mutateAsync({ id: approval.id, reason: reason.trim() });
+                }
                 toast.success('Request rejected.');
                 onClose();
               } catch (err) {
@@ -454,6 +494,7 @@ function RowsSkeleton() {
  */
 const KIND_HUE: Record<string, number> = {
   'commission-run': 280,
+  'opd-claim': 145,
   'payroll-run': 280,
   'overtime-request': 65,
   'leave-request': 245,

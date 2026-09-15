@@ -462,6 +462,7 @@ const SAMPLE_EMPLOYEES: SampleEmployee[] = [
     joinDate: '2022-01-15',
     salaryPkr: 700000,
     managerEmail: null,
+    user: { roles: ['finance_manager'] },
   },
   {
     fullName: 'Noor ul Ain',
