@@ -23,7 +23,7 @@ import { RemindersModule } from './modules/reminders/reminders.module';
 import { ApprovalsModule } from './modules/approvals/approvals.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
-import { OpdModule } from './modules/opd/opd.module';
+import { ExpensesModule } from './modules/expenses/expenses.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -48,7 +48,7 @@ import { HealthController } from './health.controller';
     ApprovalsModule,
     ReportsModule,
     DashboardModule,
-    OpdModule,
+    ExpensesModule,
   ],
   controllers: [HealthController],
   providers: [

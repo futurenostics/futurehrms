@@ -14,5 +14,5 @@ export * from './commission-dispute';
 export * from './reminder-task';
 export * from './report';
 export * from './dashboard';
-export * from './opd-claim-meta';
-export * from './opd-claim';
+export * from './expense-claim-meta';
+export * from './expense-claim';

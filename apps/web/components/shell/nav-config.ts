@@ -8,7 +8,6 @@ import {
   CheckSquare,
   ClipboardCheck,
   CreditCard,
-  HeartPulse,
   Home,
   Network,
   Scale,
@@ -17,6 +16,7 @@ import {
   Star,
   UserCircle,
   Users,
+  Wallet,
 } from 'lucide-react';
 
 export interface NavItem {
@@ -30,6 +30,8 @@ export interface NavItem {
   badge?: string;
   /** Permission key — when set, the item only renders for users with the perm. */
   requires?: string;
+  /** When set, the item renders if the user has any of these permissions. */
+  requiresAny?: string[];
   /**
    * When true, the item is only active on an exact path match. Use
    * for landing-page items whose href is a prefix of sibling routes
@@ -61,6 +63,13 @@ export const navGroups: NavGroup[] = [
     items: [
       { key: 'dashboard', label: 'Dashboard', icon: Home, href: '/dashboard' },
       { key: 'portal', label: 'My Portal', icon: UserCircle, href: '/portal' },
+      {
+        key: 'expenses',
+        label: 'Expenses',
+        icon: Wallet,
+        href: '/expenses',
+        requiresAny: ['expenses:view_own', 'expenses:view_all'],
+      },
     ],
   },
   {
@@ -68,13 +77,6 @@ export const navGroups: NavGroup[] = [
     items: [
       { key: 'employees', label: 'Employees', icon: Users, href: '/employees', count: 84 },
       { key: 'org', label: 'Org Chart', icon: Network, href: '/org-chart' },
-      {
-        key: 'opd',
-        label: 'Medical claims',
-        icon: HeartPulse,
-        href: '/opd',
-        requires: 'opd:view_all',
-      },
       {
         key: 'departments',
         label: 'Departments',

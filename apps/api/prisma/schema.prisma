@@ -39,6 +39,10 @@ model User {
   notificationPreferences NotificationPreference[]
   submittedApprovals      Approval[]                @relation("ApprovalSubmitter")
   approvalDecisions       ApprovalDecision[]
+  expenseClaimsSubmitted  ExpenseClaim[]            @relation("ExpenseClaimSubmitter")
+  expenseClaimsApproved   ExpenseClaim[]            @relation("ExpenseClaimApprover")
+  expenseClaimsRejected   ExpenseClaim[]            @relation("ExpenseClaimRejecter")
+  expenseClaimsReturned   ExpenseClaim[]            @relation("ExpenseClaimReturner")
 
   isActive            Boolean   @default(true)
   failedLoginAttempts Int       @default(0)
@@ -257,7 +261,7 @@ model Employee {
   projectAssignments    ProjectAssignment[]
   commissionLineItems   CommissionLineItem[]
   commissionDisputes    CommissionDispute[]
-  opdClaims             OpdClaim[]
+  expenseClaims         ExpenseClaim[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -1118,62 +1122,76 @@ model ApprovalDecision {
   @@index([decidedById])
 }
 
-// ---------- OPD medical reimbursement ----------
+// ---------- Expense reimbursement ----------
 //
-// Employee files a claim with prescription image + amounts. Finance
-// approves/rejects via the generic Approvals inbox (kind `opd-claim`).
-// Status timestamps are dual-written from ApprovalType side effects so
-// the portal and detail page can read without joining Approval. Actor
-// user ids live on Approval / ApprovalDecision, not on this row.
+// One table for medical, gym, travel, and business-development claims.
+// Shared money/date/notes live as columns; category-specific fields are
+// in `details` JSON and validated in the expenses module (zod per kind).
+// Finance approves via the generic Approvals inbox (`expense-claim`).
 
-model OpdClaim {
+model ExpenseClaim {
   id         String   @id @default(cuid())
   employeeId String
   employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
-  /// Human-readable id e.g. MC-2026-00124
+  /// Human-readable id e.g. EX-2026-00124
   claimNumber String @unique
 
-  /// draft | pending_approval | returned | approved | rejected | cancelled
+  /// draft | pending_approval | returned | approved | rejected
   status String @default("draft")
 
-  /// ipd | doctor_consultation | diagnostics_laboratory | medicines_supplies | dental | optical | prescription_controlled
+  /// medical | gym | travel | business_development
   category String
 
-  medicineCostPkr  Decimal @db.Decimal(14, 2)
-  claimedAmountPkr Decimal @db.Decimal(14, 2)
+  amount   Decimal @db.Decimal(14, 2)
+  /// ISO 4217. v1 is PKR-only; column is ready for FX later.
+  currency String  @default("PKR")
+  expenseDate DateTime?
+  notes       String?
 
-  visitDate DateTime?
-  notes     String?
+  /// Per-category payload. Shape is enforced in app code, not the DB.
+  details Json
 
-  documents OpdClaimDocument[]
+  documents ExpenseClaimDocument[]
 
-  submittedAt     DateTime?
-  approvedAt      DateTime?
-  approvalNote    String?
+  submittedAt   DateTime?
+  submittedById String?
+  submittedBy   User?     @relation("ExpenseClaimSubmitter", fields: [submittedById], references: [id])
+
+  approvedAt    DateTime?
+  approvedById  String?
+  approvedBy    User?     @relation("ExpenseClaimApprover", fields: [approvedById], references: [id])
+  approvalNote  String?
+
   rejectedAt          DateTime?
+  rejectedById        String?
+  rejectedBy          User?     @relation("ExpenseClaimRejecter", fields: [rejectedById], references: [id])
   rejectionReasonCode String?
   rejectionComment    String?
   rejectionReason     String?
-  returnReasonCode    String?
-  returnComment       String?
-  returnedAt          DateTime?
+
+  returnedAt       DateTime?
+  returnedById     String?
+  returnedBy       User?     @relation("ExpenseClaimReturner", fields: [returnedById], references: [id])
+  returnReasonCode String?
+  returnComment    String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([employeeId, status])
   @@index([status, submittedAt])
+  @@index([category, status])
 }
 
-model OpdClaimDocument {
-  id         String   @id @default(cuid())
+model ExpenseClaimDocument {
+  id         String       @id @default(cuid())
   claimId    String
-  claim      OpdClaim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  claim      ExpenseClaim @relation(fields: [claimId], references: [id], onDelete: Cascade)
   storageKey String
   fileName   String
-  sortOrder  Int      @default(0)
-  createdAt  DateTime @default(now())
+  sortOrder  Int          @default(0)
+  createdAt  DateTime     @default(now())
 
   @@index([claimId])
 }

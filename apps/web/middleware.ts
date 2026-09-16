@@ -25,6 +25,7 @@ const PROTECTED_PATHS = [
   '/approvals',
   '/portal',
   '/opd',
+  '/expenses',
 ];
 
 const AUTH_PATHS = ['/login'];

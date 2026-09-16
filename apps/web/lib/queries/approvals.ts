@@ -195,5 +195,5 @@ function invalidate(qc: QueryClient): void {
   // overtime state — invalidate the most obvious shared keys.
   qc.invalidateQueries({ queryKey: ['commission-runs'] });
   qc.invalidateQueries({ queryKey: ['notifications'] });
-  qc.invalidateQueries({ queryKey: ['opd-claims'] });
+  qc.invalidateQueries({ queryKey: ['expense-claims'] });
 }
