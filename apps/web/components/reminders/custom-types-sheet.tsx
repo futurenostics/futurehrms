@@ -76,7 +76,7 @@ const CHANNELS: Array<{ value: Channel; label: string; hint: string; disabled?: 
   { value: 'in_app', label: 'In-app', hint: 'Bell + inbox' },
   { value: 'email', label: 'Email', hint: 'SMTP / Resend' },
   { value: 'push', label: 'Push', hint: 'Future', disabled: true },
-  { value: 'slack', label: 'Slack', hint: 'Future', disabled: true },
+  { value: 'slack', label: 'Slack', hint: 'DM via bot' },
 ];
 
 type FormState = {

@@ -12,7 +12,7 @@ export const REMINDERS_NOTIFICATION_TYPES: NotificationTypeDefinition[] = [
     name: 'Probation ending',
     description: 'Fires N days before an employee’s probationEndDate.',
     severity: 'warning',
-    defaultChannels: ['in_app', 'email'],
+    defaultChannels: ['in_app', 'email', 'slack'],
     titleTemplate: 'Probation ending soon: {{fullName}}',
     bodyTemplate:
       '{{fullName}}’s probation ends on {{probationEndDate}}. Confirm whether the employee is moving to permanent status or needs an extension.',
@@ -24,7 +24,7 @@ export const REMINDERS_NOTIFICATION_TYPES: NotificationTypeDefinition[] = [
     name: 'Internship ending',
     description: 'Fires N days before an intern’s internshipEndDate.',
     severity: 'warning',
-    defaultChannels: ['in_app', 'email'],
+    defaultChannels: ['in_app', 'email', 'slack'],
     titleTemplate: 'Internship ending: {{fullName}}',
     bodyTemplate:
       '{{fullName}}’s internship ends on {{internshipEndDate}}. Confirm conversion to FTE or scheduled offboarding.',
@@ -36,7 +36,7 @@ export const REMINDERS_NOTIFICATION_TYPES: NotificationTypeDefinition[] = [
     name: 'Annual review',
     description: 'Fires N days before an employee’s annual review window.',
     severity: 'info',
-    defaultChannels: ['in_app', 'email'],
+    defaultChannels: ['in_app', 'email', 'slack'],
     titleTemplate: 'Annual review window opens for {{fullName}}',
     bodyTemplate:
       'Schedule {{fullName}}’s annual review. The review window opens shortly — coordinate with the employee and their manager.',
@@ -48,7 +48,7 @@ export const REMINDERS_NOTIFICATION_TYPES: NotificationTypeDefinition[] = [
     name: 'Biannual review',
     description: 'Fires N days before an Engineering biannual review.',
     severity: 'info',
-    defaultChannels: ['in_app', 'email'],
+    defaultChannels: ['in_app', 'email', 'slack'],
     titleTemplate: 'Biannual review window opens for {{fullName}}',
     bodyTemplate:
       '{{fullName}} has a biannual review scheduled. Confirm reviewer assignments and goals.',
@@ -60,7 +60,8 @@ export const REMINDERS_NOTIFICATION_TYPES: NotificationTypeDefinition[] = [
     name: 'Birthday',
     description: 'Fires on an employee’s birthday.',
     severity: 'success',
-    defaultChannels: ['in_app'],
+    defaultChannels: ['in_app', 'slack'],
+    slackDelivery: 'channel',
     titleTemplate: '🎂 Today is {{fullName}}’s birthday',
     bodyTemplate: 'Say happy birthday to {{fullName}}.',
     linkTemplate: '/employees/{{employeeId}}',
@@ -71,7 +72,8 @@ export const REMINDERS_NOTIFICATION_TYPES: NotificationTypeDefinition[] = [
     name: 'Work anniversary',
     description: 'Fires on an employee’s joinDate anniversary.',
     severity: 'success',
-    defaultChannels: ['in_app', 'email'],
+    defaultChannels: ['in_app', 'email', 'slack'],
+    slackDelivery: 'channel',
     titleTemplate: '{{fullName}} celebrates {{yearsLabel}} today',
     bodyTemplate:
       'It’s {{fullName}}’s work anniversary. Send a quick note recognising their contribution.',
@@ -83,7 +85,7 @@ export const REMINDERS_NOTIFICATION_TYPES: NotificationTypeDefinition[] = [
     name: 'Visa renewal',
     description: 'Fires 90 days before a tracked visa expiry.',
     severity: 'danger',
-    defaultChannels: ['in_app', 'email'],
+    defaultChannels: ['in_app', 'email', 'slack'],
     titleTemplate: 'Visa expires {{visaExpiryDate}} — {{fullName}}',
     bodyTemplate:
       '{{fullName}}’s visa expires on {{visaExpiryDate}}. Start the renewal paperwork now.',
@@ -95,7 +97,7 @@ export const REMINDERS_NOTIFICATION_TYPES: NotificationTypeDefinition[] = [
     name: 'Document expiring',
     description: 'Fires when a tracked employee document is N days from expiry.',
     severity: 'warning',
-    defaultChannels: ['in_app', 'email'],
+    defaultChannels: ['in_app', 'email', 'slack'],
     titleTemplate: 'Document expiring: {{documentKind}} — {{fullName}}',
     bodyTemplate:
       '{{fullName}}’s {{documentKind}} expires on {{expiresAt}}. Request an updated copy.',
@@ -107,7 +109,7 @@ export const REMINDERS_NOTIFICATION_TYPES: NotificationTypeDefinition[] = [
     name: 'Increment eligibility',
     description: 'Fires when an employee is due for a salary review / increment.',
     severity: 'info',
-    defaultChannels: ['in_app', 'email'],
+    defaultChannels: ['in_app', 'email', 'slack'],
     titleTemplate: 'Increment review due: {{fullName}}',
     bodyTemplate:
       '{{fullName}} is due for a salary review. Assess increment eligibility and record the outcome.',
@@ -119,7 +121,8 @@ export const REMINDERS_NOTIFICATION_TYPES: NotificationTypeDefinition[] = [
     name: 'Monthly birthday sheet',
     description: 'Monthly digest to HR listing every employee birthday in the current month.',
     severity: 'info',
-    defaultChannels: ['in_app', 'email'],
+    defaultChannels: ['in_app', 'email', 'slack'],
+    slackDelivery: 'channel',
     titleTemplate: '🎂 Birthdays in {{monthLabel}} ({{birthdayCount}})',
     bodyTemplate: 'Employee birthdays this month: {{birthdayList}}',
     module: 'reminders',

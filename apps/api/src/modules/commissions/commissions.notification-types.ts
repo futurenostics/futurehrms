@@ -15,7 +15,7 @@ export const COMMISSIONS_NOTIFICATION_TYPES: NotificationTypeDefinition[] = [
     name: 'Commission approved',
     description: 'Sent to each recipient when their monthly commission run is approved.',
     severity: 'info',
-    defaultChannels: ['in_app', 'email'],
+    defaultChannels: ['in_app', 'email', 'slack'],
     titleTemplate: 'Your {{monthLabel}} commission is approved',
     bodyTemplate:
       'Your commission for {{monthLabel}} has been approved: ${{amountUsd}}. ' +
@@ -28,7 +28,7 @@ export const COMMISSIONS_NOTIFICATION_TYPES: NotificationTypeDefinition[] = [
     name: 'Commission disbursed',
     description: 'Sent to each recipient when their monthly commission run is locked for payout.',
     severity: 'success',
-    defaultChannels: ['in_app', 'email'],
+    defaultChannels: ['in_app', 'email', 'slack'],
     titleTemplate: 'Your {{monthLabel}} commission has been disbursed',
     bodyTemplate:
       'Your commission for {{monthLabel}} (${{amountUsd}}) has been locked and is being disbursed.',

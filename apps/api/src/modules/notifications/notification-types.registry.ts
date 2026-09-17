@@ -43,6 +43,14 @@ export interface NotificationTypeDefinition {
   linkTemplate?: string;
   /** Module key (`commissions`, `employees`, …) for filtering / grouping. */
   module: string;
+  /**
+   * Only read when `defaultChannels` includes `slack`.
+   * `'dm'` (default when omitted) sends a direct message to the
+   * recipient. `'channel'` posts to the shared announcements channel
+   * instead — use only for non-sensitive, celebratory types (birthdays,
+   * anniversaries). Everything personal or financial must stay `'dm'`.
+   */
+  slackDelivery?: 'dm' | 'channel';
 }
 
 @Injectable()

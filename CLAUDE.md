@@ -375,6 +375,21 @@ helper deliberately mirrors `commission-run.approval-type.ts`
 `toMetadata()` because it can't call the registered type — keep the
 two in sync if either changes.
 
+**Slack channel is integrated on the backend; self-serve UI is still pending.**
+`SlackChannel` (`notifications/channels/slack.channel.ts`, backed by
+`core/slack/slack.service.ts`) sends either a DM or a post to the
+shared announcements channel, gated by `NotificationTypeDefinition.slackDelivery`
+(`'dm'` default, `'channel'` for non-sensitive broadcast types).
+Module-shipped types already opt in (`commissions.notification-types.ts`,
+`reminders.notification-types.ts`), and HR admins can now opt a
+custom notification type into Slack too, from the Channels picker in
+the custom-types sheet. What's still missing is a page for an
+individual user to turn Slack (or email) on/off per type — the
+backend already exposes it (`GET/PATCH /notifications/preferences`
+in `notifications.controller.ts`), but no frontend screen calls it
+yet. That lands with the full Notifications Center in the Personal
+Settings build (see the module locations note above).
+
 ### Permission model
 
 **Approvals** (4 perms; see `approvals.manifest.ts`):
@@ -416,3 +431,10 @@ that shape — see `commission-run.approval-type.ts:onApproved`).
 
 - When something is genuinely ambiguous, ask before deciding.
 - Don't guess on architectural decisions. Don't guess on visual specifications. Don't guess on business logic.
+
+## How to talk to the user
+
+- Use simple words. Plain English only.
+- Do not use hard words, jargon, or fancy language if an easy word works just as well.
+- If a technical word must be used, explain what it means in plain words.
+- Keep sentences short and clear.

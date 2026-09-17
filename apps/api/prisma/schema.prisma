@@ -45,6 +45,12 @@ model User {
   lockedUntil         DateTime?
   lastLoginAt         DateTime?
 
+  /// Slack member id (e.g. "U0123ABC"), resolved once via
+  /// users.lookupByEmail and cached here so every Slack DM doesn't
+  /// re-query Slack's API. Null until the first successful lookup, or
+  /// permanently null if the user's email has no matching Slack account.
+  slackUserId String?
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?

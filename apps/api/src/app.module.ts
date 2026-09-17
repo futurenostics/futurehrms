@@ -10,6 +10,7 @@ import { AuditModule } from './core/audit/audit.module';
 import { RbacModule } from './core/rbac/rbac.module';
 import { SchedulerModule } from './core/scheduler/scheduler.module';
 import { EmailModule } from './core/email/email.module';
+import { SlackModule } from './core/slack/slack.module';
 import { StorageModule } from './core/storage/storage.module';
 import { AuthModule } from './core/auth/auth.module';
 import { JwtAuthGuard } from './core/auth/guards/jwt-auth.guard';
@@ -35,6 +36,7 @@ import { HealthController } from './health.controller';
     AuditModule,
     SchedulerModule,
     EmailModule,
+    SlackModule,
     StorageModule,
     AuthModule,
     TimelineModule,

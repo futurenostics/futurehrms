@@ -25,6 +25,7 @@ import type { AuthenticatedUser } from '../../core/auth/types';
 import { AuditService } from '../../core/audit/audit.service';
 import { EventBusService } from '../../core/events/event-bus.service';
 import { EmailChannel } from './channels/email.channel';
+import { SlackChannel } from './channels/slack.channel';
 import { InAppChannel } from './channels/in-app.channel';
 import {
   NotificationTypesRegistry,
@@ -87,6 +88,7 @@ export class NotificationsService {
     private readonly prefs: NotificationPreferencesService,
     private readonly inApp: InAppChannel,
     private readonly emailChannel: EmailChannel,
+    private readonly slackChannel: SlackChannel,
     private readonly events: EventBusService,
     private readonly audit: AuditService,
   ) {}
@@ -153,6 +155,17 @@ export class NotificationsService {
         body,
         link: link ?? null,
         payload,
+      });
+    }
+
+    if (channels.includes('slack')) {
+      // Same fire-and-continue pattern as email.
+      void this.slackChannel.send({
+        recipientUserId: input.recipientUserId,
+        type,
+        title,
+        body,
+        link: link ?? null,
       });
     }
 
