@@ -6,6 +6,7 @@ import { AppShell } from '@/components/shell/app-shell';
 import { useUser } from '@/hooks/use-user';
 import { usePermissions } from '@/hooks/use-permissions';
 import { TotalEmployeesWidget } from '@/components/employees/widgets/total-employees-widget';
+import { PunchWidget } from '@/components/attendance/widgets/punch-widget';
 import {
   CommissionRunStatusWidget,
   MyCommissionTrendWidget,
@@ -31,6 +32,12 @@ export default function DashboardPage() {
               : 'Welcome to Futurenostics HRMS.'}
           </p>
         </div>
+
+        {perms.has('attendance:punch') && (
+          <div className="gap-fn-4 grid sm:grid-cols-2 lg:grid-cols-3">
+            <PunchWidget />
+          </div>
+        )}
 
         {/* Module 7 — management dashboard (Super Admin / Finance Manager) */}
         {perms.has('dashboard:view_management') && <ManagementDashboard />}

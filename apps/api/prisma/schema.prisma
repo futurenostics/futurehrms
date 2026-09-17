@@ -15,7 +15,7 @@
 //   - Indexes on the foreign keys used by list pages
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
   binaryTargets = ["native"]
 }
 
@@ -33,12 +33,13 @@ model User {
   employeeId   String?   @unique
   employee     Employee? @relation(fields: [employeeId], references: [id])
 
-  roles                   UserRole[]
-  refreshTokens           RefreshToken[]
-  notifications           Notification[]            @relation("UserNotifications")
-  notificationPreferences NotificationPreference[]
-  submittedApprovals      Approval[]                @relation("ApprovalSubmitter")
-  approvalDecisions       ApprovalDecision[]
+  roles                     UserRole[]
+  refreshTokens             RefreshToken[]
+  notifications             Notification[]           @relation("UserNotifications")
+  notificationPreferences   NotificationPreference[]
+  submittedApprovals        Approval[]               @relation("ApprovalSubmitter")
+  approvalDecisions         ApprovalDecision[]
+  modifiedAttendanceRecords AttendanceRecord[]
 
   isActive            Boolean   @default(true)
   failedLoginAttempts Int       @default(0)
@@ -68,11 +69,11 @@ model RefreshToken {
 }
 
 model Role {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  slug        String   @unique
+  id          String  @id @default(cuid())
+  name        String  @unique
+  slug        String  @unique
   description String?
-  isSystem    Boolean  @default(false)
+  isSystem    Boolean @default(false)
 
   permissions RolePermission[]
   users       UserRole[]
@@ -127,10 +128,11 @@ model Department {
   slug     String  @unique
   isActive Boolean @default(true)
 
-  employees     Employee[]
-  designations  Designation[]
-  projects      Project[]
-  reminderRules ReminderRule[] @relation("ReminderRulesByDepartment")
+  employees        Employee[]
+  designations     Designation[]
+  projects         Project[]
+  reminderRules    ReminderRule[]    @relation("ReminderRulesByDepartment")
+  shiftAssignments ShiftAssignment[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -165,15 +167,15 @@ model EmployeeStatus {
 // ---------- Employee + lifecycle ----------
 
 model Employee {
-  id          String    @id @default(cuid())
-  eid         String    @unique
+  id            String    @id @default(cuid())
+  eid           String    @unique
   // fullName is kept as the canonical name field (joined first + last
   // on save); firstName / lastName are the inputs the new sheet
   // surfaces. Nullable so the migration can backfill existing rows.
-  fullName    String
-  firstName   String?
-  lastName    String?
-  pronouns    String?
+  fullName      String
+  firstName     String?
+  lastName      String?
+  pronouns      String?
   // `email` is the work email (locked after onboarding); personalEmail
   // is the optional secondary used as a login-fallback target.
   email         String    @unique
@@ -182,10 +184,10 @@ model Employee {
   phone         String?
   personalPhone String?
   address       String?
-  dateOfBirth DateTime?
-  gender      String?
-  cnic        String?   @unique
-  joinDate    DateTime
+  dateOfBirth   DateTime?
+  gender        String?
+  cnic          String?   @unique
+  joinDate      DateTime
 
   departmentId  String
   department    Department     @relation(fields: [departmentId], references: [id])
@@ -236,9 +238,9 @@ model Employee {
   // hours are wall-clock "HH:MM" strings in the employee's timezone —
   // reminders due during the window are deferred to `quietHoursEnd`.
   // Both null = no quiet hours.
-  timezone         String?
-  quietHoursStart  String?
-  quietHoursEnd    String?
+  timezone        String?
+  quietHoursStart String?
+  quietHoursEnd   String?
 
   emergencyContact Json?
 
@@ -251,12 +253,16 @@ model Employee {
   terminationReason String?
   terminationNotes  String?
 
-  documents             EmployeeDocument[]
-  salaryHistory         SalaryHistory[]
-  timeline              TimelineEntry[]
-  projectAssignments    ProjectAssignment[]
-  commissionLineItems   CommissionLineItem[]
-  commissionDisputes    CommissionDispute[]
+  documents                    EmployeeDocument[]
+  salaryHistory                SalaryHistory[]
+  timeline                     TimelineEntry[]
+  projectAssignments           ProjectAssignment[]
+  commissionLineItems          CommissionLineItem[]
+  commissionDisputes           CommissionDispute[]
+  shiftAssignments             ShiftAssignment[]
+  rawPunches                   RawPunch[]
+  attendanceRecords            AttendanceRecord[]
+  attendanceCorrectionRequests AttendanceCorrectionRequest[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -340,21 +346,21 @@ model TimelineEntry {
 //     the project records the override reason.
 
 model ProjectCategory {
-  id            String           @id @default(cuid())
-  slug          String           @unique
+  id            String            @id @default(cuid())
+  slug          String            @unique
   name          String
   description   String?
-  color         String           @default("violet")
+  color         String            @default("violet")
   parentId      String?
-  parent        ProjectCategory? @relation("CategoryTree", fields: [parentId], references: [id])
+  parent        ProjectCategory?  @relation("CategoryTree", fields: [parentId], references: [id])
   children      ProjectCategory[] @relation("CategoryTree")
-  archived      Boolean          @default(false)
+  archived      Boolean           @default(false)
   // Soft pointer to the rule the UI should suggest by default when a
   // new project is created under this category. SetNull because rules
   // are immutable per version — when a new version supersedes the
   // pointer target, the seed/publish flow updates the pointer.
   defaultRuleId String?
-  defaultRule   CommissionRule?  @relation("CategoryDefault", fields: [defaultRuleId], references: [id], onDelete: SetNull)
+  defaultRule   CommissionRule?   @relation("CategoryDefault", fields: [defaultRuleId], references: [id], onDelete: SetNull)
 
   projects Project[]
   rules    CommissionRule[] @relation("CategoryRules")
@@ -369,9 +375,9 @@ model ProjectCategory {
 }
 
 model Project {
-  id          String @id @default(cuid())
-  name        String
-  clientName  String
+  id         String @id @default(cuid())
+  name       String
+  clientName String
 
   categoryId String
   category   ProjectCategory @relation(fields: [categoryId], references: [id])
@@ -413,8 +419,8 @@ model Project {
 
   notes String?
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
   createdById String
 
@@ -447,8 +453,8 @@ model ProjectAssignment {
   // Soft-delete a removed assignment instead of hard-deleting so the
   // commission run for a historical month can still show "Jane was on
   // this project until April" without resurrecting the row.
-  removedAt   DateTime?
-  removedById String?
+  removedAt    DateTime?
+  removedById  String?
 
   @@unique([projectId, employeeId, roleName])
   @@index([projectId])
@@ -469,7 +475,7 @@ model CommissionRule {
   version    String // semver-ish — '3.2', '3.3'. Generated by the publish flow.
 
   // Pool model.
-  poolMode  String  // 'percentage' | 'fixed' | 'tiered'
+  poolMode  String // 'percentage' | 'fixed' | 'tiered'
   poolValue Decimal @db.Decimal(12, 2)
 
   // Revenue brackets for poolMode='tiered'. JSON array, ascending,
@@ -513,7 +519,7 @@ model CommissionRule {
 
   // Roles + splits as JSON. Shape: { winner: 58, communicator: 30, eligible_team: 12 }.
   // Sum should equal 100 in any non-pending row.
-  rolePercentages Json
+  rolePercentages      Json
   // Disbursement schedule placeholder — format locked in Session 2
   // (single-shot vs monthly fractions vs milestone). Stored as JSON
   // so the schema doesn't need to migrate when the format crystallises.
@@ -580,26 +586,26 @@ model CommissionRun {
 
   // Lifecycle actors + timestamps. Captured per-transition so the
   // audit trail is dense even outside AuditLog.
-  createdAt    DateTime  @default(now())
-  createdById  String
-  submittedAt  DateTime?
-  submittedById String?
-  approvedAt   DateTime?
-  approvedById String?
+  createdAt           DateTime  @default(now())
+  createdById         String
+  submittedAt         DateTime?
+  submittedById       String?
+  approvedAt          DateTime?
+  approvedById        String?
   // True when the submitter and approver are the same person.
   // Captured per-row so the soft-SoD warning banner doesn't have to
   // re-derive at display time.
-  approverIsSubmitter Boolean @default(false)
-  rejectedAt   DateTime?
-  rejectedById String?
-  rejectReason String?
-  lockedAt     DateTime?
-  lockedById   String?
+  approverIsSubmitter Boolean   @default(false)
+  rejectedAt          DateTime?
+  rejectedById        String?
+  rejectReason        String?
+  lockedAt            DateTime?
+  lockedById          String?
   // Post-lock disbursement (Module 4). Stamped when HR pushes the
   // locked run out to the payout portals; gates the "Send emails" /
   // payslip actions and shows "Disbursed on …" in the UI.
-  disbursedAt   DateTime?
-  disbursedById String?
+  disbursedAt         DateTime?
+  disbursedById       String?
 
   // The typed-phrase confirmation from PNG 10 — captured for audit.
   approvalConfirmationPhrase String?
@@ -623,9 +629,9 @@ model CommissionLineItem {
   // projectId are NOT FK-cascaded — when an employee or project is
   // soft-deleted, their historical line items must remain readable.
   projectId  String
-  project    Project   @relation(fields: [projectId], references: [id])
+  project    Project  @relation(fields: [projectId], references: [id])
   employeeId String
-  employee   Employee  @relation(fields: [employeeId], references: [id])
+  employee   Employee @relation(fields: [employeeId], references: [id])
   roleName   String
 
   // Snapshot of the assignment percentage at calc time, so future
@@ -637,9 +643,9 @@ model CommissionLineItem {
   // project's revenue field; monthFractionNumerator /
   // monthFractionDenominator encode the days-in-month overlap the
   // PNG-09 `DATE 28/28` column displays.
-  baseRevenueUsd            Decimal @db.Decimal(12, 2)
-  monthFractionNumerator    Int
-  monthFractionDenominator  Int
+  baseRevenueUsd           Decimal @db.Decimal(12, 2)
+  monthFractionNumerator   Int
+  monthFractionDenominator Int
 
   // Computed amount before adjustments.
   calculatedAmountUsd Decimal @db.Decimal(12, 2)
@@ -662,8 +668,8 @@ model CommissionLineItem {
   // time; when set it overrides baseRevenueUsd and the calculated
   // amount is re-derived linearly. paymentSource records whether the
   // payout came via the Upwork Profile or the linked Mastercard.
-  periodRevenueUsd     Decimal? @db.Decimal(12, 2)
-  paymentSource        String?
+  periodRevenueUsd Decimal? @db.Decimal(12, 2)
+  paymentSource    String?
 
   // Held mid-run — the row's amount is moved to the next run as a
   // carry-forward line. We mark BOTH directions:
@@ -691,12 +697,12 @@ model CommissionLineItem {
 
   disputes CommissionDispute[]
 
+  @@unique([runId, projectId, employeeId, roleName])
   @@index([runId])
   @@index([projectId])
   @@index([employeeId])
   @@index([carryForwardToRunId])
   @@index([carryForwardFromRunId])
-  @@unique([runId, projectId, employeeId, roleName])
 }
 
 // ---------- Phase 2+: Commission dispute / query flow ----------
@@ -720,11 +726,11 @@ model CommissionDispute {
   lineItem   CommissionLineItem? @relation(fields: [lineItemId], references: [id], onDelete: SetNull)
 
   // Denormalised context (snapshotted at raise time).
-  runId           String
-  employeeId      String
-  employee        Employee @relation(fields: [employeeId], references: [id])
-  projectId       String?
-  roleName        String?
+  runId             String
+  employeeId        String
+  employee          Employee @relation(fields: [employeeId], references: [id])
+  projectId         String?
+  roleName          String?
   disputedAmountUsd Decimal? @db.Decimal(12, 2)
 
   // Who raised it (the employee's user id) + their message.
@@ -781,9 +787,9 @@ model AuditLog {
 /// link back to whatever triggered it (a commission run, a reminder, an
 /// approval, an employee profile change).
 model Notification {
-  id              String  @id @default(cuid())
+  id              String    @id @default(cuid())
   recipientUserId String
-  recipient       User    @relation("UserNotifications", fields: [recipientUserId], references: [id], onDelete: Cascade)
+  recipient       User      @relation("UserNotifications", fields: [recipientUserId], references: [id], onDelete: Cascade)
   /// Type key — registered via the NotificationTypes registry on module
   /// init. e.g. "commission.run.approved", "employee.probation.ending".
   type            String
@@ -796,12 +802,12 @@ model Notification {
   payload         Json?
   /// `info` | `success` | `warning` | `danger`. Drives the badge tone in
   /// the bell popover and any future inbox UI.
-  severity        String  @default("info")
+  severity        String    @default("info")
   /// `in_app` | `email` | `both`. What was actually attempted at send
   /// time — derived from the user's NotificationPreference at send.
-  channel         String  @default("in_app")
+  channel         String    @default("in_app")
   /// `unread` | `read` | `dismissed` | `sent` (email-only flows).
-  status          String  @default("unread")
+  status          String    @default("unread")
   sourceType      String?
   sourceId        String?
   createdAt       DateTime  @default(now())
@@ -845,51 +851,51 @@ model Notification {
 /// keep their FK to the old rule row, so policy changes never alter
 /// past behavior.
 model ReminderRule {
-  id                String   @id @default(cuid())
+  id                 String      @id @default(cuid())
   /// Stable user-friendly key — used by recipient resolvers and seeds.
   /// Unique across active versions; multiple archived versions of the
   /// same key are allowed.
-  key               String
-  name              String
-  description       String?
-  status            String   @default("draft")  // draft | active | archived
+  key                String
+  name               String
+  description        String?
+  status             String      @default("draft") // draft | active | archived
   /// Per-design (PNG 12): each rule can be scoped to a department.
   /// null = applies org-wide ("All"). Drives the Dept column + chip
   /// color in the rules library, and is read by the trigger
   /// evaluator to narrow the source-entity match set.
-  departmentId      String?
-  department        Department? @relation("ReminderRulesByDepartment", fields: [departmentId], references: [id])
+  departmentId       String?
+  department         Department? @relation("ReminderRulesByDepartment", fields: [departmentId], references: [id])
   /// Per-design: each row has an ON/OFF toggle independent of the
   /// active/archived versioning state. A rule can be active + disabled
   /// (i.e. scheduled to evaluate but currently muted). Defaults to
   /// true so a freshly-published rule starts firing immediately.
-  isEnabled         Boolean  @default(true)
+  isEnabled          Boolean     @default(true)
   /// `event` or `cron`.
-  triggerType       String
+  triggerType        String
   /// JSON spec — shape depends on triggerType. See module docstring.
-  triggerSpec       Json
+  triggerSpec        Json
   /// FK-like reference to NotificationType.key (no FK to keep types
   /// registry decoupled from the DB).
-  notificationType  String
+  notificationType   String
   /// Key of a registered RecipientResolver. LEGACY single-source field.
   /// New rules write `recipientResolvers` instead; we keep this column
   /// for back-compat reads of rules created before Phase 3.5.
-  recipientResolver String
+  recipientResolver  String
   /// New multi-source recipient list: Array<{ kind: string; config?: object }>.
   /// `kind` references a key from the resolver registry; `config` is the
   /// resolver-specific param blob (e.g. { userIds: [...] } for specific-users).
   /// Final recipient list = dedup'd union of every entry. Null = fall back to
   /// the legacy single-string column.
   recipientResolvers Json?
-  version           String   @default("1.0")
-  effectiveFrom     DateTime?
-  effectiveTo       DateTime?
-  publishedAt       DateTime?
-  publishedById     String?
-  createdAt         DateTime @default(now())
-  createdById       String
-  updatedAt         DateTime @updatedAt
-  deletedAt         DateTime?
+  version            String      @default("1.0")
+  effectiveFrom      DateTime?
+  effectiveTo        DateTime?
+  publishedAt        DateTime?
+  publishedById      String?
+  createdAt          DateTime    @default(now())
+  createdById        String
+  updatedAt          DateTime    @updatedAt
+  deletedAt          DateTime?
 
   reminders Reminder[]
   tasks     ReminderTask[]
@@ -906,34 +912,34 @@ model ReminderRule {
 /// on a follow-up cadence until it's completed or cancelled. Completing
 /// a task logs an acknowledgment (audit + `reminder.task.completed`).
 model ReminderTask {
-  id               String   @id @default(cuid())
-  ruleId           String
-  rule             ReminderRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  id                String       @id @default(cuid())
+  ruleId            String
+  rule              ReminderRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
   /// Denormalised so follow-up sends don't need to re-read the rule.
-  notificationType String
+  notificationType  String
   /// Who must complete the task (the reminder's resolved recipient).
-  assigneeUserId   String
+  assigneeUserId    String
   /// Polymorphic subject the task is about (usually an employee).
-  sourceType       String?
-  sourceId         String?
-  title            String
-  description      String?
-  dueDate          DateTime
+  sourceType        String?
+  sourceId          String?
+  title             String
+  description       String?
+  dueDate           DateTime
   /// Re-notify the assignee this often (days) while the task is open.
-  followUpEveryDays Int     @default(3)
-  status           String   @default("open") // open | completed | cancelled
+  followUpEveryDays Int          @default(3)
+  status            String       @default("open") // open | completed | cancelled
   /// True once dueDate has passed while still open — the "overdue flag".
-  overdue          Boolean  @default(false)
-  followUpCount    Int      @default(0)
-  lastFollowUpAt   DateTime?
-  completedAt      DateTime?
-  completedById    String?
-  completionNote   String?
-  cancelledAt      DateTime?
-  cancelledById    String?
-  cancelReason     String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  overdue           Boolean      @default(false)
+  followUpCount     Int          @default(0)
+  lastFollowUpAt    DateTime?
+  completedAt       DateTime?
+  completedById     String?
+  completionNote    String?
+  cancelledAt       DateTime?
+  cancelledById     String?
+  cancelReason      String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
 
   @@index([status, dueDate])
   @@index([assigneeUserId, status])
@@ -948,7 +954,7 @@ model ReminderTask {
 /// in the past; transition to `fired` writes the FK to the resulting
 /// Notification row.
 model Reminder {
-  id              String   @id @default(cuid())
+  id              String       @id @default(cuid())
   ruleId          String
   rule            ReminderRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
   recipientUserId String
@@ -958,7 +964,7 @@ model Reminder {
   /// Local-time-anchored fire-at. Stored UTC; the evaluator converts
   /// before scheduling so "9 AM Asia/Karachi" lands at the right epoch.
   scheduledFor    DateTime
-  status          String   @default("scheduled")  // scheduled | fired | cancelled | failed
+  status          String       @default("scheduled") // scheduled | fired | cancelled | failed
   /// Optional context the notification renderer can read.
   payload         Json?
   firedAt         DateTime?
@@ -970,16 +976,16 @@ model Reminder {
   /// `attempts` hits the cap the row moves to `status='failed'`
   /// (dead-letter) instead of looping forever. `lastError` keeps the
   /// most recent failure message for the ops view.
-  attempts        Int      @default(0)
+  attempts        Int          @default(0)
   lastError       String?
   lastAttemptAt   DateTime?
-  createdAt       DateTime @default(now())
+  createdAt       DateTime     @default(now())
   /// Idempotency key. Computed at schedule time as
   ///   `${ruleId}|${recipientUserId}|${sourceType ?? '_'}|${sourceId ?? '_'}|${scheduledFor.toISOString().slice(0,13)}`
   /// — hour-bucketed so retried event fires + repeated cron ticks
   /// within the same hour can't create duplicate scheduled rows.
   /// `createMany({ skipDuplicates: true })` no-ops on duplicates.
-  dedupeKey       String?  @unique
+  dedupeKey       String?      @unique
 
   @@index([status, scheduledFor])
   @@index([ruleId, status])
@@ -1056,16 +1062,16 @@ model NotificationPreference {
 /// the cluster of (type, status, requiredPermission) is the inbox's
 /// hot index.
 model Approval {
-  id                 String   @id @default(cuid())
+  id                 String    @id @default(cuid())
   type               String
   sourceType         String
   sourceId           String
-  status             String   @default("pending")  // pending | approved | rejected | cancelled
+  status             String    @default("pending") // pending | approved | rejected | cancelled
   submittedById      String
-  submittedBy        User     @relation("ApprovalSubmitter", fields: [submittedById], references: [id])
-  submittedAt        DateTime @default(now())
+  submittedBy        User      @relation("ApprovalSubmitter", fields: [submittedById], references: [id])
+  submittedAt        DateTime  @default(now())
   requiredPermission String
-  decisionPolicy     String   @default("single")  // single | multi | threshold
+  decisionPolicy     String    @default("single") // single | multi | threshold
   thresholdCount     Int?
   /// Snapshot of the approver chain at submit time (immutable for the
   /// life of this approval). JSON array of { requiredPermission, label }.
@@ -1075,7 +1081,7 @@ model Approval {
   stages             Json?
   /// Index of the stage awaiting a decision. Advances on each approve;
   /// when it passes the last stage the approval resolves to 'approved'.
-  currentStage       Int      @default(0)
+  currentStage       Int       @default(0)
   /// Display metadata captured at submit time — frees the inbox row
   /// from a per-render lookup against the source entity. The frontend
   /// reads { title, sub, meta, requesterName, requesterRole,
@@ -1106,7 +1112,7 @@ model ApprovalDecision {
   approval         Approval @relation(fields: [approvalId], references: [id], onDelete: Cascade)
   decidedById      String
   decidedBy        User     @relation(fields: [decidedById], references: [id])
-  decision         String   // approve | reject
+  decision         String // approve | reject
   /// Which stage (index into Approval.stages) this decision resolved.
   /// null for legacy single-stage rows.
   stageIndex       Int?
@@ -1115,4 +1121,228 @@ model ApprovalDecision {
 
   @@index([approvalId, decidedAt])
   @@index([decidedById])
+}
+
+// ---------- Attendance (Phase 4) ----------
+//
+// Kept as its own module, separate from the future Leave module (see
+// docs/DECISIONS.md — the two were always meant to be split, and
+// FlowHCM — the system this is modeled after — keeps them separate
+// too). Only the "forgot to mark attendance" correction request ships
+// in this phase; overtime, remote-work, and shift-change requests are
+// real FlowHCM features but separate ones, deferred to later
+// increments. Approval routing for AttendanceCorrectionRequest reuses
+// the existing generic Approval table (sourceType: 'attendance-
+// correction') via ApprovalTypeRegistry — no separate workflow/log
+// tables, matching how CommissionRun approvals already work.
+
+/// A named work schedule. ShiftAssignment decides which employee or
+/// department uses which shift, and for how long.
+model Shift {
+  id   String @id @default(cuid())
+  name String
+
+  // "HH:mm" wall-clock time in the org's local timezone. The rule
+  // engine converts to/from UTC before comparing against punch
+  // timestamps (punches are stored in UTC, per Section 10 of the spec).
+  startTime String
+  endTime   String
+
+  gracePeriodMinutes       Int     @default(15)
+  halfDayThresholdMinutes  Int     @default(120)
+  breakDurationMinutes     Int     @default(0)
+  overtimeType             String  @default("auto") // auto | approval_based
+  overtimeThresholdMinutes Int     @default(30)
+  isActive                 Boolean @default(true)
+
+  assignments       ShiftAssignment[]
+  attendanceRecords AttendanceRecord[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+}
+
+/// Resolves which Shift applies to an employee on a given date.
+/// Resolution: match (employeeId OR departmentId) AND date within
+/// [validFrom, validTo], highest `priority` wins. Individual
+/// assignments should be seeded at a higher priority than
+/// department-wide ones so a personal override always sticks.
+model ShiftAssignment {
+  id String @id @default(cuid())
+
+  employeeId   String?
+  employee     Employee?   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  shiftId String
+  shift   Shift  @relation(fields: [shiftId], references: [id])
+
+  validFrom      DateTime
+  validTo        DateTime?
+  assignmentType String // individual | department
+  priority       Int       @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employeeId, validFrom, validTo])
+  @@index([departmentId, validFrom, validTo])
+}
+
+/// Late/absence/overtime rules. Scoped globally, to a department, or
+/// to a single employee via (scopeType, scopeId) — a loose string
+/// reference rather than two nullable FKs, the same "no rigid FK, kept
+/// decoupled" choice already used elsewhere in this schema (see
+/// ReminderRule.notificationType) — one column pair works across every
+/// scope kind instead of one FK per kind.
+model AttendancePolicy {
+  id   String @id @default(cuid())
+  name String
+
+  scopeType String // global | department | individual
+  scopeId   String? // Department.id or Employee.id, null for global
+
+  gracePeriodMinutes          Int? // overrides the shift's grace period when set
+  lateDeductionType           String   @default("none") // none | fixed_amount | per_minute | half_day_salary
+  lateDeductionValue          Decimal? @db.Decimal(12, 2)
+  consecutiveAbsenceAlertDays Int?
+  maxOvertimeHoursDaily       Decimal? @db.Decimal(4, 2)
+  maxOvertimeHoursMonthly     Decimal? @db.Decimal(5, 2)
+  workingHoursPerDay          Decimal  @default(8) @db.Decimal(4, 2)
+  // Day-of-week numbers, 0 = Sunday .. 6 = Saturday.
+  weekendDays                 Int[]    @default([0, 6])
+
+  isActive Boolean @default(true)
+  priority Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([scopeType, scopeId, isActive])
+}
+
+/// A company holiday — the (not-yet-built) rule engine will read this
+/// to classify a day as 'holiday' instead of 'absent'. Kept simple and
+/// global for now: no per-department calendars, no yearly recurrence
+/// rule — HR re-enters each year's dates, matching this phase's
+/// minimal scope. `@@unique([date])` stops the same day being added twice.
+model Holiday {
+  id   String   @id @default(cuid())
+  // Stored at UTC midnight; represents a calendar day, not a timestamp.
+  date DateTime
+  name String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([date])
+}
+
+/// Immutable log of every check-in/out event — never updated or
+/// deleted. The rule engine reads unprocessed rows and folds them into
+/// AttendanceRecord.
+model RawPunch {
+  id String @id @default(cuid())
+
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  timestamp   DateTime
+  punchType   String // in | out
+  // web | manual ship first; mobile | biometric | geo_fence are
+  // reserved values, unused until a mobile client / device integration
+  // exists (see the Attendance decisions doc).
+  source      String
+  deviceId    String?
+  // { lat, lng, accuracy } — geofencing, unused until a mobile client exists.
+  location    Json?
+  isProcessed Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([employeeId, timestamp])
+  @@index([isProcessed])
+}
+
+/// One row per employee per calendar day — the computed result the
+/// rest of the system reads (dashboards, corrections, and eventually
+/// the Commissions leave-adjustment auto-fill promised in
+/// docs/DECISIONS.md).
+model AttendanceRecord {
+  id String @id @default(cuid())
+
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  // Stored at UTC midnight; represents a calendar day, not a timestamp.
+  date       DateTime
+
+  shiftId String?
+  shift   Shift?  @relation(fields: [shiftId], references: [id])
+
+  checkIn          DateTime?
+  checkOut         DateTime?
+  checkInSource    String?
+  checkOutSource   String?
+  checkInLocation  Json?
+  checkOutLocation Json?
+
+  // present | late | half_day | absent | on_leave | holiday | weekend | remote
+  // Defaults to 'absent' only as a placeholder the instant the row is
+  // created — the rule engine overwrites it with the real classification
+  // in the same create-then-classify flow, so this default is never
+  // meant to be read as-is.
+  status String @default("absent")
+
+  workingHours   Decimal @default(0) @db.Decimal(4, 2)
+  overtimeHours  Decimal @default(0) @db.Decimal(4, 2)
+  overtimeStatus String  @default("none") // none | pending_approval | approved | rejected
+
+  // Array of { type: 'late_arrival' | 'early_departure' | 'short_hours' | 'missing_checkout', ... }.
+  penaltyFlags Json @default("[]")
+
+  isModified   Boolean @default(false)
+  modifiedById String?
+  modifiedBy   User?   @relation(fields: [modifiedById], references: [id])
+  remarks      String?
+
+  correctionRequests AttendanceCorrectionRequest[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([employeeId, date])
+  @@index([date, status])
+}
+
+/// The one attendance-request type shipping in this phase: "I forgot
+/// to check in/out" (or a free-form "other" reason) — matches the
+/// real 2-option FlowHCM dropdown, not the reference spec's broader
+/// 6-type request model. Approval routing goes through the existing
+/// generic Approval table (sourceType: 'attendance-correction'); this
+/// model only holds the domain data, the same way CommissionRun holds
+/// commission data while Approval owns the approval state.
+model AttendanceCorrectionRequest {
+  id String @id @default(cuid())
+
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  // Not a hard FK to AttendanceRecord — on a "forgot to mark
+  // attendance" day there may be no record yet when the request is
+  // submitted. attendanceRecordId is filled in once one exists.
+  attendanceRecordId String?
+  attendanceRecord   AttendanceRecord? @relation(fields: [attendanceRecordId], references: [id])
+  targetDate         DateTime
+
+  reasonType String // forgot_to_mark | other
+  // Required (enforced at the API layer, not the DB) when reasonType = 'other'.
+  reason     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employeeId, targetDate])
 }
