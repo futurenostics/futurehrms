@@ -6,7 +6,6 @@ import {
   EXPENSE_CLAIM_CATEGORIES,
   EXPENSE_MONTH_INPUT_MAX,
   EXPENSE_MONTH_INPUT_MIN,
-  GYM_MONTH_ALREADY_APPROVED_MESSAGE,
   MEDICAL_SUBCATEGORIES,
   sanitizeExpenseMonthInput,
   type ExpenseClaimCategory,
@@ -35,14 +34,13 @@ import {
 } from '@/components/ui/sheet';
 import { EXPENSE_COPY } from '@/components/expenses/expense-copy';
 import { ExpenseDocumentPicker } from '@/components/expenses/expense-document-picker';
-import { ExpenseBenefitBalances } from '@/components/expenses/expense-benefit-balances';
 import { parsePkrAmount, sanitizePkrInput } from '@/components/expenses/expense-claim-status';
 import {
+  discardStagingExpenseClaim,
   useCreateExpenseClaim,
   useSubmitExpenseClaim,
   uploadExpenseDocument,
 } from '@/lib/queries/expenses';
-import { useMyBenefitBalances } from '@/lib/queries/benefits';
 
 export function NewExpenseSheet({
   open,
@@ -60,8 +58,6 @@ export function NewExpenseSheet({
   const [notes, setNotes] = React.useState('');
   const [files, setFiles] = React.useState<File[]>([]);
   const [busy, setBusy] = React.useState(false);
-  const needBalances = open && !!expenseMonth && (category === 'medical' || category === 'gym');
-  const balances = useMyBenefitBalances(expenseMonth || undefined, needBalances);
 
   React.useEffect(() => {
     if (!open) {
@@ -86,11 +82,6 @@ export function NewExpenseSheet({
     const amountPkr = parsePkrAmount(amount);
     if (!Number.isFinite(amountPkr) || amountPkr <= 0) {
       toast.error(EXPENSE_COPY.amountInvalid);
-      return;
-    }
-    const gymMax = balances.data?.gym.allocatedPkr;
-    if (category === 'gym' && gymMax != null && amountPkr > gymMax) {
-      toast.error(`Gym reimbursement cannot exceed ₨${gymMax.toLocaleString('en-PK')} per claim.`);
       return;
     }
     if (!notes.trim()) {
@@ -125,18 +116,21 @@ export function NewExpenseSheet({
     }
 
     setBusy(true);
+    let stagingId: string | null = null;
     try {
       const created = await create.mutateAsync(input);
+      stagingId = created.id;
       for (const f of files) {
         await uploadExpenseDocument(created.id, f);
       }
-      const submitted = await submit.mutateAsync(created.id);
-      for (const warning of submitted.warnings ?? []) {
-        toast.warning(warning);
-      }
+      await submit.mutateAsync(created.id);
+      stagingId = null;
       toast.success(EXPENSE_COPY.submitSuccess);
       onOpenChange(false);
     } catch (err) {
+      if (stagingId) {
+        await discardStagingExpenseClaim(stagingId).catch(() => undefined);
+      }
       toast.error((err as Error).message);
     } finally {
       setBusy(false);
@@ -214,17 +208,6 @@ export function NewExpenseSheet({
                 />
               </div>
 
-              {needBalances && balances.data ? (
-                <ExpenseBenefitBalances
-                  balances={balances.data}
-                  compact
-                  show={category === 'gym' ? 'gym' : 'medical'}
-                />
-              ) : null}
-              {category === 'gym' && expenseMonth && balances.data?.gym.monthLocked ? (
-                <p className="text-fn-danger text-[12.5px]">{GYM_MONTH_ALREADY_APPROVED_MESSAGE}</p>
-              ) : null}
-
               <div className="gap-fn-1_5 flex flex-col">
                 <Label htmlFor="amount">
                   {EXPENSE_COPY.amountLabel}
@@ -236,11 +219,6 @@ export function NewExpenseSheet({
                   value={amount}
                   onChange={(e) => setAmount(sanitizePkrInput(e.target.value))}
                 />
-                {category === 'gym' && balances.data ? (
-                  <p className="text-fn-fg-faint text-[12px]">
-                    Maximum ₨{balances.data.gym.allocatedPkr.toLocaleString('en-PK')} per claim.
-                  </p>
-                ) : null}
               </div>
 
               <div className="gap-fn-1_5 flex flex-col">
@@ -271,14 +249,7 @@ export function NewExpenseSheet({
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button
-            onClick={() => void submitNew()}
-            disabled={
-              busy ||
-              !category ||
-              (category === 'gym' && !!expenseMonth && balances.data?.gym.monthLocked)
-            }
-          >
+          <Button onClick={() => void submitNew()} disabled={busy || !category}>
             {EXPENSE_COPY.submitToFinance}
           </Button>
         </SheetFooter>

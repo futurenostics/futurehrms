@@ -5,7 +5,6 @@ import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { EXPENSE_STATUS_LABEL } from '@/components/expenses/expense-copy';
 
 const TONE: Record<ExpenseClaimStatus, BadgeTone> = {
-  draft: 'default',
   pending_approval: 'warning',
   returned: 'info',
   approved: 'success',

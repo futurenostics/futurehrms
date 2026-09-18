@@ -2,7 +2,8 @@ import { ModuleManifest } from '../../core/registry/types';
 
 /**
  * Expense reimbursements — medical, gym, travel, and business development.
- * Finance approves via the generic Approvals inbox (`expense-claim`).
+ * Submit-only (no saved drafts in UI). Finance approves via Approvals (`expense-claim`).
+ * Org-wide lists use `approve_claim`; `view_all` is for auditors granted explicitly.
  */
 export const expensesManifest: ModuleManifest = {
   key: 'expenses',

@@ -73,6 +73,13 @@ export class ExpenseClaimsController {
     return this.claims.submit(user, id);
   }
 
+  @Delete(':id')
+  @RequirePermission('expenses:submit_own')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async discardStaging(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    await this.claims.discardStaging(user, id);
+  }
+
   @Post(':id/return-for-correction')
   @RequirePermission('expenses:approve_claim')
   @HttpCode(HttpStatus.OK)

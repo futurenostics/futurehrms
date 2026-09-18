@@ -18,7 +18,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { ExpenseClaimFinanceBenefits } from '@/components/expenses/expense-claim-finance-benefits';
 import { ExpenseClaimReturnedEditor } from '@/components/expenses/expense-claim-returned-editor';
 import { ExpenseClaimReadOnlyView } from '@/components/expenses/expense-claim-read-only';
 import { ExpenseClaimOutcomeBanner } from '@/components/expenses/expense-claim-outcome';
@@ -45,7 +44,7 @@ export default function ExpenseClaimDetailPage() {
   const claim = claimQuery.data;
   const canApprove = perms.has('expenses:approve_claim');
   const isOwnEditableClaim =
-    (claim?.status === 'returned' || claim?.status === 'draft') &&
+    claim?.status === 'returned' &&
     perms.has('expenses:submit_own') &&
     user?.employeeId != null &&
     user.employeeId === claim.employeeId;
@@ -105,10 +104,6 @@ export default function ExpenseClaimDetailPage() {
 
             <ExpenseClaimOutcomeBanner claim={claim} />
 
-            {canApprove && claim.status === 'pending_approval' ? (
-              <ExpenseClaimFinanceBenefits claim={claim} />
-            ) : null}
-
             {isOwnEditableClaim ? (
               <div className="gap-fn-5 flex flex-col">
                 <ExpenseClaimReturnedEditor claim={claim} />
@@ -117,10 +112,7 @@ export default function ExpenseClaimDetailPage() {
                   <Button
                     onClick={async () => {
                       try {
-                        const updated = await resubmit.mutateAsync(claim.id);
-                        for (const warning of updated.warnings ?? []) {
-                          toast.warning(warning);
-                        }
+                        await resubmit.mutateAsync(claim.id);
                         toast.success(EXPENSE_COPY.submitSuccess);
                       } catch (err) {
                         toast.error((err as Error).message);

@@ -6,7 +6,6 @@
  * Medical claims store `{ subCategory }` in `details`; other categories use `{}`.
  */
 import { z } from 'zod';
-import { employeeBenefitBalancesSchema } from './benefit-policy';
 import {
   EXPENSE_CLAIM_CATEGORIES,
   EXPENSE_CLAIM_MAX_PKR,
@@ -29,6 +28,7 @@ export {
   medicalSubcategoryLabel,
   expenseFinanceReasonLabel,
   formatExpenseFinanceFeedback,
+  formatExpensePkr,
 } from './expense-claim-meta';
 
 const categoryIds = EXPENSE_CLAIM_CATEGORIES.map((c) => c.id) as [string, ...string[]];
@@ -48,7 +48,6 @@ export const expenseFinanceReasonCodeSchema = z.enum(financeReasonIds);
 export type ExpenseFinanceReasonCode = z.infer<typeof expenseFinanceReasonCodeSchema>;
 
 export const expenseClaimStatusSchema = z.enum([
-  'draft',
   'pending_approval',
   'returned',
   'approved',
@@ -295,16 +294,10 @@ export const expenseClaimPublicSchema = z.object({
   returnComment: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
-  warnings: z.array(z.string()).optional(),
 });
 export type ExpenseClaimPublic = z.infer<typeof expenseClaimPublicSchema>;
 
-export const expenseClaimDetailSchema = expenseClaimPublicSchema.extend({
-  /** Recomputed on read for pending medical claims (Finance review). Not persisted. */
-  benefitWarnings: z.array(z.string()).optional(),
-  /** Employee wallet snapshot for Finance on medical/gym claims. Not persisted. */
-  benefitSnapshot: employeeBenefitBalancesSchema.optional(),
-});
+export const expenseClaimDetailSchema = expenseClaimPublicSchema;
 export type ExpenseClaimDetail = z.infer<typeof expenseClaimDetailSchema>;
 
 export const expenseClaimListResponseSchema = z.object({
@@ -313,3 +306,11 @@ export const expenseClaimListResponseSchema = z.object({
   hasMore: z.boolean(),
 });
 export type ExpenseClaimListResponse = z.infer<typeof expenseClaimListResponseSchema>;
+
+/** Response while a claim is being created/uploaded before first submit (not listed in UI). */
+export const expenseClaimStagingRefSchema = z.object({
+  id: z.string(),
+  claimNumber: z.string(),
+  documentCount: z.number().int().nonnegative().optional(),
+});
+export type ExpenseClaimStagingRef = z.infer<typeof expenseClaimStagingRefSchema>;

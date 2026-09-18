@@ -1,7 +1,6 @@
 import type { ExpenseClaimStatus } from '@futurenostics/types';
 
 export const EXPENSE_STATUS_LABEL: Record<ExpenseClaimStatus, string> = {
-  draft: 'Draft',
   pending_approval: 'Pending',
   returned: 'Returned',
   approved: 'Approved',
@@ -18,7 +17,7 @@ export const EXPENSE_COPY = {
 
   listMineTitle: 'My expenses',
   listAllTitle: 'Expense claims',
-  pageIntroOwn: 'Submit claims and track remaining Medical and Gym balances.',
+  pageIntroOwn: 'Submit reimbursement claims and track status with Finance.',
   pageIntroHistory: 'Approved and rejected claims.',
   orgHistoryIntro: 'Approved and rejected expense claims across the organization.',
 
@@ -27,9 +26,6 @@ export const EXPENSE_COPY = {
   listEmptyHistoryTitle: 'No past expenses',
   listEmptyHistoryHint: 'Approved and rejected claims will show up here.',
   listEmptyFiltered: 'No claims match this filter.',
-  draftsTitle: 'Drafts',
-  draftsHint: 'Not submitted yet.',
-  activeClaimsTitle: 'Active',
   listLoadError: 'Could not load expenses.',
   claimLoadError: 'Could not load this claim.',
   noAccessTitle: 'No access',

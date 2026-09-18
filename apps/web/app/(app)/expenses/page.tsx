@@ -5,14 +5,10 @@ import { AppShell } from '@/components/shell/app-shell';
 import { ExpenseClaimsPanel } from '@/components/expenses/expense-claims-panel';
 import { EXPENSE_COPY } from '@/components/expenses/expense-copy';
 import { ShowHistoryButton } from '@/components/approvals/expense-history-entry';
-import { ExpenseBenefitBalances } from '@/components/expenses/expense-benefit-balances';
-import { ExpenseDraftClaims } from '@/components/expenses/expense-draft-claims';
 import { usePermissions } from '@/hooks/use-permissions';
-import { useMyBenefitBalances } from '@/lib/queries/benefits';
 
 export default function ExpensesPage() {
   const perms = usePermissions();
-  const balances = useMyBenefitBalances(undefined, perms.has('expenses:view_own'));
 
   if (!perms.has('expenses:view_own')) {
     return (
@@ -37,8 +33,6 @@ export default function ExpensesPage() {
           </div>
           <ShowHistoryButton href="/expenses/history" />
         </div>
-        <ExpenseBenefitBalances balances={balances.data} loading={balances.isPending} />
-        <ExpenseDraftClaims />
         <ExpenseClaimsPanel mine bucket="active" hideListHeader />
       </div>
     </AppShell>

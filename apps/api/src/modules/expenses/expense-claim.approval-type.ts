@@ -1,21 +1,16 @@
 /**
  * expense-claim ApprovalType — Finance-only, soft separation of duties.
- *
- * Deducts the wallet in `onApproved` (awaited) because EventBus
- * handlers are fire-and-forget. Unique `BenefitLedgerEntry.claimId`
- * makes a retry a no-op.
  */
 import type { Logger } from '@nestjs/common';
 import { prisma } from '@futurenostics/db';
 import {
   expenseCategoryLabel,
-  formatBenefitPkr,
   formatExpenseFinanceFeedback,
+  formatExpensePkr,
 } from '@futurenostics/types';
 import type { ApprovalDecision, ExpenseClaim } from '@prisma/client';
 import { EventBusService } from '../../core/events/event-bus.service';
 import type { ApprovalMetadata, ApprovalTypeDefinition } from '../approvals/approval-type.registry';
-import type { BenefitsService } from '../benefits/benefits.service';
 
 type ExpenseClaimSource = ExpenseClaim & {
   employee: { fullName: string; eid: string; designation: { name: string } | null };
@@ -30,7 +25,6 @@ function hashHue(s: string): number {
 export function buildExpenseClaimApprovalType(
   events: EventBusService,
   logger: Logger,
-  benefits: BenefitsService,
 ): ApprovalTypeDefinition {
   return {
     kind: 'expense-claim',
@@ -74,7 +68,7 @@ export function buildExpenseClaimApprovalType(
 
       return {
         title: `${claim.claimNumber} — ${claim.employee.fullName}`,
-        sub: `${kind} · ${formatBenefitPkr(amount)} · ${when}`,
+        sub: `${kind} · ${formatExpensePkr(amount)} · ${when}`,
         meta: claim.employee.eid,
         hue: 32,
         complex: true,
@@ -101,15 +95,6 @@ export function buildExpenseClaimApprovalType(
           approvedById: approval.resolvedById,
           approvalNote,
         },
-      });
-      const details = claim.details as { subCategory?: string } | null;
-      await benefits.applyApprovedClaim({
-        claimId: claim.id,
-        employeeId: claim.employeeId,
-        category: claim.category,
-        amountPkr: Number(claim.amount.toString()),
-        expenseDate: claim.expenseDate,
-        isOptical: claim.category === 'medical' && details?.subCategory === 'optical',
       });
       events.emit(
         'expenses.claim.approved',
@@ -156,23 +141,24 @@ export function buildExpenseClaimApprovalType(
       );
     },
 
-    async onCancelled({ approval, source }) {
+    async onCancelled({ approval, source, cancelledById, cancelReason }) {
       const claim = source as ExpenseClaimSource;
-      // V1: employees cannot cancel a claim. Admin/system may cancel the
-      // Approval only. The claim stays the same row/number and goes back
-      // to draft so it can be submitted again.
       if (claim.status === 'pending_approval') {
         await prisma.expenseClaim.update({
           where: { id: claim.id },
           data: {
-            status: 'draft',
+            status: 'returned',
+            returnedAt: new Date(),
+            returnedById: cancelledById ?? approval.resolvedById,
+            returnReasonCode: 'missing_document',
+            returnComment: cancelReason?.trim() || null,
             submittedAt: null,
             submittedById: null,
           },
         });
       }
       logger.log(
-        `expense-claim ${claim.id} approval ${approval.id} cancelled — claim left as ${claim.status === 'pending_approval' ? 'draft' : claim.status}`,
+        `expense-claim ${claim.id} approval ${approval.id} cancelled — claim returned for correction`,
       );
     },
   };

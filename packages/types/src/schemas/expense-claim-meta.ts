@@ -72,6 +72,10 @@ export const EXPENSE_FINANCE_REASON_CODES = [
   { id: 'other', label: 'Other' },
 ] as const;
 
+export function formatExpensePkr(n: number): string {
+  return `₨${n.toLocaleString('en-PK')}`;
+}
+
 export function expenseCategoryLabel(id: string | null | undefined): string {
   if (!id) return '—';
   return EXPENSE_CLAIM_CATEGORIES.find((c) => c.id === id)?.shortLabel ?? id;

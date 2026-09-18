@@ -196,5 +196,4 @@ function invalidate(qc: QueryClient): void {
   qc.invalidateQueries({ queryKey: ['commission-runs'] });
   qc.invalidateQueries({ queryKey: ['notifications'] });
   qc.invalidateQueries({ queryKey: ['expense-claims'] });
-  qc.invalidateQueries({ queryKey: ['benefit-balances'] });
 }

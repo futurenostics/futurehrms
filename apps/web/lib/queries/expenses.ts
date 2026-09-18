@@ -8,6 +8,7 @@ import type {
   ExpenseClaimListResponse,
   ExpenseClaimPublic,
   ExpenseClaimReturnInput,
+  ExpenseClaimStagingRef,
   ExpenseClaimUpdateInput,
 } from '@futurenostics/types';
 import { apiFetch } from '@/lib/api-client';
@@ -50,7 +51,7 @@ export function useCreateExpenseClaim() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: ExpenseClaimCreateInput) =>
-      apiFetch<ExpenseClaimPublic>('/api/expenses/claims', {
+      apiFetch<ExpenseClaimStagingRef>('/api/expenses/claims', {
         method: 'POST',
         body: JSON.stringify(input),
       }),
@@ -91,10 +92,14 @@ export function useReturnExpenseClaimForCorrection() {
   });
 }
 
+export async function discardStagingExpenseClaim(claimId: string): Promise<void> {
+  await apiFetch<void>(`/api/expenses/claims/${claimId}`, { method: 'DELETE' });
+}
+
 export async function uploadExpenseDocument(
   claimId: string,
   file: File,
-): Promise<ExpenseClaimPublic> {
+): Promise<ExpenseClaimStagingRef | ExpenseClaimPublic> {
   const fd = new FormData();
   fd.append('document', file);
   return apiFetch<ExpenseClaimPublic>(`/api/expenses/claims/${claimId}/documents`, {
@@ -126,5 +131,4 @@ function invalidate(qc: QueryClient, id?: string): void {
   qc.invalidateQueries({ queryKey: ['expense-claims'] });
   if (id) qc.invalidateQueries({ queryKey: KEY.one(id) });
   qc.invalidateQueries({ queryKey: ['approvals'] });
-  qc.invalidateQueries({ queryKey: ['benefit-balances'] });
 }

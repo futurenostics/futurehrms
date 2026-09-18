@@ -21,6 +21,7 @@ import {
   type ExpenseClaimListResponse,
   type ExpenseClaimPublic,
   type ExpenseClaimReturnInput,
+  type ExpenseClaimStagingRef,
   type ExpenseClaimUpdateInput,
   type ExpenseCurrencyCode,
 } from '@futurenostics/types';
@@ -29,10 +30,11 @@ import type { AuthenticatedUser } from '../../core/auth/types';
 import { EventBusService } from '../../core/events/event-bus.service';
 import { StorageService } from '../../core/storage/storage.service';
 import { ApprovalsService } from '../approvals/approvals.service';
-import { BenefitsService } from '../benefits/benefits.service';
 
 const DOCUMENT_URL_TTL = 15 * 60;
 const APPROVAL_KIND = 'expense-claim';
+/** DB-only staging row between create and first submit; never exposed in lists or public status. */
+const STAGING_STATUS = 'draft';
 
 function listStatusFilter(
   query: Pick<ExpenseClaimListQuery, 'status' | 'bucket'>,
@@ -45,7 +47,7 @@ function listStatusFilter(
     return query.status;
   }
   if (bucketStatuses) return { in: bucketStatuses };
-  return { notIn: ['draft'] };
+  return { notIn: [STAGING_STATUS] };
 }
 
 const INCLUDE = {
@@ -75,7 +77,6 @@ export class ExpenseClaimsService {
     private readonly events: EventBusService,
     private readonly storage: StorageService,
     private readonly approvals: ApprovalsService,
-    private readonly benefits: BenefitsService,
   ) {}
 
   private canViewOrgClaims(viewer: AuthenticatedUser): boolean {
@@ -107,7 +108,7 @@ export class ExpenseClaimsService {
     throw new ForbiddenException('You do not have access to this claim.');
   }
 
-  private static editableStatuses = new Set(['draft', 'returned']);
+  private static editableStatuses = new Set([STAGING_STATUS, 'returned']);
 
   private assertOwnEditable(
     viewer: AuthenticatedUser,
@@ -159,7 +160,59 @@ export class ExpenseClaimsService {
     );
   }
 
+  private toStagingRef(
+    row: Pick<ExpenseClaimRow, 'id' | 'claimNumber' | 'documents'>,
+  ): ExpenseClaimStagingRef {
+    return {
+      id: row.id,
+      claimNumber: row.claimNumber,
+      documentCount: row.documents.length,
+    };
+  }
+
+  private async purgeClaim(claimId: string): Promise<void> {
+    const row = await prisma.expenseClaim.findUnique({
+      where: { id: claimId },
+      include: { documents: true },
+    });
+    if (!row) return;
+    for (const doc of row.documents) {
+      await this.storage
+        .deleteObject({ bucket: 'documents', key: doc.storageKey })
+        .catch(() => undefined);
+    }
+    await prisma.approval.deleteMany({
+      where: { type: APPROVAL_KIND, sourceId: claimId },
+    });
+    await prisma.expenseClaim.delete({ where: { id: claimId } });
+  }
+
+  private async deleteStagingClaim(claimId: string): Promise<void> {
+    const row = await prisma.expenseClaim.findUnique({ where: { id: claimId } });
+    if (!row || row.status !== STAGING_STATUS) return;
+    await this.purgeClaim(claimId);
+  }
+
+  /** Remove unsubmitted staging rows left behind by abandoned create/upload flows. */
+  async purgeAbandonedStagingClaims(maxAgeMs = 2 * 60 * 60 * 1000): Promise<number> {
+    const cutoff = new Date(Date.now() - maxAgeMs);
+    const rows = await prisma.expenseClaim.findMany({
+      where: { status: STAGING_STATUS, updatedAt: { lt: cutoff } },
+      select: { id: true },
+    });
+    for (const row of rows) {
+      await this.purgeClaim(row.id);
+    }
+    if (rows.length > 0) {
+      this.logger.log(`Purged ${rows.length} abandoned staging expense claim(s).`);
+    }
+    return rows.length;
+  }
+
   private async toPublic(row: ExpenseClaimRow, includeUrl: boolean): Promise<ExpenseClaimPublic> {
+    if (row.status === STAGING_STATUS) {
+      throw new NotFoundException('Claim not found.');
+    }
     const documents = await this.signDocuments(row.documents, includeUrl);
     const category = row.category as ExpenseClaimCategory;
     let details: unknown = row.details;
@@ -178,7 +231,7 @@ export class ExpenseClaimsService {
         eid: row.employee.eid,
         departmentName: row.employee.department?.name ?? null,
       },
-      status: row.status === 'cancelled' ? 'draft' : (row.status as ExpenseClaimPublic['status']),
+      status: row.status as ExpenseClaimPublic['status'],
       category,
       amountPkr: this.decimalToNumber(row.amount),
       currency: row.currency as ExpenseCurrencyCode,
@@ -247,49 +300,24 @@ export class ExpenseClaimsService {
     const row = await prisma.expenseClaim.findUnique({ where: { id }, include: INCLUDE });
     if (!row) throw new NotFoundException('Claim not found.');
     this.assertReadable(viewer, row);
-    const base = await this.toPublic(row, true);
-    const financeReview =
-      row.status === 'pending_approval' && viewer.permissions.includes('expenses:approve_claim');
-    let benefitWarnings: string[] | undefined;
-    let benefitSnapshot: Awaited<ReturnType<BenefitsService['getMyBalances']>> | undefined;
-    if (financeReview && row.expenseDate) {
-      if (row.category === 'medical' || row.category === 'gym') {
-        benefitSnapshot = await this.benefits.getMyBalances(row.employeeId, row.expenseDate);
-      }
-      if (row.category === 'medical') {
-        benefitWarnings = await this.benefits.warningsForClaim({
-          employeeId: row.employeeId,
-          category: 'medical',
-          amountPkr: this.decimalToNumber(row.amount),
-          expenseDate: row.expenseDate,
-        });
-      }
-    }
-    return {
-      ...base,
-      ...(benefitWarnings?.length ? { benefitWarnings } : {}),
-      ...(benefitSnapshot ? { benefitSnapshot } : {}),
-    };
+    return this.toPublic(row, true);
   }
 
   async create(
     viewer: AuthenticatedUser,
     input: ExpenseClaimCreateInput,
-  ): Promise<ExpenseClaimPublic> {
+  ): Promise<ExpenseClaimStagingRef> {
     if (!this.canSubmitOwn(viewer)) {
       throw new ForbiddenException('You cannot create or edit expense claims.');
     }
     const employeeId = this.requireEmployeeId(viewer);
     const details = parseExpenseDetails(input.category, input.details);
-    if (input.category === 'gym') {
-      await this.benefits.assertGymAmountAllowed(input.amountPkr);
-    }
     const claimNumber = await allocateExpenseClaimNumber();
     const row = await prisma.expenseClaim.create({
       data: {
         employeeId,
         claimNumber,
-        status: 'draft',
+        status: STAGING_STATUS,
         category: input.category,
         amount: new Prisma.Decimal(input.amountPkr),
         currency: input.currency,
@@ -304,7 +332,19 @@ export class ExpenseClaimsService {
       { claimId: row.id, employeeId, category: input.category },
       { actorId: viewer.id },
     );
-    return this.toPublic(row, false);
+    return this.toStagingRef(row);
+  }
+
+  async discardStaging(viewer: AuthenticatedUser, id: string): Promise<void> {
+    const existing = await prisma.expenseClaim.findUnique({ where: { id } });
+    if (!existing) return;
+    if (viewer.employeeId !== existing.employeeId) {
+      throw new ForbiddenException('You can only discard your own claims.');
+    }
+    if (existing.status !== STAGING_STATUS) {
+      throw new BadRequestException('Only unsubmitted claims can be discarded.');
+    }
+    await this.deleteStagingClaim(id);
   }
 
   async update(
@@ -319,10 +359,6 @@ export class ExpenseClaimsService {
     const nextCategory = (input.category ?? existing.category) as ExpenseClaimCategory;
     const nextDetailsRaw = input.details !== undefined ? input.details : existing.details;
     const details = parseExpenseDetails(nextCategory, nextDetailsRaw);
-    const nextAmount = input.amountPkr ?? this.decimalToNumber(existing.amount);
-    if (nextCategory === 'gym') {
-      await this.benefits.assertGymAmountAllowed(nextAmount);
-    }
     const row = await prisma.expenseClaim.update({
       where: { id },
       data: {
@@ -344,7 +380,7 @@ export class ExpenseClaimsService {
     viewer: AuthenticatedUser,
     id: string,
     input: { storageKey: string; fileName: string },
-  ): Promise<ExpenseClaimPublic> {
+  ): Promise<ExpenseClaimPublic | ExpenseClaimStagingRef> {
     const existing = await prisma.expenseClaim.findUnique({
       where: { id },
       include: { documents: true },
@@ -365,6 +401,7 @@ export class ExpenseClaimsService {
       },
     });
     const row = await prisma.expenseClaim.findUniqueOrThrow({ where: { id }, include: INCLUDE });
+    if (row.status === STAGING_STATUS) return this.toStagingRef(row);
     return this.toPublic(row, true);
   }
 
@@ -372,7 +409,7 @@ export class ExpenseClaimsService {
     viewer: AuthenticatedUser,
     claimId: string,
     documentId: string,
-  ): Promise<ExpenseClaimPublic> {
+  ): Promise<ExpenseClaimPublic | ExpenseClaimStagingRef> {
     const existing = await prisma.expenseClaim.findUnique({ where: { id: claimId } });
     if (!existing) throw new NotFoundException('Claim not found.');
     this.assertOwnEditable(viewer, existing);
@@ -388,6 +425,7 @@ export class ExpenseClaimsService {
       where: { id: claimId },
       include: INCLUDE,
     });
+    if (row.status === STAGING_STATUS) return this.toStagingRef(row);
     return this.toPublic(row, true);
   }
 
@@ -422,20 +460,6 @@ export class ExpenseClaimsService {
     }
 
     const amountPkr = this.decimalToNumber(existing.amount);
-    if (category === 'gym') {
-      await this.benefits.assertGymAmountAllowed(amountPkr);
-      await this.benefits.assertGymSubmitAllowed(existing.employeeId, existing.expenseDate);
-    }
-
-    const warnings =
-      category === 'medical'
-        ? await this.benefits.warningsForClaim({
-            employeeId: existing.employeeId,
-            category,
-            amountPkr,
-            expenseDate: existing.expenseDate,
-          })
-        : [];
 
     await prisma.expenseClaim.update({
       where: { id },
@@ -457,19 +481,22 @@ export class ExpenseClaimsService {
         submittedById: viewer.id,
       });
     } catch (err) {
-      const rollbackStatus = existing.status === 'returned' ? 'returned' : 'draft';
-      await prisma.expenseClaim.update({
-        where: { id },
-        data: {
-          status: rollbackStatus,
-          submittedAt: rollbackStatus === 'draft' ? null : existing.submittedAt,
-          submittedById: rollbackStatus === 'draft' ? null : existing.submittedById,
-          returnReasonCode: existing.returnReasonCode,
-          returnComment: existing.returnComment,
-          returnedAt: existing.returnedAt,
-          returnedById: existing.returnedById,
-        },
-      });
+      if (existing.status === STAGING_STATUS) {
+        await this.purgeClaim(id);
+      } else if (existing.status === 'returned') {
+        await prisma.expenseClaim.update({
+          where: { id },
+          data: {
+            status: 'returned',
+            submittedAt: existing.submittedAt,
+            submittedById: existing.submittedById,
+            returnReasonCode: existing.returnReasonCode,
+            returnComment: existing.returnComment,
+            returnedAt: existing.returnedAt,
+            returnedById: existing.returnedById,
+          },
+        });
+      }
       throw err;
     }
 
@@ -487,8 +514,7 @@ export class ExpenseClaimsService {
     );
 
     const fresh = await prisma.expenseClaim.findUniqueOrThrow({ where: { id }, include: INCLUDE });
-    const publicClaim = await this.toPublic(fresh, true);
-    return { ...publicClaim, warnings };
+    return this.toPublic(fresh, true);
   }
 
   async returnForCorrection(

@@ -19,7 +19,6 @@ import {
 } from '@/components/ui/dialog';
 import { EmployeeAvatar } from '@/components/employees/employee-avatar';
 import { ExpenseClaimsPanel } from '@/components/expenses/expense-claims-panel';
-import { ExpenseBenefitBalances } from '@/components/expenses/expense-benefit-balances';
 import { EXPENSE_COPY } from '@/components/expenses/expense-copy';
 import { useUser } from '@/hooks/use-user';
 import {
@@ -32,8 +31,6 @@ import {
   useEmployeeCommissionBreakdown,
   useEmployeeCommissionHistory,
 } from '@/lib/queries/commission-runs';
-import { useMyBenefitBalances } from '@/lib/queries/benefits';
-
 /**
  * /portal — the employee's own self-service portal (Module 6). Resolves
  * the logged-in user's employeeId and renders three read-only tabs:
@@ -54,7 +51,6 @@ export default function SelfServicePortalPage() {
   const thisMonth = useEmployeeCommissionBreakdown(employeeId, CURRENT_MONTH);
   const history = useEmployeeCommissionHistory(employeeId, 12);
   const projects = useEmployeeAssignedProjects(employeeId, 'all');
-  const balances = useMyBenefitBalances(undefined, !!employeeId);
 
   if (userLoading) {
     return (
@@ -199,10 +195,7 @@ export default function SelfServicePortalPage() {
           </TabsContent>
 
           <TabsContent value="expenses" className="mt-fn-5">
-            <div className="gap-fn-4 flex flex-col">
-              <ExpenseBenefitBalances balances={balances.data} loading={balances.isPending} />
-              <ExpenseClaimsPanel mine bucket="active" hideListHeader />
-            </div>
+            <ExpenseClaimsPanel mine bucket="active" hideListHeader />
           </TabsContent>
         </Tabs>
       </div>

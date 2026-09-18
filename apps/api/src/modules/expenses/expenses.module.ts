@@ -12,16 +12,9 @@ import { ExpenseNotificationSubscriber } from './expense-notification.subscriber
 import { expensesManifest } from './expenses.manifest';
 import { buildExpenseClaimApprovalType } from './expense-claim.approval-type';
 import { EXPENSE_NOTIFICATION_TYPES } from './expenses.notification-types';
-import { BenefitsModule } from '../benefits/benefits.module';
-import { BenefitsService } from '../benefits/benefits.service';
 
-/**
- * BenefitsService is imported for in-request wallet checks (gym cap /
- * OPD warnings) and for deduct-on-approve. The event bus does not wait
- * on handlers, so a financial write cannot live only on a subscriber.
- */
 @Module({
-  imports: [NotificationsModule, BenefitsModule],
+  imports: [NotificationsModule],
   controllers: [ExpenseClaimsController],
   providers: [ExpenseClaimsService, ExpenseTimelineSubscriber, ExpenseNotificationSubscriber],
   exports: [ExpenseClaimsService],
@@ -34,32 +27,39 @@ export class ExpensesModule implements OnModuleInit {
     private readonly events: EventBusService,
     private readonly approvalTypes: ApprovalTypeRegistry,
     private readonly notificationTypes: NotificationTypesRegistry,
-    private readonly benefits: BenefitsService,
+    private readonly claims: ExpenseClaimsService,
   ) {}
 
   onModuleInit(): void {
     this.registry.register(expensesManifest);
-    this.approvalTypes.register(
-      buildExpenseClaimApprovalType(this.events, this.logger, this.benefits),
-    );
+    this.approvalTypes.register(buildExpenseClaimApprovalType(this.events, this.logger));
     for (const t of EXPENSE_NOTIFICATION_TYPES) {
       this.notificationTypes.register(t);
     }
     void this.retireLegacyOpdGymPermissions();
+    void this.claims.purgeAbandonedStagingClaims().catch((err: Error) => {
+      this.logger.warn(`Could not purge abandoned staging expense claims: ${err.message}`);
+    });
   }
 
   /** OPD/Gym modules were folded into Expenses; drop leftover permission rows. */
   private async retireLegacyOpdGymPermissions(): Promise<void> {
     try {
       const leftover = await prisma.permission.findMany({
-        where: { OR: [{ key: { startsWith: 'opd:' } }, { key: { startsWith: 'gym:' } }] },
+        where: {
+          OR: [
+            { key: { startsWith: 'opd:' } },
+            { key: { startsWith: 'gym:' } },
+            { key: { startsWith: 'benefits:' } },
+          ],
+        },
         select: { id: true },
       });
       if (leftover.length === 0) return;
       const ids = leftover.map((p) => p.id);
       await prisma.rolePermission.deleteMany({ where: { permissionId: { in: ids } } });
       await prisma.permission.deleteMany({ where: { id: { in: ids } } });
-      this.logger.log(`Retired ${leftover.length} leftover OPD/Gym permission(s).`);
+      this.logger.log(`Retired ${leftover.length} leftover OPD/Gym/Benefits permission(s).`);
     } catch (err) {
       this.logger.warn(`Could not retire leftover OPD/Gym permissions: ${(err as Error).message}`);
     }
