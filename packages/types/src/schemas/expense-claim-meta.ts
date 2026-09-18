@@ -3,7 +3,6 @@
 export const EXPENSE_CLAIM_MAX_DOCUMENTS = 3;
 export const EXPENSE_CLAIM_MIN_PKR = 1;
 export const EXPENSE_CLAIM_MAX_PKR = 10_000_000;
-export const GYM_CLAIM_MAX_PKR = 2000;
 
 export const EXPENSE_CURRENCIES = [{ id: 'PKR', label: 'PKR' }] as const;
 export type ExpenseCurrency = (typeof EXPENSE_CURRENCIES)[number]['id'];

@@ -37,12 +37,9 @@ export function ExpenseDocumentsSection({
   return (
     <div className="gap-fn-3 flex flex-col">
       <div>
-        <p className="text-fn-fg font-fn-semibold text-[14px]">
-          {EXPENSE_COPY.documentsSectionTitle}
-        </p>
-        <p className="text-fn-fg-muted mt-fn-0_5 text-[12.5px]">
-          {EXPENSE_COPY.documentsCount(documents.length, EXPENSE_CLAIM_MAX_DOCUMENTS)} ·{' '}
-          {EXPENSE_COPY.filePickerHint}
+        <p className="text-fn-fg-muted text-[12px]">{EXPENSE_COPY.documentsSectionTitle}</p>
+        <p className="text-fn-fg-faint mt-fn-0_5 text-[12px]">
+          {EXPENSE_COPY.documentsCount(documents.length, EXPENSE_CLAIM_MAX_DOCUMENTS)}
         </p>
       </div>
       {documents.length === 0 && !editable ? (
@@ -50,10 +47,7 @@ export function ExpenseDocumentsSection({
       ) : (
         <ul className="gap-fn-2 flex flex-col">
           {documents.map((doc) => (
-            <li
-              key={doc.id}
-              className="border-fn-border bg-fn-bg-panel rounded-fn-xs px-fn-3 py-fn-2 gap-fn-2 flex items-center border"
-            >
+            <li key={doc.id} className="rounded-fn-xs px-fn-3 py-fn-2 gap-fn-2 flex items-center">
               <span className="bg-fn-bg-inset text-fn-fg-muted rounded-fn-xs h-fn-8 w-fn-8 flex shrink-0 items-center justify-center">
                 <FileText className="h-fn-3_5 w-fn-3_5" aria-hidden />
               </span>
@@ -63,7 +57,7 @@ export function ExpenseDocumentsSection({
                     href={doc.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-fn-accent block truncate text-[13px] underline"
+                    className="text-fn-fg hover:text-fn-accent block truncate text-[13px] transition-colors"
                   >
                     {doc.fileName}
                   </a>

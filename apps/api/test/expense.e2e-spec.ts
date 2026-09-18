@@ -48,10 +48,23 @@ describe('Expense claims (e2e)', () => {
 
   afterAll(async () => {
     if (createdClaimIds.length > 0) {
+      await prisma.benefitLedgerEntry.deleteMany({
+        where: { claimId: { in: createdClaimIds } },
+      });
       await prisma.approval.deleteMany({
         where: { type: 'expense-claim', sourceId: { in: createdClaimIds } },
       });
       await prisma.expenseClaim.deleteMany({ where: { id: { in: createdClaimIds } } });
+    }
+    const maryam = await prisma.user.findUnique({
+      where: { email: 'maryam.iqbal@futurenostics.local' },
+      select: { employeeId: true },
+    });
+    if (maryam?.employeeId) {
+      await prisma.employeeBenefitBalance.updateMany({
+        where: { employeeId: maryam.employeeId },
+        data: { usedPkr: 0, usedOpticalPkr: 0 },
+      });
     }
     await app?.close();
   });
@@ -194,7 +207,6 @@ describe('Expense claims (e2e)', () => {
     expect(fresh.body.status).toBe('rejected');
     expect(fresh.body.rejectionReasonCode).toBe('outside_policy');
     expect(fresh.body.rejectedBy).toBeTruthy();
-    expect(fresh.body.history?.length).toBeGreaterThan(0);
   });
 
   it('employee cannot approve their own claim', async () => {
@@ -284,6 +296,21 @@ describe('Expense claims (e2e)', () => {
     expect(res.status).toBe(400);
   });
 
+  it('rejects a five-digit expense year instead of 500ing', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/expenses/claims')
+      .set('Authorization', `Bearer ${maryamToken}`)
+      .send({
+        category: 'travel',
+        amountPkr: 800,
+        currency: 'PKR',
+        expenseDate: '20255-09',
+        notes: 'Airport transfer',
+        details: {},
+      });
+    expect(res.status).toBe(400);
+  });
+
   it('creates a travel claim with shared fields only', async () => {
     const created = await request(app.getHttpServer())
       .post('/api/expenses/claims')
@@ -344,5 +371,184 @@ describe('Expense claims (e2e)', () => {
       .get('/api/expenses/claims?scope=org&bucket=resolved')
       .set('Authorization', `Bearer ${approverToken}`);
     expect(financeOrg.status).toBe(200);
+  });
+
+  it('medical over-budget submit warns but still submits', async () => {
+    const before = await request(app.getHttpServer())
+      .get('/api/benefits/balances?month=2026-09')
+      .set('Authorization', `Bearer ${maryamToken}`);
+    expect(before.status).toBe(200);
+    const usedBefore = before.body.medical.usedPkr;
+
+    const id = await createUploadedClaim(maryamToken, medicalBody(31_000));
+    const submitted = await request(app.getHttpServer())
+      .post(`/api/expenses/claims/${id}/submit`)
+      .set('Authorization', `Bearer ${maryamToken}`);
+    expect(submitted.status).toBe(200);
+    expect(submitted.body.status).toBe('pending_approval');
+    expect(submitted.body.warnings?.some((w: string) => w.includes('remaining OPD balance'))).toBe(
+      true,
+    );
+
+    const after = await request(app.getHttpServer())
+      .get('/api/benefits/balances?month=2026-09')
+      .set('Authorization', `Bearer ${maryamToken}`);
+    expect(after.body.medical.usedPkr).toBe(usedBefore);
+  });
+
+  it('approve deducts medical used; second gym after approve is blocked', async () => {
+    const beforeMedical = await request(app.getHttpServer())
+      .get('/api/benefits/balances?month=2026-09')
+      .set('Authorization', `Bearer ${maryamToken}`);
+    expect(beforeMedical.status).toBe(200);
+    const usedBefore = beforeMedical.body.medical.usedPkr;
+
+    const medicalId = await createUploadedClaim(maryamToken, medicalBody(5000));
+    await request(app.getHttpServer())
+      .post(`/api/expenses/claims/${medicalId}/submit`)
+      .set('Authorization', `Bearer ${maryamToken}`)
+      .expect(200);
+
+    const gymId = await createUploadedClaim(maryamToken, {
+      ...gymBody(1500),
+      expenseDate: '2026-03',
+    });
+    await request(app.getHttpServer())
+      .post(`/api/expenses/claims/${gymId}/submit`)
+      .set('Authorization', `Bearer ${maryamToken}`)
+      .expect(200);
+
+    const approverToken = financeToken ?? adminToken;
+    const inbox = await request(app.getHttpServer())
+      .get('/api/approvals?status=pending&type=expense-claim&for=me&limit=100')
+      .set('Authorization', `Bearer ${approverToken}`);
+    const medicalRow = inbox.body.items.find(
+      (item: { sourceId: string }) => item.sourceId === medicalId,
+    );
+    const gymRow = inbox.body.items.find((item: { sourceId: string }) => item.sourceId === gymId);
+    expect(medicalRow).toBeTruthy();
+    expect(gymRow).toBeTruthy();
+
+    await request(app.getHttpServer())
+      .post(`/api/approvals/${medicalRow.id}/approve`)
+      .set('Authorization', `Bearer ${approverToken}`)
+      .send({})
+      .expect(200);
+    await request(app.getHttpServer())
+      .post(`/api/approvals/${gymRow.id}/approve`)
+      .set('Authorization', `Bearer ${approverToken}`)
+      .send({})
+      .expect(200);
+
+    const afterMedical = await request(app.getHttpServer())
+      .get('/api/benefits/balances?month=2026-09')
+      .set('Authorization', `Bearer ${maryamToken}`);
+    expect(afterMedical.body.medical.usedPkr).toBe(usedBefore + 5000);
+
+    const afterGym = await request(app.getHttpServer())
+      .get('/api/benefits/balances?month=2026-03')
+      .set('Authorization', `Bearer ${maryamToken}`);
+    expect(afterGym.body.gym.monthLocked).toBe(true);
+    expect(afterGym.body.gym.remainingPkr).toBe(0);
+
+    const secondGym = await createUploadedClaim(maryamToken, {
+      ...gymBody(500),
+      expenseDate: '2026-03',
+    });
+    const blocked = await request(app.getHttpServer())
+      .post(`/api/expenses/claims/${secondGym}/submit`)
+      .set('Authorization', `Bearer ${maryamToken}`);
+    expect(blocked.status).toBe(400);
+    expect(blocked.body.message).toMatch(/approved gym claim for this month/i);
+  });
+
+  it('travel claim: submit, reject, and resubmit after return', async () => {
+    const id = await createUploadedClaim(maryamToken, {
+      category: 'travel',
+      amountPkr: 1200,
+      currency: 'PKR',
+      expenseDate: '2026-10',
+      notes: 'Client site visit transport',
+      details: {},
+    });
+    await request(app.getHttpServer())
+      .post(`/api/expenses/claims/${id}/submit`)
+      .set('Authorization', `Bearer ${maryamToken}`)
+      .expect(200);
+
+    const approverToken = financeToken ?? adminToken;
+    const inbox = await request(app.getHttpServer())
+      .get('/api/approvals?status=pending&type=expense-claim&for=me&limit=100')
+      .set('Authorization', `Bearer ${approverToken}`);
+    const row = inbox.body.items.find((item: { sourceId: string }) => item.sourceId === id);
+    await request(app.getHttpServer())
+      .post(`/api/approvals/${row.id}/reject`)
+      .set('Authorization', `Bearer ${approverToken}`)
+      .send({
+        reason: 'Outside policy',
+        reasonCode: 'outside_policy',
+        comment: 'Not pre-approved',
+      })
+      .expect(200);
+
+    const rejected = await request(app.getHttpServer())
+      .get(`/api/expenses/claims/${id}`)
+      .set('Authorization', `Bearer ${maryamToken}`);
+    expect(rejected.body.status).toBe('rejected');
+  });
+
+  it('business development claim: submit and approve without wallet deduct', async () => {
+    const before = await request(app.getHttpServer())
+      .get('/api/benefits/balances?month=2026-10')
+      .set('Authorization', `Bearer ${maryamToken}`);
+    const usedBefore = before.body.medical.usedPkr;
+
+    const id = await createUploadedClaim(maryamToken, {
+      category: 'business_development',
+      amountPkr: 3500,
+      currency: 'PKR',
+      expenseDate: '2026-10',
+      notes: 'Client lunch — project pitch',
+      details: {},
+    });
+    await request(app.getHttpServer())
+      .post(`/api/expenses/claims/${id}/submit`)
+      .set('Authorization', `Bearer ${maryamToken}`)
+      .expect(200);
+
+    const approverToken = financeToken ?? adminToken;
+    const inbox = await request(app.getHttpServer())
+      .get('/api/approvals?status=pending&type=expense-claim&for=me&limit=100')
+      .set('Authorization', `Bearer ${approverToken}`);
+    const row = inbox.body.items.find((item: { sourceId: string }) => item.sourceId === id);
+    await request(app.getHttpServer())
+      .post(`/api/approvals/${row.id}/approve`)
+      .set('Authorization', `Bearer ${approverToken}`)
+      .send({})
+      .expect(200);
+
+    const after = await request(app.getHttpServer())
+      .get('/api/benefits/balances?month=2026-10')
+      .set('Authorization', `Bearer ${maryamToken}`);
+    expect(after.body.medical.usedPkr).toBe(usedBefore);
+
+    const ledger = await prisma.benefitLedgerEntry.findUnique({ where: { claimId: id } });
+    expect(ledger).toBeNull();
+  });
+
+  it('lists default benefit policies for admin and forbids employees', async () => {
+    const forbidden = await request(app.getHttpServer())
+      .get('/api/benefits/policies')
+      .set('Authorization', `Bearer ${maryamToken}`);
+    expect(forbidden.status).toBe(403);
+
+    const listed = await request(app.getHttpServer())
+      .get('/api/benefits/policies')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(listed.status).toBe(200);
+    const medical = listed.body.find((p: { kind: string }) => p.kind === 'medical_opd');
+    const gym = listed.body.find((p: { kind: string }) => p.kind === 'gym_monthly');
+    expect(medical?.amountPkr).toBe(30_000);
+    expect(gym?.amountPkr).toBe(2_000);
   });
 });

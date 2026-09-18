@@ -6,13 +6,13 @@
  * Medical claims store `{ subCategory }` in `details`; other categories use `{}`.
  */
 import { z } from 'zod';
+import { employeeBenefitBalancesSchema } from './benefit-policy';
 import {
   EXPENSE_CLAIM_CATEGORIES,
   EXPENSE_CLAIM_MAX_PKR,
   EXPENSE_CLAIM_MIN_PKR,
   EXPENSE_CURRENCIES,
   EXPENSE_FINANCE_REASON_CODES,
-  GYM_CLAIM_MAX_PKR,
   LEGACY_MEDICAL_SUBCATEGORY_IDS,
   MEDICAL_SUBCATEGORIES,
 } from './expense-claim-meta';
@@ -24,7 +24,6 @@ export {
   EXPENSE_CURRENCIES,
   EXPENSE_CLAIM_CATEGORIES,
   EXPENSE_FINANCE_REASON_CODES,
-  GYM_CLAIM_MAX_PKR,
   MEDICAL_SUBCATEGORIES,
   expenseCategoryLabel,
   medicalSubcategoryLabel,
@@ -73,18 +72,67 @@ const optionalText = (max: number) =>
     .nullish()
     .transform((v) => v || null);
 
+export const EXPENSE_MONTH_INPUT_MIN = '2000-01';
+export const EXPENSE_MONTH_INPUT_MAX = '2100-12';
+
+/** Keep month-picker values to `YYYY-MM` (drop extra year digits like 20255). */
+export function sanitizeExpenseMonthInput(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  const match = trimmed.match(/^(\d+)-(\d{1,2})$/);
+  if (!match) return trimmed.slice(0, 7);
+  const year = (match[1] ?? '').slice(0, 4);
+  const month = (match[2] ?? '').padStart(2, '0').slice(-2);
+  if (year.length < 4) return `${year}-${month}`;
+  return `${year}-${month}`;
+}
+
+/** Accepts `YYYY-MM` (month picker) or a full ISO date; stored as first of month. */
+export function normalizeExpenseMonth(raw: string): string {
+  const trimmed = raw.trim();
+  const match = trimmed.match(/^(\d{4})-(\d{2})(?:-\d{2})?(?:[T\s].*)?$/);
+  if (!match) {
+    throw new Error('Use a valid expense month (YYYY-MM).');
+  }
+  const yearDigits = match[1] ?? '';
+  const monthDigits = match[2] ?? '';
+  const year = Number(yearDigits);
+  const month = Number(monthDigits);
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+    throw new Error('Expense year must be between 2000 and 2100.');
+  }
+  if (!Number.isInteger(month) || month < 1 || month > 12) {
+    throw new Error('Pick a valid expense month.');
+  }
+  return `${yearDigits}-${monthDigits}-01`;
+}
+
 const optionalDate = z
   .string()
   .trim()
   .nullish()
-  .transform((v) => v || null);
+  .transform((v, ctx) => {
+    if (!v) return null;
+    try {
+      return normalizeExpenseMonth(v);
+    } catch (err) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: (err as Error).message });
+      return z.NEVER;
+    }
+  });
 
-/** Accepts `YYYY-MM` (month picker) or a full ISO date; stored as first of month when month-only. */
 export const expenseMonthSchema = z
   .string()
   .trim()
   .min(1, 'Add the expense month.')
-  .transform((v) => (/^\d{4}-\d{2}$/.test(v) ? `${v}-01` : v));
+  .transform((v, ctx) => {
+    try {
+      return normalizeExpenseMonth(v);
+    } catch (err) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: (err as Error).message });
+      return z.NEVER;
+    }
+  });
 
 const requiredDescription = z.string().trim().min(1, 'Add a description.').max(2000);
 
@@ -96,10 +144,7 @@ const amountPkr = z.coerce
 const gymAmountPkr = z.coerce
   .number()
   .min(EXPENSE_CLAIM_MIN_PKR, 'Enter a valid reimbursement amount.')
-  .max(
-    GYM_CLAIM_MAX_PKR,
-    `Reimbursement cannot exceed ₨${GYM_CLAIM_MAX_PKR.toLocaleString('en-PK')} per claim.`,
-  );
+  .max(EXPENSE_CLAIM_MAX_PKR);
 
 export const medicalDetailsSchema = z.object({
   subCategory: z
@@ -148,25 +193,14 @@ export const expenseClaimCreateSchema = z.discriminatedUnion('category', [
 ]);
 export type ExpenseClaimCreateInput = z.infer<typeof expenseClaimCreateSchema>;
 
-export const expenseClaimUpdateSchema = z
-  .object({
-    category: expenseClaimCategorySchema.optional(),
-    amountPkr: amountPkr.optional(),
-    currency: expenseCurrencySchema.optional(),
-    expenseDate: optionalDate,
-    notes: optionalText(2000),
-    details: z.unknown().optional(),
-  })
-  .superRefine((data, ctx) => {
-    if (data.category == null && data.details === undefined) return;
-    if (data.category === 'gym' && data.amountPkr != null && data.amountPkr > GYM_CLAIM_MAX_PKR) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `Reimbursement cannot exceed ₨${GYM_CLAIM_MAX_PKR.toLocaleString('en-PK')} per claim.`,
-        path: ['amountPkr'],
-      });
-    }
-  });
+export const expenseClaimUpdateSchema = z.object({
+  category: expenseClaimCategorySchema.optional(),
+  amountPkr: amountPkr.optional(),
+  currency: expenseCurrencySchema.optional(),
+  expenseDate: optionalDate,
+  notes: optionalText(2000),
+  details: z.unknown().optional(),
+});
 export type ExpenseClaimUpdateInput = z.infer<typeof expenseClaimUpdateSchema>;
 
 export function parseExpenseDetails(
@@ -219,14 +253,6 @@ export const expenseClaimDocumentPublicSchema = z.object({
 });
 export type ExpenseClaimDocumentPublic = z.infer<typeof expenseClaimDocumentPublicSchema>;
 
-export const expenseClaimHistoryEntrySchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  occurredAt: z.string(),
-  eventType: z.string(),
-});
-export type ExpenseClaimHistoryEntry = z.infer<typeof expenseClaimHistoryEntrySchema>;
-
 const actorPublicSchema = z
   .object({
     id: z.string(),
@@ -269,11 +295,15 @@ export const expenseClaimPublicSchema = z.object({
   returnComment: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  warnings: z.array(z.string()).optional(),
 });
 export type ExpenseClaimPublic = z.infer<typeof expenseClaimPublicSchema>;
 
 export const expenseClaimDetailSchema = expenseClaimPublicSchema.extend({
-  history: z.array(expenseClaimHistoryEntrySchema),
+  /** Recomputed on read for pending medical claims (Finance review). Not persisted. */
+  benefitWarnings: z.array(z.string()).optional(),
+  /** Employee wallet snapshot for Finance on medical/gym claims. Not persisted. */
+  benefitSnapshot: employeeBenefitBalancesSchema.optional(),
 });
 export type ExpenseClaimDetail = z.infer<typeof expenseClaimDetailSchema>;
 

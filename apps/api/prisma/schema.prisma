@@ -43,6 +43,7 @@ model User {
   expenseClaimsApproved   ExpenseClaim[]            @relation("ExpenseClaimApprover")
   expenseClaimsRejected   ExpenseClaim[]            @relation("ExpenseClaimRejecter")
   expenseClaimsReturned   ExpenseClaim[]            @relation("ExpenseClaimReturner")
+  benefitPoliciesPublished BenefitPolicy[]          @relation("BenefitPolicyPublisher")
 
   isActive            Boolean   @default(true)
   failedLoginAttempts Int       @default(0)
@@ -262,6 +263,7 @@ model Employee {
   commissionLineItems   CommissionLineItem[]
   commissionDisputes    CommissionDispute[]
   expenseClaims         ExpenseClaim[]
+  benefitBalances       EmployeeBenefitBalance[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -1194,4 +1196,64 @@ model ExpenseClaimDocument {
   createdAt  DateTime     @default(now())
 
   @@index([claimId])
+}
+
+// ---------- Benefit policies (OPD / gym wallets) ----------
+//
+// HR publishes company-wide amounts. Each employee has a period
+// balance (half-year for medical, calendar month for gym). Approved
+// claims deduct via BenefitLedgerEntry (unique claimId = idempotent).
+
+model BenefitPolicy {
+  id               String    @id @default(cuid())
+  /// medical_opd | gym_monthly
+  kind             String
+  version          Int       @default(1)
+  /// draft | active | archived
+  status           String    @default("active")
+  amountPkr        Decimal   @db.Decimal(14, 2)
+  /// Medical optical sub-cap inside amountPkr. Null for gym.
+  opticalSubCapPkr Decimal?  @db.Decimal(14, 2)
+  effectiveFrom    DateTime
+  publishedAt      DateTime?
+  publishedById    String?
+  publishedBy      User?     @relation("BenefitPolicyPublisher", fields: [publishedById], references: [id])
+  balances         EmployeeBenefitBalance[]
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([kind, status])
+}
+
+model EmployeeBenefitBalance {
+  id             String        @id @default(cuid())
+  employeeId     String
+  employee       Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  /// medical_opd | gym_monthly
+  kind           String
+  /// medical: 2026-H1 / 2026-H2; gym: 2026-08
+  periodKey      String
+  allocatedPkr   Decimal       @db.Decimal(14, 2)
+  usedPkr        Decimal       @db.Decimal(14, 2) @default(0)
+  usedOpticalPkr Decimal       @db.Decimal(14, 2) @default(0)
+  policyId       String
+  policy         BenefitPolicy @relation(fields: [policyId], references: [id])
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@unique([employeeId, kind, periodKey])
+  @@index([kind, periodKey])
+}
+
+model BenefitLedgerEntry {
+  id         String   @id @default(cuid())
+  claimId    String   @unique
+  employeeId String
+  kind       String
+  periodKey  String
+  amountPkr  Decimal  @db.Decimal(14, 2)
+  isOptical  Boolean  @default(false)
+  occurredAt DateTime @default(now())
+
+  @@index([employeeId, kind, periodKey])
 }

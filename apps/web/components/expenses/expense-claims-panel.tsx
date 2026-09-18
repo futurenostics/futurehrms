@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Wallet } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import type {
   ClaimListBucket,
   ExpenseClaimCategory,
@@ -180,7 +180,7 @@ export function ExpenseClaimsPanel({
       {
         id: 'status',
         header: 'Status',
-        width: 150,
+        width: 120,
         cell: (row) => <ExpenseClaimStatusBadge status={row.status} />,
       },
       {
@@ -200,9 +200,8 @@ export function ExpenseClaimsPanel({
 
   const emptyState =
     statusFilter === 'all' && categoryFilter === 'all' ? (
-      <div className="gap-fn-2 px-fn-5 py-fn-10 flex flex-col items-center text-center">
-        <Wallet className="text-fn-fg-faint h-fn-8 w-fn-8" />
-        <p className="text-fn-fg font-fn-medium text-[14px]">
+      <div className="gap-fn-1 px-fn-5 py-fn-10 flex flex-col items-center text-center">
+        <p className="text-fn-fg text-[13.5px]">
           {bucket === 'resolved' ? EXPENSE_COPY.listEmptyHistoryTitle : EXPENSE_COPY.listEmptyTitle}
         </p>
         <p className="text-fn-fg-muted text-[12.5px]">
@@ -216,15 +215,12 @@ export function ExpenseClaimsPanel({
     );
 
   return (
-    <div className="gap-fn-4 flex flex-col">
+    <div className="gap-fn-3 flex flex-col">
       {!hideListHeader && (
-        <div className="gap-fn-3 flex flex-wrap items-start justify-between">
-          <div className="min-w-0">
-            <h2 className="text-fn-fg font-fn-semibold text-[15px]">
-              {mine ? EXPENSE_COPY.listMineTitle : EXPENSE_COPY.listAllTitle}
-            </h2>
-            <p className="text-fn-fg-muted mt-fn-0_5 text-[12.5px]">{EXPENSE_COPY.pageIntroOwn}</p>
-          </div>
+        <div className="flex items-start justify-between">
+          <h2 className="text-fn-fg font-fn-semibold text-[15px]">
+            {mine ? EXPENSE_COPY.listMineTitle : EXPENSE_COPY.listAllTitle}
+          </h2>
           {canSubmit && !hideCreateButton && (
             <Button size="sm" onClick={() => setSheetOpen(true)}>
               <Plus className="h-fn-3_5 w-fn-3_5" /> {EXPENSE_COPY.newExpense}
@@ -232,38 +228,35 @@ export function ExpenseClaimsPanel({
           )}
         </div>
       )}
-      {hideListHeader && canSubmit && !hideCreateButton && (
-        <div className="flex justify-end">
-          <Button size="sm" onClick={() => setSheetOpen(true)}>
-            <Plus className="h-fn-3_5 w-fn-3_5" /> {EXPENSE_COPY.newExpense}
-          </Button>
-        </div>
-      )}
 
-      <div className="gap-fn-3 flex flex-wrap items-center justify-between">
-        <div className="gap-fn-1_5 flex flex-wrap">
+      <div className="gap-fn-2 flex flex-wrap items-center justify-between">
+        <div className="gap-fn-1 flex flex-wrap">
           {statusFilters.map((f) => (
             <button
               key={f.id}
               type="button"
               onClick={() => setStatusFilter(f.id)}
               className={cn(
-                'rounded-fn-xs px-fn-3 py-fn-1_5 border text-[12.5px] transition-colors',
+                'rounded-fn-xs px-fn-2_5 py-fn-1 text-[12.5px] transition-colors',
                 statusFilter === f.id
-                  ? 'border-fn-accent bg-fn-accent-soft text-fn-accent-soft-fg font-fn-semibold'
-                  : 'border-fn-border bg-fn-bg-panel text-fn-fg-muted hover:bg-fn-bg-inset',
+                  ? 'bg-fn-bg-inset text-fn-fg font-fn-semibold'
+                  : 'text-fn-fg-muted hover:text-fn-fg',
               )}
             >
               {f.label}
             </button>
           ))}
         </div>
-        <div className="gap-fn-2 flex flex-wrap">
+        <div className="gap-fn-2 flex flex-wrap items-center">
           <Select
             value={categoryFilter}
             onValueChange={(v) => setCategoryFilter(v as ExpenseClaimCategory | 'all')}
           >
-            <SelectTrigger className="w-[220px]" aria-label={EXPENSE_COPY.categoryLabel}>
+            <SelectTrigger
+              variant="compact"
+              className="w-[180px]"
+              aria-label={EXPENSE_COPY.categoryLabel}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -275,7 +268,11 @@ export function ExpenseClaimsPanel({
             </SelectContent>
           </Select>
           <Select value={listSort} onValueChange={(v) => setListSort(v as ListSort)}>
-            <SelectTrigger className="w-[180px]" aria-label={EXPENSE_COPY.sortLabel}>
+            <SelectTrigger
+              variant="compact"
+              className="w-[140px]"
+              aria-label={EXPENSE_COPY.sortLabel}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -285,6 +282,11 @@ export function ExpenseClaimsPanel({
               <SelectItem value="amount_low">{EXPENSE_COPY.sortAmountLow}</SelectItem>
             </SelectContent>
           </Select>
+          {hideListHeader && canSubmit && !hideCreateButton && (
+            <Button size="sm" onClick={() => setSheetOpen(true)}>
+              <Plus className="h-fn-3_5 w-fn-3_5" /> {EXPENSE_COPY.newExpense}
+            </Button>
+          )}
         </div>
       </div>
 

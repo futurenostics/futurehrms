@@ -4,8 +4,11 @@ import * as React from 'react';
 import { toast } from 'sonner';
 import {
   EXPENSE_CLAIM_CATEGORIES,
-  GYM_CLAIM_MAX_PKR,
+  EXPENSE_MONTH_INPUT_MAX,
+  EXPENSE_MONTH_INPUT_MIN,
+  GYM_MONTH_ALREADY_APPROVED_MESSAGE,
   MEDICAL_SUBCATEGORIES,
+  sanitizeExpenseMonthInput,
   type ExpenseClaimCategory,
   type ExpenseClaimCreateInput,
   type MedicalSubcategory,
@@ -32,12 +35,14 @@ import {
 } from '@/components/ui/sheet';
 import { EXPENSE_COPY } from '@/components/expenses/expense-copy';
 import { ExpenseDocumentPicker } from '@/components/expenses/expense-document-picker';
+import { ExpenseBenefitBalances } from '@/components/expenses/expense-benefit-balances';
 import { parsePkrAmount, sanitizePkrInput } from '@/components/expenses/expense-claim-status';
 import {
   useCreateExpenseClaim,
   useSubmitExpenseClaim,
   uploadExpenseDocument,
 } from '@/lib/queries/expenses';
+import { useMyBenefitBalances } from '@/lib/queries/benefits';
 
 export function NewExpenseSheet({
   open,
@@ -55,6 +60,8 @@ export function NewExpenseSheet({
   const [notes, setNotes] = React.useState('');
   const [files, setFiles] = React.useState<File[]>([]);
   const [busy, setBusy] = React.useState(false);
+  const needBalances = open && !!expenseMonth && (category === 'medical' || category === 'gym');
+  const balances = useMyBenefitBalances(expenseMonth || undefined, needBalances);
 
   React.useEffect(() => {
     if (!open) {
@@ -81,8 +88,9 @@ export function NewExpenseSheet({
       toast.error(EXPENSE_COPY.amountInvalid);
       return;
     }
-    if (category === 'gym' && amountPkr > GYM_CLAIM_MAX_PKR) {
-      toast.error(EXPENSE_COPY.gymAmountMax);
+    const gymMax = balances.data?.gym.allocatedPkr;
+    if (category === 'gym' && gymMax != null && amountPkr > gymMax) {
+      toast.error(`Gym reimbursement cannot exceed ₨${gymMax.toLocaleString('en-PK')} per claim.`);
       return;
     }
     if (!notes.trim()) {
@@ -122,7 +130,10 @@ export function NewExpenseSheet({
       for (const f of files) {
         await uploadExpenseDocument(created.id, f);
       }
-      await submit.mutateAsync(created.id);
+      const submitted = await submit.mutateAsync(created.id);
+      for (const warning of submitted.warnings ?? []) {
+        toast.warning(warning);
+      }
       toast.success(EXPENSE_COPY.submitSuccess);
       onOpenChange(false);
     } catch (err) {
@@ -137,9 +148,7 @@ export function NewExpenseSheet({
       <SheetContent>
         <SheetHeader>
           <SheetTitle>{EXPENSE_COPY.newExpense}</SheetTitle>
-          <SheetDescription>
-            Pick a category, then add the expense month, amount, description, and receipt.
-          </SheetDescription>
+          <SheetDescription>Category, month, amount, description, and a receipt.</SheetDescription>
         </SheetHeader>
         <SheetBody className="gap-fn-4 flex flex-col">
           <div className="gap-fn-1_5 flex flex-col">
@@ -162,7 +171,6 @@ export function NewExpenseSheet({
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-fn-fg-faint text-[12px]">{EXPENSE_COPY.categoryHint}</p>
           </div>
 
           {category === 'medical' && (
@@ -199,10 +207,23 @@ export function NewExpenseSheet({
                 <Input
                   id="expense-month"
                   type="month"
+                  min={EXPENSE_MONTH_INPUT_MIN}
+                  max={EXPENSE_MONTH_INPUT_MAX}
                   value={expenseMonth}
-                  onChange={(e) => setExpenseMonth(e.target.value)}
+                  onChange={(e) => setExpenseMonth(sanitizeExpenseMonthInput(e.target.value))}
                 />
               </div>
+
+              {needBalances && balances.data ? (
+                <ExpenseBenefitBalances
+                  balances={balances.data}
+                  compact
+                  show={category === 'gym' ? 'gym' : 'medical'}
+                />
+              ) : null}
+              {category === 'gym' && expenseMonth && balances.data?.gym.monthLocked ? (
+                <p className="text-fn-danger text-[12.5px]">{GYM_MONTH_ALREADY_APPROVED_MESSAGE}</p>
+              ) : null}
 
               <div className="gap-fn-1_5 flex flex-col">
                 <Label htmlFor="amount">
@@ -215,9 +236,9 @@ export function NewExpenseSheet({
                   value={amount}
                   onChange={(e) => setAmount(sanitizePkrInput(e.target.value))}
                 />
-                {category === 'gym' ? (
+                {category === 'gym' && balances.data ? (
                   <p className="text-fn-fg-faint text-[12px]">
-                    Maximum ₨{GYM_CLAIM_MAX_PKR.toLocaleString('en-PK')} per claim.
+                    Maximum ₨{balances.data.gym.allocatedPkr.toLocaleString('en-PK')} per claim.
                   </p>
                 ) : null}
               </div>
@@ -250,7 +271,14 @@ export function NewExpenseSheet({
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={() => void submitNew()} disabled={busy || !category}>
+          <Button
+            onClick={() => void submitNew()}
+            disabled={
+              busy ||
+              !category ||
+              (category === 'gym' && !!expenseMonth && balances.data?.gym.monthLocked)
+            }
+          >
             {EXPENSE_COPY.submitToFinance}
           </Button>
         </SheetFooter>

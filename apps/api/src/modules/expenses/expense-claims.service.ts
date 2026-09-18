@@ -12,13 +12,11 @@ import {
   EXPENSE_CLAIM_MAX_DOCUMENTS,
   expenseCategoryLabel,
   formatExpenseFinanceFeedback,
-  GYM_CLAIM_MAX_PKR,
   parseExpenseDetails,
   type ExpenseClaimCategory,
   type ExpenseClaimCreateInput,
   type ExpenseClaimDetail,
   type ExpenseClaimDocumentPublic,
-  type ExpenseClaimHistoryEntry,
   type ExpenseClaimListQuery,
   type ExpenseClaimListResponse,
   type ExpenseClaimPublic,
@@ -31,6 +29,7 @@ import type { AuthenticatedUser } from '../../core/auth/types';
 import { EventBusService } from '../../core/events/event-bus.service';
 import { StorageService } from '../../core/storage/storage.service';
 import { ApprovalsService } from '../approvals/approvals.service';
+import { BenefitsService } from '../benefits/benefits.service';
 
 const DOCUMENT_URL_TTL = 15 * 60;
 const APPROVAL_KIND = 'expense-claim';
@@ -76,6 +75,7 @@ export class ExpenseClaimsService {
     private readonly events: EventBusService,
     private readonly storage: StorageService,
     private readonly approvals: ApprovalsService,
+    private readonly benefits: BenefitsService,
   ) {}
 
   private canViewOrgClaims(viewer: AuthenticatedUser): boolean {
@@ -122,28 +122,6 @@ export class ExpenseClaimsService {
     if (!ExpenseClaimsService.editableStatuses.has(claim.status)) {
       throw new BadRequestException('This claim cannot be edited.');
     }
-  }
-
-  private async loadHistory(
-    claimId: string,
-    employeeId: string,
-  ): Promise<ExpenseClaimHistoryEntry[]> {
-    const rows = await prisma.timelineEntry.findMany({
-      where: { employeeId, module: { in: ['expenses', 'opd', 'gym'] } },
-      orderBy: { occurredAt: 'desc' },
-      take: 50,
-    });
-    return rows
-      .filter((row) => {
-        const details = row.details as { claimId?: string } | null;
-        return details?.claimId === claimId;
-      })
-      .map((row) => ({
-        id: row.id,
-        title: row.title,
-        occurredAt: row.occurredAt.toISOString(),
-        eventType: row.eventType,
-      }));
   }
 
   private decimalToNumber(value: { toString: () => string } | number): number {
@@ -270,8 +248,28 @@ export class ExpenseClaimsService {
     if (!row) throw new NotFoundException('Claim not found.');
     this.assertReadable(viewer, row);
     const base = await this.toPublic(row, true);
-    const history = await this.loadHistory(id, row.employeeId);
-    return { ...base, history };
+    const financeReview =
+      row.status === 'pending_approval' && viewer.permissions.includes('expenses:approve_claim');
+    let benefitWarnings: string[] | undefined;
+    let benefitSnapshot: Awaited<ReturnType<BenefitsService['getMyBalances']>> | undefined;
+    if (financeReview && row.expenseDate) {
+      if (row.category === 'medical' || row.category === 'gym') {
+        benefitSnapshot = await this.benefits.getMyBalances(row.employeeId, row.expenseDate);
+      }
+      if (row.category === 'medical') {
+        benefitWarnings = await this.benefits.warningsForClaim({
+          employeeId: row.employeeId,
+          category: 'medical',
+          amountPkr: this.decimalToNumber(row.amount),
+          expenseDate: row.expenseDate,
+        });
+      }
+    }
+    return {
+      ...base,
+      ...(benefitWarnings?.length ? { benefitWarnings } : {}),
+      ...(benefitSnapshot ? { benefitSnapshot } : {}),
+    };
   }
 
   async create(
@@ -283,6 +281,9 @@ export class ExpenseClaimsService {
     }
     const employeeId = this.requireEmployeeId(viewer);
     const details = parseExpenseDetails(input.category, input.details);
+    if (input.category === 'gym') {
+      await this.benefits.assertGymAmountAllowed(input.amountPkr);
+    }
     const claimNumber = await allocateExpenseClaimNumber();
     const row = await prisma.expenseClaim.create({
       data: {
@@ -319,10 +320,8 @@ export class ExpenseClaimsService {
     const nextDetailsRaw = input.details !== undefined ? input.details : existing.details;
     const details = parseExpenseDetails(nextCategory, nextDetailsRaw);
     const nextAmount = input.amountPkr ?? this.decimalToNumber(existing.amount);
-    if (nextCategory === 'gym' && nextAmount > GYM_CLAIM_MAX_PKR) {
-      throw new BadRequestException(
-        `Reimbursement cannot exceed ₨${GYM_CLAIM_MAX_PKR.toLocaleString('en-PK')} per claim.`,
-      );
+    if (nextCategory === 'gym') {
+      await this.benefits.assertGymAmountAllowed(nextAmount);
     }
     const row = await prisma.expenseClaim.update({
       where: { id },
@@ -422,6 +421,22 @@ export class ExpenseClaimsService {
       throw new BadRequestException('Add a description before you submit.');
     }
 
+    const amountPkr = this.decimalToNumber(existing.amount);
+    if (category === 'gym') {
+      await this.benefits.assertGymAmountAllowed(amountPkr);
+      await this.benefits.assertGymSubmitAllowed(existing.employeeId, existing.expenseDate);
+    }
+
+    const warnings =
+      category === 'medical'
+        ? await this.benefits.warningsForClaim({
+            employeeId: existing.employeeId,
+            category,
+            amountPkr,
+            expenseDate: existing.expenseDate,
+          })
+        : [];
+
     await prisma.expenseClaim.update({
       where: { id },
       data: {
@@ -465,14 +480,15 @@ export class ExpenseClaimsService {
         claimNumber: existing.claimNumber,
         employeeId: existing.employeeId,
         category,
-        amountPkr: this.decimalToNumber(existing.amount),
+        amountPkr,
         categoryLabel: expenseCategoryLabel(category),
       },
       { actorId: viewer.id },
     );
 
     const fresh = await prisma.expenseClaim.findUniqueOrThrow({ where: { id }, include: INCLUDE });
-    return this.toPublic(fresh, true);
+    const publicClaim = await this.toPublic(fresh, true);
+    return { ...publicClaim, warnings };
   }
 
   async returnForCorrection(

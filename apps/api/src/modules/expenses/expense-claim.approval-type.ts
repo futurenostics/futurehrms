@@ -1,23 +1,25 @@
 /**
  * expense-claim ApprovalType — Finance-only, soft separation of duties.
  *
- * Single stage (`expenses:approve_claim`). Finance may approve their own
- * claim. Proof is reviewed on the claim detail page.
+ * Deducts the wallet in `onApproved` (awaited) because EventBus
+ * handlers are fire-and-forget. Unique `BenefitLedgerEntry.claimId`
+ * makes a retry a no-op.
  */
 import type { Logger } from '@nestjs/common';
 import { prisma } from '@futurenostics/db';
-import { expenseCategoryLabel, formatExpenseFinanceFeedback } from '@futurenostics/types';
+import {
+  expenseCategoryLabel,
+  formatBenefitPkr,
+  formatExpenseFinanceFeedback,
+} from '@futurenostics/types';
 import type { ApprovalDecision, ExpenseClaim } from '@prisma/client';
 import { EventBusService } from '../../core/events/event-bus.service';
 import type { ApprovalMetadata, ApprovalTypeDefinition } from '../approvals/approval-type.registry';
+import type { BenefitsService } from '../benefits/benefits.service';
 
 type ExpenseClaimSource = ExpenseClaim & {
   employee: { fullName: string; eid: string; designation: { name: string } | null };
 };
-
-function formatPkr(n: number): string {
-  return `₨${n.toLocaleString('en-PK')}`;
-}
 
 function hashHue(s: string): number {
   let h = 0;
@@ -28,6 +30,7 @@ function hashHue(s: string): number {
 export function buildExpenseClaimApprovalType(
   events: EventBusService,
   logger: Logger,
+  benefits: BenefitsService,
 ): ApprovalTypeDefinition {
   return {
     kind: 'expense-claim',
@@ -71,7 +74,7 @@ export function buildExpenseClaimApprovalType(
 
       return {
         title: `${claim.claimNumber} — ${claim.employee.fullName}`,
-        sub: `${kind} · ${formatPkr(amount)} · ${when}`,
+        sub: `${kind} · ${formatBenefitPkr(amount)} · ${when}`,
         meta: claim.employee.eid,
         hue: 32,
         complex: true,
@@ -98,6 +101,15 @@ export function buildExpenseClaimApprovalType(
           approvedById: approval.resolvedById,
           approvalNote,
         },
+      });
+      const details = claim.details as { subCategory?: string } | null;
+      await benefits.applyApprovedClaim({
+        claimId: claim.id,
+        employeeId: claim.employeeId,
+        category: claim.category,
+        amountPkr: Number(claim.amount.toString()),
+        expenseDate: claim.expenseDate,
+        isOptical: claim.category === 'medical' && details?.subCategory === 'optical',
       });
       events.emit(
         'expenses.claim.approved',

@@ -23,6 +23,19 @@ export const expensesManifest: ModuleManifest = {
       order: 15,
     },
   ],
+  eventSubscriptions: [
+    { event: 'expenses.claim.submitted', handler: 'handleSubmitted' },
+    { event: 'expenses.claim.approved', handler: 'handleApproved' },
+    { event: 'expenses.claim.rejected', handler: 'handleRejected' },
+    { event: 'expenses.claim.returned', handler: 'handleReturned' },
+  ],
+  approvables: [
+    {
+      kind: 'expense-claim',
+      label: 'Expense claim',
+      requires: 'expenses:approve_claim',
+    },
+  ],
   auditedEntities: ['ExpenseClaim', 'ExpenseClaimDocument'],
   defaultRolePermissions: [
     { roleSlug: 'employee', actions: ['view_own', 'submit_own'] },

@@ -39,7 +39,7 @@ export class ExpenseClaimsController {
 
   @Get()
   async list(@CurrentUser() user: AuthenticatedUser, @Query() rawQuery: Record<string, unknown>) {
-    const query = parseOrBadRequest(expenseClaimListQuerySchema, rawQuery);
+    const query = expenseClaimListQuerySchema.parse(rawQuery);
     return this.claims.list(user, query);
   }
 
@@ -51,7 +51,7 @@ export class ExpenseClaimsController {
   @Post()
   @RequirePermission('expenses:submit_own')
   async create(@CurrentUser() user: AuthenticatedUser, @Body() body: unknown) {
-    const input = parseOrBadRequest(expenseClaimCreateSchema, body);
+    const input = expenseClaimCreateSchema.parse(body);
     return this.claims.create(user, input);
   }
 
@@ -62,7 +62,7 @@ export class ExpenseClaimsController {
     @Param('id') id: string,
     @Body() body: unknown,
   ) {
-    const input = parseOrBadRequest(expenseClaimUpdateSchema, body);
+    const input = expenseClaimUpdateSchema.parse(body);
     return this.claims.update(user, id, input);
   }
 
@@ -81,7 +81,7 @@ export class ExpenseClaimsController {
     @Param('id') id: string,
     @Body() body: unknown,
   ) {
-    const input = parseOrBadRequest(expenseClaimReturnSchema, body);
+    const input = expenseClaimReturnSchema.parse(body);
     return this.claims.returnForCorrection(user, id, input);
   }
 
@@ -126,18 +126,6 @@ export class ExpenseClaimsController {
     @Param('documentId') documentId: string,
   ) {
     return this.claims.removeDocument(user, id, documentId);
-  }
-}
-
-function parseOrBadRequest<T>(schema: { parse: (data: unknown) => T }, data: unknown): T {
-  try {
-    return schema.parse(data);
-  } catch (err) {
-    const issues = (err as { issues?: Array<{ message?: string }> })?.issues;
-    if (Array.isArray(issues) && issues.length > 0) {
-      throw new BadRequestException(issues[0]?.message ?? 'Invalid input');
-    }
-    throw err;
   }
 }
 
