@@ -24,6 +24,7 @@ import { ApprovalsModule } from './modules/approvals/approvals.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { ExpensesModule } from './modules/expenses/expenses.module';
+import { SettingsModule } from './modules/settings/settings.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -49,6 +50,7 @@ import { HealthController } from './health.controller';
     ReportsModule,
     DashboardModule,
     ExpensesModule,
+    SettingsModule,
   ],
   controllers: [HealthController],
   providers: [

@@ -28,7 +28,7 @@
  * Usage:
  *   pnpm tsx apps/api/scripts/migrate-reminder-offsets.ts [--dry]
  *
- * Source the project's .env.local first so DATABASE_URL is set.
+ * Source the project's .env first so DATABASE_URL is set.
  */
 import { PrismaClient } from '@prisma/client';
 

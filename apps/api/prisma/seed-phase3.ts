@@ -5,7 +5,7 @@
  * we skip it. Re-running the seed never duplicates.
  *
  * Run with:
- *   set -a; . .env.local; set +a
+ *   set -a; . .env; set +a
  *   pnpm --filter @futurenostics/api exec tsx prisma/seed-phase3.ts
  */
 import { PrismaClient } from '@prisma/client';

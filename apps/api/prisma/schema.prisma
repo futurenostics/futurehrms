@@ -126,10 +126,14 @@ model RolePermission {
 // ---------- Org structure ----------
 
 model Department {
-  id       String  @id @default(cuid())
-  name     String  @unique
-  slug     String  @unique
-  isActive Boolean @default(true)
+  id          String  @id @default(cuid())
+  name        String  @unique
+  slug        String  @unique
+  description String?
+  isActive    Boolean @default(true)
+
+  headEmployeeId String?
+  head           Employee? @relation("DepartmentHead", fields: [headEmployeeId], references: [id])
 
   employees     Employee[]
   designations  Designation[]
@@ -206,6 +210,9 @@ model Employee {
   managerId String?
   manager   Employee?  @relation("EmployeeManager", fields: [managerId], references: [id])
   reports   Employee[] @relation("EmployeeManager")
+
+  // Departments this employee is the head of. Set via Department.headEmployeeId.
+  headOfDepartments Department[] @relation("DepartmentHead")
 
   user User?
 
