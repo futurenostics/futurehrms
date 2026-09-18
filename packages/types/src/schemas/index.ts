@@ -6,6 +6,7 @@
  * under sibling files as it lands.
  */
 export * from './auth';
+export * from './department';
 export * from './employee';
 export * from './project';
 export * from './commission-rule';
