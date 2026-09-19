@@ -1,13 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Param,
-  Post,
-  Query,
-} from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
 import { z } from 'zod';
 import { CurrentUser } from '../../core/auth/decorators/current-user.decorator';
 import { RequirePermission } from '../../core/auth/decorators/require-permission.decorator';
@@ -30,6 +21,8 @@ const approveSchema = z.object({
 
 const rejectSchema = z.object({
   reason: z.string().trim().min(1).max(2000),
+  reasonCode: z.string().trim().max(64).optional(),
+  comment: z.string().trim().max(2000).optional(),
 });
 
 const cancelSchema = z.object({
@@ -42,10 +35,7 @@ export class ApprovalsController {
 
   @Get()
   @RequirePermission('approvals:view_own_inbox')
-  async list(
-    @CurrentUser() user: AuthenticatedUser,
-    @Query() rawQuery: Record<string, unknown>,
-  ) {
+  async list(@CurrentUser() user: AuthenticatedUser, @Query() rawQuery: Record<string, unknown>) {
     const query = listQuerySchema.parse(rawQuery);
     return this.approvals.list(user, query);
   }

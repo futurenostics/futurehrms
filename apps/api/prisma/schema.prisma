@@ -39,6 +39,10 @@ model User {
   notificationPreferences NotificationPreference[]
   submittedApprovals      Approval[]                @relation("ApprovalSubmitter")
   approvalDecisions       ApprovalDecision[]
+  expenseClaimsSubmitted  ExpenseClaim[]            @relation("ExpenseClaimSubmitter")
+  expenseClaimsApproved   ExpenseClaim[]            @relation("ExpenseClaimApprover")
+  expenseClaimsRejected   ExpenseClaim[]            @relation("ExpenseClaimRejecter")
+  expenseClaimsReturned   ExpenseClaim[]            @relation("ExpenseClaimReturner")
 
   isActive            Boolean   @default(true)
   failedLoginAttempts Int       @default(0)
@@ -264,6 +268,7 @@ model Employee {
   projectAssignments    ProjectAssignment[]
   commissionLineItems   CommissionLineItem[]
   commissionDisputes    CommissionDispute[]
+  expenseClaims         ExpenseClaim[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -1122,4 +1127,78 @@ model ApprovalDecision {
 
   @@index([approvalId, decidedAt])
   @@index([decidedById])
+}
+
+// ---------- Expense reimbursement ----------
+//
+// One table for medical, gym, travel, and business-development claims.
+// Shared money/date/notes live as columns; category-specific fields are
+// in `details` JSON and validated in the expenses module (zod per kind).
+// Finance approves via the generic Approvals inbox (`expense-claim`).
+
+model ExpenseClaim {
+  id         String   @id @default(cuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  /// Human-readable id e.g. EX-2026-00124
+  claimNumber String @unique
+
+  /// draft (staging only) | pending_approval | returned | approved | rejected
+  status String @default("draft")
+
+  /// medical | gym | travel | business_development
+  category String
+
+  amount   Decimal @db.Decimal(14, 2)
+  /// ISO 4217. v1 is PKR-only; column is ready for FX later.
+  currency String  @default("PKR")
+  expenseDate DateTime?
+  notes       String?
+
+  /// Per-category payload. Shape is enforced in app code, not the DB.
+  details Json
+
+  documents ExpenseClaimDocument[]
+
+  submittedAt   DateTime?
+  submittedById String?
+  submittedBy   User?     @relation("ExpenseClaimSubmitter", fields: [submittedById], references: [id])
+
+  approvedAt    DateTime?
+  approvedById  String?
+  approvedBy    User?     @relation("ExpenseClaimApprover", fields: [approvedById], references: [id])
+  approvalNote  String?
+
+  rejectedAt          DateTime?
+  rejectedById        String?
+  rejectedBy          User?     @relation("ExpenseClaimRejecter", fields: [rejectedById], references: [id])
+  rejectionReasonCode String?
+  rejectionComment    String?
+  rejectionReason     String?
+
+  returnedAt       DateTime?
+  returnedById     String?
+  returnedBy       User?     @relation("ExpenseClaimReturner", fields: [returnedById], references: [id])
+  returnReasonCode String?
+  returnComment    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employeeId, status])
+  @@index([status, submittedAt])
+  @@index([category, status])
+}
+
+model ExpenseClaimDocument {
+  id         String       @id @default(cuid())
+  claimId    String
+  claim      ExpenseClaim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  storageKey String
+  fileName   String
+  sortOrder  Int          @default(0)
+  createdAt  DateTime     @default(now())
+
+  @@index([claimId])
 }

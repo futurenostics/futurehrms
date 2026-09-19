@@ -18,6 +18,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { EmployeeAvatar } from '@/components/employees/employee-avatar';
+import { ExpenseClaimsPanel } from '@/components/expenses/expense-claims-panel';
+import { EXPENSE_COPY } from '@/components/expenses/expense-copy';
 import { useUser } from '@/hooks/use-user';
 import {
   useEmployee,
@@ -29,7 +31,6 @@ import {
   useEmployeeCommissionBreakdown,
   useEmployeeCommissionHistory,
 } from '@/lib/queries/commission-runs';
-
 /**
  * /portal — the employee's own self-service portal (Module 6). Resolves
  * the logged-in user's employeeId and renders three read-only tabs:
@@ -104,6 +105,7 @@ export default function SelfServicePortalPage() {
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="history">Commission History</TabsTrigger>
             <TabsTrigger value="projects">My Projects</TabsTrigger>
+            <TabsTrigger value="expenses">{EXPENSE_COPY.portalTab}</TabsTrigger>
           </TabsList>
 
           {/* ─────────── Overview ─────────── */}
@@ -190,6 +192,10 @@ export default function SelfServicePortalPage() {
           {/* ─────────── My Projects (§8.3) ─────────── */}
           <TabsContent value="projects" className="mt-fn-5">
             <MyProjectsTab loading={projects.isPending} projects={projects.data ?? []} />
+          </TabsContent>
+
+          <TabsContent value="expenses" className="mt-fn-5">
+            <ExpenseClaimsPanel mine bucket="active" hideListHeader />
           </TabsContent>
         </Tabs>
       </div>

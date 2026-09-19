@@ -121,6 +121,33 @@ export class RegistryService implements OnApplicationBootstrap {
         update: {},
       });
     }
+
+    // Drop module permissions on system roles when they are no longer listed
+    // in that role's manifest defaultRolePermissions (e.g. HR losing view_all).
+    for (const manifest of manifests) {
+      const attachmentsForModule = manifest.defaultRolePermissions ?? [];
+      if (attachmentsForModule.length === 0 || manifest.permissions.length === 0) continue;
+
+      const modulePerms = await prisma.permission.findMany({
+        where: { module: manifest.key },
+      });
+
+      for (const attachment of attachmentsForModule) {
+        const role = roleBySlug.get(attachment.roleSlug);
+        if (!role?.isSystem) continue;
+
+        const expected = new Set(
+          attachment.actions.map((action) => permissionKey(manifest.key, action)),
+        );
+
+        for (const perm of modulePerms) {
+          if (expected.has(perm.key)) continue;
+          await prisma.rolePermission.deleteMany({
+            where: { roleId: role.id, permissionId: perm.id },
+          });
+        }
+      }
+    }
   }
 
   /**

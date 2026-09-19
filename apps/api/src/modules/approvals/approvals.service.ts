@@ -351,7 +351,7 @@ export class ApprovalsService {
   async reject(
     viewer: AuthenticatedUser,
     id: string,
-    input: { reason: string },
+    input: { reason: string; reasonCode?: string; comment?: string },
   ): Promise<Approval> {
     const approval = await this.requirePendingApproval(id);
     const def = this.types.require(approval.type);
@@ -377,7 +377,11 @@ export class ApprovalsService {
         decidedById: viewer.id,
         decision: 'reject',
         stageIndex: approval.currentStage,
-        confirmationData: { reason: input.reason } as never,
+        confirmationData: {
+          reason: input.reason,
+          ...(input.reasonCode ? { reasonCode: input.reasonCode } : {}),
+          ...(input.comment ? { comment: input.comment } : {}),
+        } as never,
       },
     });
     const updated = await prisma.approval.update({

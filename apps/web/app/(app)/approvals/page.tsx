@@ -4,7 +4,9 @@ import * as React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowRight, Check, Clock, Inbox, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
+import { formatExpenseFinanceFeedback, type ExpenseFinanceReasonCode } from '@futurenostics/types';
 import { AppShell } from '@/components/shell/app-shell';
+import { ExpenseFinanceReasonFields } from '@/components/expenses/expense-finance-reason-fields';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -25,6 +27,7 @@ import {
   useRejectApproval,
 } from '@/lib/queries/approvals';
 import { cn } from '@/lib/utils';
+import { ShowHistoryButton } from '@/components/approvals/expense-history-entry';
 
 /**
  * Unified approval inbox (Brief 11 in docs/design/screens/approval-inbox.jsx).
@@ -47,6 +50,7 @@ export default function ApprovalsInboxPage() {
   const params = useSearchParams();
   const perms = usePermissions();
   const canView = perms.has('approvals:view_own_inbox') || perms.has('approvals:view_all_inbox');
+  const canExpenseHistory = perms.has('expenses:approve_claim');
 
   const [activeType, setActiveType] = React.useState<string | null>(params.get('type') ?? null);
 
@@ -85,17 +89,17 @@ export default function ApprovalsInboxPage() {
     <AppShell breadcrumbs={[{ label: 'Approvals' }]}>
       <div className="gap-fn-5 mx-auto flex w-full max-w-[1280px] flex-col">
         {/* Header */}
-        <div className="gap-fn-1 flex flex-col">
-          <h1
-            className="text-fn-fg font-fn-semibold text-[26px]"
-            style={{ letterSpacing: '-0.025em' }}
-          >
-            Approvals
-          </h1>
-          <p className="text-fn-fg-muted text-[13.5px]">
-            Items waiting on your decision. Complex kinds require individual review — simple ones
-            can be approved in bulk.
-          </p>
+        <div className="gap-fn-4 flex items-start justify-between">
+          <div className="gap-fn-1 flex min-w-0 flex-col">
+            <h1
+              className="text-fn-fg font-fn-semibold text-[26px]"
+              style={{ letterSpacing: '-0.025em' }}
+            >
+              Approvals
+            </h1>
+            <p className="text-fn-fg-muted text-[13.5px]">Items waiting on your decision.</p>
+          </div>
+          {canExpenseHistory && <ShowHistoryButton href="/approvals/history" />}
         </div>
 
         {/* Filter chip rail */}
@@ -355,9 +359,17 @@ function RejectReasonDialog({
   onClose: () => void;
 }) {
   const [reason, setReason] = React.useState('');
+  const [reasonCode, setReasonCode] = React.useState<ExpenseFinanceReasonCode | ''>('');
+  const [comment, setComment] = React.useState('');
   const reject = useRejectApproval();
+  const isExpenseClaim = approval?.type === 'expense-claim';
+
   React.useEffect(() => {
-    if (!approval) setReason('');
+    if (!approval) {
+      setReason('');
+      setReasonCode('');
+      setComment('');
+    }
   }, [approval]);
 
   return (
@@ -371,18 +383,34 @@ function RejectReasonDialog({
             {approval?.metadata.requester?.name ?? approval?.submittedByEmail} ·{' '}
             {approval?.metadata.title}
           </div>
-          <label className="text-fn-fg font-fn-medium mt-fn-2 text-[12.5px]">
-            Reason <span className="text-fn-danger">*</span>
-            <span className="text-fn-fg-faint font-fn-regular ml-fn-1">
-              The requester will see this. Be specific.
-            </span>
-          </label>
-          <Textarea
-            rows={3}
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="e.g. The Saturday work wasn't pre-approved and the project lead has no record of the emergency."
-          />
+          {isExpenseClaim ? (
+            <div className="mt-fn-2">
+              <ExpenseFinanceReasonFields
+                reasonCode={reasonCode}
+                onReasonCodeChange={setReasonCode}
+                comment={comment}
+                onCommentChange={setComment}
+                reasonLabel="Reason"
+                commentLabel="Comment (optional)"
+                commentPlaceholder="Add detail the employee will see on the claim."
+              />
+            </div>
+          ) : (
+            <>
+              <label className="text-fn-fg font-fn-medium mt-fn-2 text-[12.5px]">
+                Reason <span className="text-fn-danger">*</span>
+                <span className="text-fn-fg-faint font-fn-regular ml-fn-1">
+                  The requester will see this. Be specific.
+                </span>
+              </label>
+              <Textarea
+                rows={3}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="e.g. The Saturday work wasn't pre-approved and the project lead has no record of the emergency."
+              />
+            </>
+          )}
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>
@@ -390,11 +418,25 @@ function RejectReasonDialog({
           </Button>
           <Button
             variant="destructive"
-            disabled={!approval || reject.isPending || reason.trim().length === 0}
+            disabled={
+              !approval ||
+              reject.isPending ||
+              (isExpenseClaim ? !reasonCode : reason.trim().length === 0)
+            }
             onClick={async () => {
               if (!approval) return;
               try {
-                await reject.mutateAsync({ id: approval.id, reason: reason.trim() });
+                if (isExpenseClaim && reasonCode) {
+                  const built = formatExpenseFinanceFeedback(reasonCode, comment);
+                  await reject.mutateAsync({
+                    id: approval.id,
+                    reason: built,
+                    reasonCode,
+                    comment: comment.trim() || undefined,
+                  });
+                } else {
+                  await reject.mutateAsync({ id: approval.id, reason: reason.trim() });
+                }
                 toast.success('Request rejected.');
                 onClose();
               } catch (err) {
@@ -454,6 +496,7 @@ function RowsSkeleton() {
  */
 const KIND_HUE: Record<string, number> = {
   'commission-run': 280,
+  'expense-claim': 32,
   'payroll-run': 280,
   'overtime-request': 65,
   'leave-request': 245,

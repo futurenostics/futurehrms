@@ -123,7 +123,7 @@ export async function downloadFile(path: string, filename: string): Promise<void
 export async function apiFetch<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
   const url = path.startsWith('http') ? path : `${API_URL}${path}`;
   const headers = new Headers(init.headers);
-  if (!headers.has('content-type') && init.body) {
+  if (!headers.has('content-type') && init.body && !(init.body instanceof FormData)) {
     headers.set('content-type', 'application/json');
   }
   if (accessToken) {

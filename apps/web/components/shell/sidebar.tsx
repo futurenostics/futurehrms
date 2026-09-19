@@ -54,7 +54,10 @@ export function Sidebar() {
   const visibleItems = React.useMemo(
     () =>
       navGroups.flatMap((group) =>
-        group.items.filter((item) => !item.requires || owned.has(item.requires)),
+        group.items.filter((item) => {
+          if (item.requiresAny?.length) return item.requiresAny.some((k) => owned.has(k));
+          return !item.requires || owned.has(item.requires);
+        }),
       ),
     [owned],
   );

@@ -125,6 +125,8 @@ export type DataTableProps<T> = {
   chrome?: 'card' | 'plain';
   /** Optional className for the outermost wrapper (rare; usually unused). */
   className?: string;
+  /** When true, hides the default “Showing N of M” footer (use with external pagination). */
+  hideFooter?: boolean;
 };
 
 /** Default skeleton row count for initial load. */
@@ -162,6 +164,7 @@ export function DataTable<T>({
   minWidth,
   chrome = 'card',
   className,
+  hideFooter = false,
 }: DataTableProps<T>) {
   const sentinelRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -356,7 +359,7 @@ export function DataTable<T>({
           <div ref={sentinelRef} aria-hidden className="h-px" />
         )}
 
-        {!isLoading && !isError && rows.length > 0 && (
+        {!hideFooter && !isLoading && !isError && rows.length > 0 && (
           <DataTableFooter
             loadedCount={rows.length}
             totalCount={totalCount}
